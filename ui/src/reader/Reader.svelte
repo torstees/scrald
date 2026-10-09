@@ -194,6 +194,37 @@
     return scroller.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   }
 
+  let column: HTMLElement | undefined = $state();
+
+  /**
+   * Smoothly scales the text column with a CSS transform (no reflow), keeping
+   * the point `offsetY` px below the viewport top in place. Used to animate
+   * keyboard zoom; the real font size is applied afterwards.
+   */
+  export function previewScale(scale: number, offsetY: number, durationMs: number): Promise<void> {
+    if (!scroller || !column) return Promise.resolve();
+    // The fixed point, in the column's own (unscaled) coordinates. While a
+    // preview is already running, the column is scaled around that same
+    // point, and measuring it now would be off by the current scale: keep it.
+    if (!column.style.transform) {
+      const originY = scroller.getBoundingClientRect().top + offsetY - column.getBoundingClientRect().top;
+      column.style.transformOrigin = `50% ${originY}px`;
+      // Make the browser register "no transform" before the transition
+      // starts, or it could animate from a just-cleared earlier scale.
+      void column.offsetWidth;
+    }
+    column.style.transition = `transform ${durationMs}ms cubic-bezier(0.2, 0.7, 0.3, 1)`;
+    column.style.transform = `scale(${scale})`;
+    return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+  }
+
+  export function clearPreview(): void {
+    if (!column) return;
+    column.style.transition = "none";
+    column.style.transform = "";
+    column.style.transformOrigin = "";
+  }
+
   /** Top of the reading viewport, in client coordinates (to anchor zoom at the cursor). */
   export function viewportTop(): number {
     return scroller?.getBoundingClientRect().top ?? 0;
@@ -293,7 +324,7 @@
      keyboard-activatable themselves, so the container needs no key handler. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 <div class="sk-scroller" bind:this={scroller} onscroll={onScroll} onclick={onClick} role="document">
-  <article class="sk-column" class:fill={fillWindow} style:font-size={fontSize === null ? null : `${fontSize}px`}>
+  <article bind:this={column} class="sk-column" class:fill={fillWindow} style:font-size={fontSize === null ? null : `${fontSize}px`}>
     {#each doc.sections as section, i (section.id)}
       {#if mounted[i]}
         <section
@@ -317,6 +348,8 @@
   .sk-scroller {
     height: 100%;
     overflow-y: auto;
+    /* The zoom preview briefly scales the column wider than the view. */
+    overflow-x: hidden;
     overflow-anchor: auto;
     padding: 0 1.5rem;
     box-sizing: border-box;

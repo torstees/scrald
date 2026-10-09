@@ -11,7 +11,6 @@ import type { DocumentMemory, ThemeLayout, TypographyDefaults } from "../lib/typ
 import type { ScrollAnchor } from "../reader/anchor";
 import {
   clampZoom,
-  easeZoom,
   formatZoom,
   readerFontSize,
   resolveTextSizing,
@@ -34,6 +33,14 @@ export interface TypographyHost {
   /** The position as of the last scroll, from before any reflow in progress. */
   stableAnchor(): ScrollAnchor | null;
   restoreAnchor(anchor: ScrollAnchor, offsetY: number): Promise<void>;
+  /**
+   * Visually scales the reading column by `scale` (a CSS transform, no
+   * reflow) over `durationMs`, keeping the point `offsetY` px below the top
+   * of the viewport still. Resolves when the transition ends.
+   */
+  previewScale(scale: number, offsetY: number, durationMs: number): Promise<void>;
+  /** Removes the preview transform instantly. */
+  clearPreview(): void;
 }
 
 /** Wait this long after the last change before saving (wheel zoom fires a lot). */
@@ -56,8 +63,12 @@ export class TypographyController {
   /** Width of one `ch` per px of font size for the body font (measured). */
   private chPerPx = 0.5;
   private saveTimer = 0;
-  private animation = 0;
   private host: TypographyHost;
+  /** Keyboard zoom in progress: its target, and the anchor captured when it began. */
+  private pendingZoom: number | null = null;
+  private pendingAnchor: ScrollAnchor | null = null;
+  /** Bumped by every zoom, so a superseded animation knows to stop. */
+  private zoomGeneration = 0;
 
   constructor(host: TypographyHost) {
     this.host = host;
@@ -92,9 +103,15 @@ export class TypographyController {
 
   /** Recomputes the font size from the current mode, zoom, theme, and width. */
   recompute(): void {
+    const size = this.sizeAt(this.zoom);
+    if (size !== null) this.fontSize = size;
+  }
+
+  /** The reading font size at `zoom` with the current mode, theme, and width. */
+  private sizeAt(zoom: number): number | null {
     const layout = this.layout;
-    if (!layout) return;
-    this.fontSize = readerFontSize(
+    if (!layout) return null;
+    return readerFontSize(
       this.mode,
       layout.fontSize,
       {
@@ -104,7 +121,7 @@ export class TypographyController {
         minFontSize: layout.minFontSize,
         maxFontSize: layout.maxFontSize,
       },
-      this.zoom,
+      zoom,
     );
   }
 
@@ -125,12 +142,14 @@ export class TypographyController {
     this.saveDocument();
   }
 
+  // Quick repeated presses step from the zoom already on its way, not the
+  // one on screen, so three presses always mean three steps.
   zoomIn(): void {
-    void this.animateZoom(stepZoom(this.zoom, 1));
+    void this.animateZoom(stepZoom(this.pendingZoom ?? this.zoom, 1));
   }
 
   zoomOut(): void {
-    void this.animateZoom(stepZoom(this.zoom, -1));
+    void this.animateZoom(stepZoom(this.pendingZoom ?? this.zoom, -1));
   }
 
   resetZoom(): void {
@@ -139,7 +158,7 @@ export class TypographyController {
 
   /** Ctrl+wheel or trackpad pinch: immediate (the gesture is already smooth), anchored at the cursor. */
   wheel(event: WheelEvent): void {
-    cancelAnimationFrame(this.animation);
+    this.finishZoomNow();
     const offsetY = Math.max(0, event.clientY - this.host.viewportTop());
     const target = wheelZoom(this.zoom, event.deltaY, event.deltaMode);
     void this.keepPlace(offsetY, () => {
@@ -162,29 +181,55 @@ export class TypographyController {
     await this.saveDefaults();
   }
 
-  /** Animates to `target` zoom over ~120 ms, keeping the top of the viewport still. */
+  /**
+   * Zooms to `target`, keeping the top of the viewport still. The animation
+   * is a CSS transform on the reading column (smooth, no text reflow); when
+   * it ends, the real font size is applied and the transform removed in the
+   * same frame, so the swap is invisible. Laying text out on every frame
+   * instead was too slow to look smooth.
+   */
   private async animateZoom(target: number): Promise<void> {
-    cancelAnimationFrame(this.animation);
+    const generation = ++this.zoomGeneration;
     const to = clampZoom(target);
-    const from = this.zoom;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const anchor = this.host.captureAnchor(0);
+    // Chained presses keep the anchor from the first one.
+    const anchor = this.pendingAnchor ?? this.host.captureAnchor(0);
+    this.pendingAnchor = anchor;
+    this.pendingZoom = to;
     this.saveDocumentSoon(to);
-    if (reduceMotion || from === to) {
-      this.docZoom = to;
-      this.recompute();
-      await this.restore(anchor, 0);
-      return;
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const from = this.fontSize;
+    const goal = this.sizeAt(to);
+    if (!reduceMotion && from !== null && goal !== null && from > 0) {
+      // The transform is relative to the font size actually laid out, so a
+      // second press mid-animation glides on from wherever the first got to.
+      await this.host.previewScale(goal / from, 0, ZOOM_ANIMATION_MS);
+      if (generation !== this.zoomGeneration) return;
     }
-    const started = performance.now();
-    const frame = async (now: number): Promise<void> => {
-      const progress = (now - started) / ZOOM_ANIMATION_MS;
-      this.docZoom = progress >= 1 ? to : easeZoom(from, to, progress);
-      this.recompute();
-      await this.restore(anchor, 0);
-      if (progress < 1) this.animation = requestAnimationFrame((t) => void frame(t));
-    };
-    this.animation = requestAnimationFrame((t) => void frame(t));
+    await this.applyPendingZoom();
+  }
+
+  /** Applies the pending keyboard zoom for real and clears the preview. */
+  private async applyPendingZoom(): Promise<void> {
+    const to = this.pendingZoom;
+    const anchor = this.pendingAnchor;
+    this.pendingZoom = null;
+    this.pendingAnchor = null;
+    if (to === null) return;
+    this.docZoom = to;
+    this.recompute();
+    // Let Svelte write the new font size, then drop the transform and fix
+    // the scroll position before the browser paints.
+    await tick();
+    this.host.clearPreview();
+    await this.restore(anchor, 0);
+  }
+
+  /** Ends any keyboard zoom animation at once (another zoom gesture took over). */
+  private finishZoomNow(): void {
+    if (this.pendingZoom === null) return;
+    this.zoomGeneration++;
+    void this.applyPendingZoom();
   }
 
   /** Runs `change`, then puts the reading position back where it was. */

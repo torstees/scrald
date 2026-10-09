@@ -9,8 +9,8 @@ export const MAX_ZOOM = 3;
 /** Keyboard zoom steps, like a browser's. */
 export const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
-/** How long a zoom change animates, in ms. */
-export const ZOOM_ANIMATION_MS = 120;
+/** How long a keyboard zoom animates, in ms. */
+export const ZOOM_ANIMATION_MS = 180;
 
 export function clampZoom(zoom: number): number {
   if (!Number.isFinite(zoom)) return 1;
@@ -82,11 +82,4 @@ export function readerFontSize(mode: TextSizing, themeFontSize: number, fit: Fit
 
 export function formatZoom(zoom: number): string {
   return `${Math.round(zoom * 100)}%`;
-}
-
-/** Linear interpolation for the zoom animation, with ease-out. */
-export function easeZoom(from: number, to: number, progress: number): number {
-  const t = Math.min(1, Math.max(0, progress));
-  const eased = 1 - (1 - t) * (1 - t);
-  return from + (to - from) * eased;
 }

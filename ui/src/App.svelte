@@ -59,6 +59,8 @@
     viewportTop: () => reader?.viewportTop() ?? 0,
     captureAnchor: (offsetY) => reader?.captureAnchor(offsetY) ?? null,
     stableAnchor: () => reader?.stableAnchor() ?? null,
+    previewScale: (scale, offsetY, ms) => reader?.previewScale(scale, offsetY, ms) ?? Promise.resolve(),
+    clearPreview: () => reader?.clearPreview(),
     restoreAnchor: (anchor, offsetY) => reader?.scrollToAnchor(anchor, offsetY) ?? Promise.resolve(),
   });
 

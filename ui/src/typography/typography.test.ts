@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   clampZoom,
-  easeZoom,
   fitFontSize,
   formatZoom,
   readerFontSize,
@@ -43,11 +42,8 @@ describe("zoom", () => {
     expect(resolveZoom(null, null)).toBe(1);
   });
 
-  it("formats and animates", () => {
+  it("formats", () => {
     expect(formatZoom(1.1)).toBe("110%");
-    expect(easeZoom(1, 2, 0)).toBe(1);
-    expect(easeZoom(1, 2, 1)).toBe(2);
-    expect(easeZoom(1, 2, 0.5)).toBeGreaterThan(1.5);
   });
 });
 
