@@ -11,9 +11,11 @@
     /** Index into `toc` of the current section's heading, if any. */
     current: number | null;
     onselect: (index: number) => void;
+    /** Show outline numbers (when the theme numbers headings). */
+    numbering?: boolean;
   }
 
-  let { toc, current, onselect }: Props = $props();
+  let { toc, current, onselect, numbering = false }: Props = $props();
 
   let maxLevel = $state(6);
   const collapsed = new SvelteSet<number>();
@@ -62,7 +64,9 @@
             {:else}
               <span class="twisty-space"></span>
             {/if}
-            <button class="entry" onclick={() => onselect(index)} title={entry.text}>{entry.text}</button>
+            <button class="entry" onclick={() => onselect(index)} title={entry.text}
+              >{#if numbering && entry.number}<span class="number">{entry.number}</span>{/if}{entry.text}</button
+            >
           </li>
         {/if}
       {/each}
@@ -147,6 +151,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .number {
+    color: var(--sk-color-muted);
+    margin-right: 0.4em;
+    font-variant-numeric: tabular-nums;
   }
 
   .entry:hover {

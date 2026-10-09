@@ -60,6 +60,8 @@ export interface TocEntry {
   text: string;
   slug: string;
   blockId: number;
+  /** Outline number like "2.1"; null for the document title. */
+  number: string | null;
 }
 
 /** Mirrors `FeatureFlags`. */
@@ -130,6 +132,43 @@ export interface DocumentMemory {
   anchor: ScrollAnchor | null;
   /** Whether the user allowed remote images for this document. */
   remoteImages: boolean;
+  /** Theme the user picked for this document in Scrald, if any. */
+  theme: string | null;
+}
+
+/** Mirrors `Appearance` (crates/scrald-core/src/theme/schema.rs). */
+export type Appearance = "light" | "dark";
+
+/** Mirrors `ThemeSource`: where a document's theme choice came from. */
+export type ThemeSource = "document" | "frontMatter" | "folder" | "default";
+
+/** Mirrors `ResolvedTheme` (crates/scrald-app/src/commands.rs). */
+export interface ResolvedTheme {
+  id: string;
+  source: ThemeSource;
+}
+
+/** Mirrors `ThemeSummary` (crates/scrald-core/src/theme/mod.rs). */
+export interface ThemeSummary {
+  id: string;
+  name: string;
+  author: string | null;
+  appearance: Appearance | null;
+  bundled: boolean;
+  background: string;
+  foreground: string;
+  accent: string;
+  /** Why a user theme couldn't be loaded, if it couldn't. */
+  error: string | null;
+}
+
+/** Mirrors `ThemeStyle` (crates/scrald-app/src/commands.rs). */
+export interface ThemeStyle {
+  id: string;
+  name: string;
+  appearance: Appearance;
+  css: string;
+  numbering: boolean;
 }
 
 /** Mirrors `RecentDocument` (crates/scrald-app/src/state.rs). */
@@ -147,4 +186,6 @@ export interface OpenedDocument {
   document: DocumentModel;
   /** What Scrald remembers about this document from earlier sessions. */
   memory: DocumentMemory;
+  /** The theme this document uses, and where that choice came from. */
+  theme: ResolvedTheme;
 }

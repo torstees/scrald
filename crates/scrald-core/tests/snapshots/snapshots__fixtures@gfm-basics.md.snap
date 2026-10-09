@@ -17,7 +17,7 @@ section 1: heading=Some(2) level=2 blocks=2..12
 A soft line break continues the paragraph.</p>
 
 --- block 2 Heading { level: 2 } @141..170 section=1
-<h2 id="user-content-setext-heading">Setext Heading</h2>
+<h2 data-number="1" id="user-content-setext-heading">Setext Heading</h2>
 
 --- block 3 List { ordered: false } @172..288 section=1
 <ul>

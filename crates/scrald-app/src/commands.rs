@@ -7,13 +7,15 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Context;
+use scrald_core::theme::{Appearance, ThemeSource, ThemeSummary, resolve_theme};
 use scrald_core::{DocumentModel, LinkTarget, ParseOptions};
 use serde::Serialize;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::AssetRegistry;
-use crate::state::{DocumentMemory, RecentDocument, ScrollAnchor, StateStore};
+use crate::state::{DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore};
+use crate::themes::ThemeService;
 use crate::watcher::DocumentWatchers;
 use crate::window::WindowTracker;
 
@@ -43,6 +45,29 @@ pub struct OpenedDocument {
     pub document: DocumentModel,
     /// What Scrald remembers about this document from earlier sessions.
     pub memory: DocumentMemory,
+    /// The theme this document uses, and where that choice came from.
+    pub theme: ResolvedTheme,
+}
+
+/// A document's theme after the resolution order in DESIGN.md §7.6.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedTheme {
+    pub id: String,
+    pub source: ThemeSource,
+}
+
+/// Everything the frontend needs to apply a theme.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeStyle {
+    pub id: String,
+    pub name: String,
+    pub appearance: Appearance,
+    /// Complete CSS: `--sk-*` variables, font faces, element styles, theme.css.
+    pub css: String,
+    /// Whether the theme numbers headings (the TOC shows numbers too).
+    pub numbering: bool,
 }
 
 /// Reads and parses a Markdown file, registers its images for serving, and
@@ -59,6 +84,7 @@ pub async fn open_document(
     watchers: tauri::State<'_, DocumentWatchers>,
     store: tauri::State<'_, StateStore>,
     tracker: tauri::State<'_, WindowTracker>,
+    themes: tauri::State<'_, ThemeService>,
     path: PathBuf,
 ) -> Result<OpenedDocument, CommandError> {
     let started = Instant::now();
@@ -100,6 +126,8 @@ pub async fn open_document(
         .unwrap_or_else(|| scrald_core::title_from_path(&path));
     window.set_title(&format!("{title} \u{2014} Scrald"))?;
 
+    let theme = resolve_document_theme(&window, &store, &themes, &doc, &memory);
+
     let files = doc.images.iter().map(|image| image.path.clone()).collect();
     let asset_token = registry.register(window.label(), files);
 
@@ -113,7 +141,110 @@ pub async fn open_document(
         asset_token,
         document: doc,
         memory,
+        theme,
     })
+}
+
+/// Applies DESIGN.md §7.6: the per-document choice, then front matter, then
+/// the nearest `.scrald.toml`, then the global default, then the built-in
+/// default for the system's light or dark mode.
+fn resolve_document_theme(
+    window: &tauri::WebviewWindow,
+    store: &StateStore,
+    themes: &ThemeService,
+    doc: &DocumentModel,
+    memory: &DocumentMemory,
+) -> ResolvedTheme {
+    let front_matter = doc.front_matter.as_ref().and_then(|fm| fm.theme.clone());
+    let folder = scrald_core::config::find_folder_config(&doc.path)
+        .and_then(|found| match found.config {
+            Ok(config) => config.theme,
+            Err(error) => {
+                tracing::warn!(path = %found.path.display(), %error, "ignoring invalid folder config");
+                None
+            }
+        });
+    let default = store.get_setting::<String>(DEFAULT_THEME).ok().flatten();
+    let system_dark = matches!(window.theme(), Ok(tauri::Theme::Dark));
+    let (id, source) = themes.with_library(|library| {
+        resolve_theme(
+            library,
+            memory.theme.as_deref(),
+            front_matter.as_deref(),
+            folder.as_deref(),
+            default.as_deref(),
+            system_dark,
+        )
+    });
+    ResolvedTheme { id, source }
+}
+
+/// Every theme, for the switcher: bundled, user, and broken ones (with errors).
+#[tauri::command]
+pub fn list_themes(themes: tauri::State<'_, ThemeService>) -> Vec<ThemeSummary> {
+    themes.summaries()
+}
+
+/// The CSS and details for one theme.
+#[tauri::command]
+pub fn theme_style(
+    themes: tauri::State<'_, ThemeService>,
+    id: String,
+) -> Result<ThemeStyle, CommandError> {
+    let theme = themes
+        .get(&id)
+        .ok_or_else(|| anyhow::anyhow!("no theme named {id}"))?;
+    Ok(ThemeStyle {
+        css: theme.css(&crate::themes::asset_base(&theme.id)),
+        name: theme.file.meta.name.clone(),
+        appearance: theme.file.meta.appearance,
+        numbering: theme.file.elements.headings.numbering,
+        id: theme.id,
+    })
+}
+
+/// Sets the theme for one document, or with `null` returns it to its
+/// default (front matter, folder, or global).
+#[tauri::command]
+pub fn set_document_theme(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+    id: Option<String>,
+) -> Result<(), CommandError> {
+    Ok(store.set_document_theme(&path, id.as_deref())?)
+}
+
+/// Sets the global default theme.
+#[tauri::command]
+pub fn set_default_theme(
+    store: tauri::State<'_, StateStore>,
+    id: String,
+) -> Result<(), CommandError> {
+    Ok(store.set_setting(DEFAULT_THEME, &id)?)
+}
+
+/// Copies a theme into the user theme folder to customize; returns the new id.
+#[tauri::command]
+pub fn duplicate_theme(
+    themes: tauri::State<'_, ThemeService>,
+    id: String,
+) -> Result<String, CommandError> {
+    Ok(themes.duplicate(&id)?)
+}
+
+/// Where user themes live, to show in the switcher.
+#[tauri::command]
+pub fn user_theme_folder(themes: tauri::State<'_, ThemeService>) -> Option<String> {
+    themes.user_dir().map(|dir| dir.display().to_string())
+}
+
+/// Installed font family names, sorted (for font pickers, M8).
+#[tauri::command]
+pub async fn system_fonts() -> Result<Vec<String>, CommandError> {
+    let families = tauri::async_runtime::spawn_blocking(crate::themes::system_font_families)
+        .await
+        .context("font scan failed")?;
+    Ok(families)
 }
 
 /// Remembers where the reader is in a document.

@@ -5,6 +5,7 @@
 mod commands;
 mod protocol;
 mod state;
+mod themes;
 mod watcher;
 mod window;
 
@@ -45,6 +46,19 @@ fn main() -> anyhow::Result<()> {
                 responder.respond(protocol::respond(&registry, &request));
             });
         })
+        .register_asynchronous_uri_scheme_protocol(themes::SCHEME, |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            std::thread::spawn(move || {
+                let response = match app.try_state::<themes::ThemeService>() {
+                    Some(service) => service.respond(&request),
+                    None => tauri::http::Response::builder()
+                        .status(503)
+                        .body(Vec::new())
+                        .unwrap_or_default(),
+                };
+                responder.respond(response);
+            });
+        })
         .manage(window::WindowTracker::default())
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
@@ -67,6 +81,13 @@ fn main() -> anyhow::Result<()> {
             commands::save_reading_position,
             commands::set_remote_images,
             commands::recent_documents,
+            commands::list_themes,
+            commands::theme_style,
+            commands::set_document_theme,
+            commands::set_default_theme,
+            commands::duplicate_theme,
+            commands::user_theme_folder,
+            commands::system_fonts,
             commands::resolve_link,
             commands::open_external,
             commands::report_timing,
@@ -89,6 +110,15 @@ fn main() -> anyhow::Result<()> {
                 window.show()?;
             }
             app.manage(store);
+
+            let theme_service = themes::ThemeService::new(user_theme_dir(app.handle()));
+            if let Err(error) = theme_service.watch(app.handle()) {
+                tracing::warn!(
+                    error = format!("{error:#}"),
+                    "user theme hot reload unavailable"
+                );
+            }
+            app.manage(theme_service);
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -126,6 +156,18 @@ fn open_state_store(app: &tauri::AppHandle) -> state::StateStore {
             // itself is broken, in which case nothing else would work either.
             state::StateStore::in_memory().expect("in-memory SQLite database")
         }
+    }
+}
+
+/// `themes/` in the app config folder (or under `SCRALD_DATA_DIR`, for tests).
+fn user_theme_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    match std::env::var_os("SCRALD_DATA_DIR") {
+        Some(dir) => Some(PathBuf::from(dir).join("themes")),
+        None => app
+            .path()
+            .app_config_dir()
+            .ok()
+            .map(|dir| dir.join("themes")),
     }
 }
 

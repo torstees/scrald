@@ -1,0 +1,54 @@
+# Scrald Light: the default light theme. Warm paper, a classic serif, and a
+# comfortable 66-character line.
+
+[meta]
+name = "Scrald Light"
+author = "Scrald"
+schema = 1
+appearance = "light"
+
+[colors]
+background    = "#fbf8f1"
+foreground    = "#2b2a27"
+muted         = "#77736a"
+accent        = "#8a5a2b"
+link          = "#2f5f8a"
+selection     = "#e8e0cd"
+border        = "#e2dccd"
+code_bg       = "#f1ece0"
+quote_bar     = "#c9b88f"
+highlight_bg  = "#f2d27a66"
+ui_background = "#f4f0e6"
+
+[palette]
+black   = "#2b2a27"
+red     = "#a5402f"
+green   = "#4f7a3a"
+yellow  = "#a1782a"
+blue    = "#2f5f8a"
+magenta = "#86507e"
+cyan    = "#2f7a7a"
+white   = "#e8e2d4"
+bright_black   = "#77736a"
+bright_red     = "#c4533f"
+bright_green   = "#62924a"
+bright_yellow  = "#c0913a"
+bright_blue    = "#3f78aa"
+bright_magenta = "#a0659a"
+bright_cyan    = "#3d9494"
+bright_white   = "#fbf8f1"
+
+[fonts]
+body = { family = "Iowan Old Style", fallback = ["Charter", "Georgia"] }
+mono = { family = "Cascadia Code", fallback = ["Consolas", "SF Mono", "Menlo"] }
+
+[layout]
+measure = 66
+font_size = 18
+line_height = 1.6
+
+[elements.blockquote]
+style = "bar"
+
+[elements.hr]
+style = "dots"

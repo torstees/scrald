@@ -308,6 +308,8 @@ nordic-night/
 
 Themes live in two places: bundled themes (read-only, shipped with the app) and the user theme directory (`themes/` under the platform's app config directory, as resolved by Tauri's path API: `%APPDATA%\Scrald\themes\` on Windows). A bundled theme can be duplicated into the user directory as a starting point. User themes hot-reload when their files change.
 
+As implemented: bundled themes are TOML-only (no asset files) and compiled into the binary from `crates/scrald-core/themes/<id>/theme.toml`: Scrald Light, Scrald Dark, Sepia, and Technical. The user directory is `themes/` in Tauri's app config directory, created on first run. A user theme whose folder name matches a bundled theme's id replaces it. Themes that fail to load are still listed in the switcher, with their errors, rather than silently missing. The whole user directory is watched recursively; any change reloads the library and re-applies the current theme in every window.
+
 ### 7.2 `theme.toml` schema (draft)
 
 ```toml
@@ -368,6 +370,8 @@ source = "palette"             # "palette" derives from [palette]; or name a bun
 file = "theme.css"
 ```
 
+Schema notes (as implemented, `crates/scrald-core/src/theme/`): unknown keys are errors, so typos are reported with line and column; values are validated (hex colors, number ranges, paths that must stay inside the theme folder) and every problem is listed at once. Two additions to the draft: `colors.ui_background` and `fonts.ui` for the sidebar and status bar. Theme-provided fonts use `source = "theme"` with `files = [{ path = "assets/X.woff2", weight = 400, italic = false }]`. Colors a theme leaves out are derived from its background, foreground, accent, and appearance. Heading numbering (`elements.headings.numbering`) is computed in core and attached as `data-number` (and shown in the TOC), because the reader's `content-visibility` sections contain CSS counters.
+
 Tokens become CSS custom properties (`--sk-color-background`, `--sk-font-body`, `--sk-measure`, and so on). Bundled themes and user themes go through the same path, so a theme can be built entirely from TOML, and `theme.css` exists only for things tokens can't express.
 
 ### 7.3 Importing terminal themes
@@ -415,6 +419,8 @@ A theme switcher (Ctrl+T, plus a status bar control) shows themes with live prev
 4. The global default theme.
 
 The switcher offers "Save to document," which writes `scrald-theme` into the front matter, and "Reset to document default," which clears the stored override.
+
+As implemented: arrow keys preview themes live on the document (reading position kept), Enter or "Use for this document" stores the per-document choice, Escape restores the previous theme, and "Make default" sets the global default. With no choice anywhere, the built-in default follows the system's light or dark mode. Unknown theme ids at any level are skipped, so a typo falls through to the next level. "Save to document" arrives with the front matter editor (M5). Measured theme switch on the 100K fixture (release build): 5 to 15 ms.
 
 ---
 
@@ -549,7 +555,7 @@ The database stores only metadata, never document contents. The one place Scrald
 - Every HTML `id` from document content (heading slugs, footnote ids, raw HTML) gets the prefix `user-content-`, so a heading named "App" or raw `id="app"` can't clobber the app's own elements. Links keep the bare form (`#intro`, `#fn-1`) and the reader adds the prefix when resolving them.
 - A strict Tauri content security policy: no remote scripts; images only from `scrald-asset:`, `scrald-theme:`, and `data:` (plus remote origins when the user enables remote images for a document). Tauri's CSP is fixed at build time, so `img-src` permits `http:`/`https:` globally and the per-document gate is enforced by core and the sanitizer: no remote `src` reaches the page unless the user allowed remote images for that document.
 - The asset protocol only serves files resolved for the currently open documents and theme assets.
-- `theme.css` can style the page but cannot run code. Theme CSS `url()` references are limited to the theme's own assets and cached fonts.
+- `theme.css` can style the page but cannot run code. Theme CSS `url()` references are limited to the theme's own assets and cached fonts. As implemented: `@import` rules are removed, every `url()` is rewritten to point into the theme's folder (or to nothing if it would leave it), only `data:` URLs pass unchanged, and the `scrald-theme` scheme serves a file only if its canonical path is inside a user theme's folder. Font family names and ornament glyphs are escaped before they reach CSS.
 
 ---
 

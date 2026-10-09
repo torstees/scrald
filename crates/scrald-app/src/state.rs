@@ -45,6 +45,9 @@ const MIGRATIONS: &[&str] = &[
 /// Setting key for the most recently used window size (DESIGN.md §11).
 const LAST_WINDOW: &str = "window.last";
 
+/// Setting key for the global default theme id (DESIGN.md §7.6).
+pub const DEFAULT_THEME: &str = "theme.default";
+
 /// A reading position (DESIGN.md §4); mirrors `ScrollAnchor` in ui/src/reader/anchor.ts.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +65,8 @@ pub struct DocumentMemory {
     pub anchor: Option<ScrollAnchor>,
     /// Whether the user allowed remote images for this document.
     pub remote_images: bool,
+    /// Theme the user picked for this document in Scrald, if any.
+    pub theme: Option<String>,
 }
 
 /// A window's position and size in physical pixels, plus whether it was
@@ -153,7 +158,7 @@ impl StateStore {
         )?;
 
         let memory = conn.query_row(
-            "SELECT scroll_offset, scroll_fraction, remote_images FROM documents WHERE path = ?1",
+            "SELECT scroll_offset, scroll_fraction, remote_images, theme FROM documents WHERE path = ?1",
             [&key],
             |row| {
                 let offset: Option<i64> = row.get(0)?;
@@ -166,6 +171,7 @@ impl StateStore {
                 Ok(DocumentMemory {
                     anchor,
                     remote_images: row.get(2)?,
+                    theme: row.get(3)?,
                 })
             },
         )?;
@@ -184,6 +190,15 @@ impl StateStore {
         self.conn().execute(
             "UPDATE documents SET remote_images = ?2 WHERE path = ?1",
             params![document_key(path), allowed],
+        )?;
+        Ok(())
+    }
+
+    /// Sets (or with `None`, clears) the theme chosen for a document.
+    pub fn set_document_theme(&self, path: &Path, theme: Option<&str>) -> anyhow::Result<()> {
+        self.conn().execute(
+            "UPDATE documents SET theme = ?2 WHERE path = ?1",
+            params![document_key(path), theme],
         )?;
         Ok(())
     }
@@ -401,6 +416,21 @@ mod tests {
         let memory = store.record_open(&path).unwrap();
         assert_eq!(memory.anchor, Some(anchor));
         assert!(memory.remote_images);
+    }
+
+    #[test]
+    fn remembers_and_clears_document_theme() {
+        let dir = temp_dir("theme");
+        let path = doc(&dir, "a.md", "# A");
+        let store = StateStore::in_memory().unwrap();
+        store.record_open(&path).unwrap();
+        store.set_document_theme(&path, Some("sepia")).unwrap();
+        assert_eq!(
+            store.record_open(&path).unwrap().theme.as_deref(),
+            Some("sepia")
+        );
+        store.set_document_theme(&path, None).unwrap();
+        assert_eq!(store.record_open(&path).unwrap().theme, None);
     }
 
     #[test]

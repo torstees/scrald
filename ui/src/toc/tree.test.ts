@@ -3,7 +3,7 @@ import type { TocEntry } from "../lib/types";
 import { entryForHeadingBlock, hasChildren, nearestVisible, visibleEntries } from "./tree";
 
 function e(level: number, blockId: number): TocEntry {
-  return { level, text: `h${blockId}`, slug: `h${blockId}`, blockId };
+  return { level, text: `h${blockId}`, slug: `h${blockId}`, blockId, number: null };
 }
 
 // 0: H1, 1: H2, 2: H3, 3: H2, 4: H1, 5: H2
