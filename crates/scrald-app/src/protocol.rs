@@ -91,6 +91,11 @@ pub fn mime_for(path: &Path) -> &'static str {
         "svg" => "image/svg+xml",
         "bmp" => "image/bmp",
         "ico" => "image/x-icon",
+        "woff2" => "font/woff2",
+        "woff" => "font/woff",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
+        "css" => "text/css",
         _ => "application/octet-stream",
     }
 }

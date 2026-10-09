@@ -4,12 +4,14 @@
 //! and pass its tests on Windows, macOS, and Linux (see DESIGN.md §11.1).
 
 pub mod assets;
+pub mod config;
 pub mod document;
 pub mod frontmatter;
 pub mod generate;
 pub mod links;
 pub mod render;
 pub mod source;
+pub mod theme;
 pub mod toc;
 
 use std::path::{Path, PathBuf};

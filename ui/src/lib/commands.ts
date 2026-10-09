@@ -4,7 +4,14 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ScrollAnchor } from "../reader/anchor";
-import type { LaunchInfo, LinkTarget, OpenedDocument, RecentDocument } from "./types";
+import type {
+  LaunchInfo,
+  LinkTarget,
+  OpenedDocument,
+  RecentDocument,
+  ThemeStyle,
+  ThemeSummary,
+} from "./types";
 
 export function launchInfo(): Promise<LaunchInfo> {
   return invoke<LaunchInfo>("launch_info");
@@ -28,6 +35,40 @@ export function saveReadingPosition(path: string, anchor: ScrollAnchor): void {
 /** Remembers whether remote images may load for a document. */
 export function setRemoteImages(path: string, allowed: boolean): Promise<void> {
   return invoke("set_remote_images", { path, allowed });
+}
+
+/** Every theme, including broken user themes (with `error` set). */
+export function listThemes(): Promise<ThemeSummary[]> {
+  return invoke<ThemeSummary[]>("list_themes");
+}
+
+/** CSS and details for one theme. */
+export function themeStyle(id: string): Promise<ThemeStyle> {
+  return invoke<ThemeStyle>("theme_style", { id });
+}
+
+/** Sets a document's theme; `null` returns it to its default. */
+export function setDocumentTheme(path: string, id: string | null): Promise<void> {
+  return invoke("set_document_theme", { path, id });
+}
+
+export function setDefaultTheme(id: string): Promise<void> {
+  return invoke("set_default_theme", { id });
+}
+
+/** Copies a theme into the user theme folder; resolves to the new theme's id. */
+export function duplicateTheme(id: string): Promise<string> {
+  return invoke<string>("duplicate_theme", { id });
+}
+
+/** Where user themes live, or null if there's no such folder. */
+export function userThemeFolder(): Promise<string | null> {
+  return invoke<string | null>("user_theme_folder");
+}
+
+/** Calls `handler` whenever a file in the user theme folder changes. */
+export function onThemesChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen("themes-changed", () => handler());
 }
 
 /** Recently opened documents, newest (and pinned) first. */

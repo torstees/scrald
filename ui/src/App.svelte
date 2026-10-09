@@ -9,9 +9,19 @@
     resolveLink,
     saveReadingPosition,
     setRemoteImages,
+    listThemes,
+    themeStyle,
+    setDocumentTheme,
+    setDefaultTheme,
+    duplicateTheme,
+    userThemeFolder,
+    onThemesChanged,
   } from "./lib/commands";
+  import { afterPaint } from "./lib/idle";
   import { launchMessage } from "./lib/launch";
-  import type { DocumentModel } from "./lib/types";
+  import type { DocumentModel, ResolvedTheme, ThemeSummary } from "./lib/types";
+  import { applyTheme } from "./themes/apply";
+  import ThemeSwitcher from "./themes/ThemeSwitcher.svelte";
   import { NavHistory } from "./nav/history";
   import { TOP_ANCHOR, type ScrollAnchor } from "./reader/anchor";
   import Reader from "./reader/Reader.svelte";
@@ -29,6 +39,14 @@
   let reader: Reader | undefined = $state();
   let canGoBack = $state(false);
   let canGoForward = $state(false);
+
+  // The document's theme, and what's on screen (they differ while previewing).
+  let theme = $state<ResolvedTheme | null>(null);
+  let themeName = $state<string | null>(null);
+  let numbering = $state(false);
+  let switcherOpen = $state(false);
+  let themeList = $state<ThemeSummary[]>([]);
+  let themeFolder = $state<string | null>(null);
 
   const history = new NavHistory();
   // A heading slug to scroll to once a newly opened document is on screen.
@@ -51,7 +69,15 @@
     const unlisten = onDocumentChanged((path) => {
       if (doc && path === doc.path) void reload();
     });
-    return () => void unlisten.then((stop) => stop());
+    // Theme hot reload (DESIGN.md §7.1): re-apply when a user theme changes.
+    const unlistenThemes = onThemesChanged(() => {
+      if (theme && !switcherOpen) void showTheme(theme.id);
+      if (switcherOpen) void refreshThemeList();
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+      void unlistenThemes.then((stop) => stop());
+    };
   });
 
   async function start(): Promise<void> {
@@ -77,6 +103,10 @@
     try {
       const opened = await openDocument(path);
       reportTiming("ipc_open_document", performance.now() - openStarted);
+      // Apply the theme before the document renders, so it never flashes
+      // in the previous document's theme.
+      theme = opened.theme;
+      await showTheme(opened.theme.id, false);
       initialAnchor = anchor === "remembered" ? (opened.memory.anchor ?? TOP_ANCHOR) : anchor;
       assetToken = opened.assetToken;
       doc = opened.document;
@@ -178,6 +208,96 @@
     if (fragment !== null) void reader?.scrollToId(fragment);
   }
 
+  /**
+   * Puts theme `id` on screen. With `keepPlace`, the reading position is
+   * restored afterwards, since a new font or size reflows the text.
+   */
+  async function showTheme(id: string, keepPlace = true): Promise<void> {
+    const started = performance.now();
+    const anchor = keepPlace ? reader?.captureAnchor() : undefined;
+    try {
+      const style = await themeStyle(id);
+      applyTheme(style);
+      themeName = style.name;
+      numbering = style.numbering;
+    } catch (e) {
+      showNotice(`Could not load theme ${id}: ${String(e)}`);
+      return;
+    }
+    if (anchor) {
+      await afterPaint();
+      await reader?.scrollToAnchor(anchor);
+      reportTiming("theme_switch", performance.now() - started);
+    }
+  }
+
+  async function refreshThemeList(): Promise<void> {
+    themeList = await listThemes();
+  }
+
+  async function openSwitcher(): Promise<void> {
+    if (!doc || !theme) return;
+    await refreshThemeList();
+    themeFolder = await userThemeFolder();
+    switcherOpen = true;
+  }
+
+  function closeSwitcher(): void {
+    switcherOpen = false;
+  }
+
+  /** Keeps `id` as this document's theme. */
+  async function chooseTheme(id: string): Promise<void> {
+    if (!doc) return;
+    closeSwitcher();
+    try {
+      await setDocumentTheme(doc.path, id);
+      theme = { id, source: "document" };
+      await showTheme(id);
+    } catch (e) {
+      showNotice(`Could not save theme: ${String(e)}`);
+    }
+  }
+
+  async function makeDefaultTheme(id: string): Promise<void> {
+    closeSwitcher();
+    try {
+      await setDefaultTheme(id);
+      if (theme?.source === "default") theme = { id, source: "default" };
+      showNotice(
+        theme?.id === id
+          ? `${themeName ?? id} is now the default theme`
+          : `Default theme set; this document keeps its own theme`,
+      );
+      if (theme) await showTheme(theme.id);
+    } catch (e) {
+      showNotice(`Could not set default theme: ${String(e)}`);
+    }
+  }
+
+  /** Forgets this document's own theme choice and re-resolves it. */
+  async function resetTheme(): Promise<void> {
+    if (!doc) return;
+    closeSwitcher();
+    await setDocumentTheme(doc.path, null);
+    await reload();
+  }
+
+  async function duplicate(id: string): Promise<void> {
+    try {
+      const newId = await duplicateTheme(id);
+      await refreshThemeList();
+      showNotice(`Created theme "${newId}"${themeFolder ? ` in ${themeFolder}` : ""}`);
+    } catch (e) {
+      showNotice(`Could not duplicate theme: ${String(e)}`);
+    }
+  }
+
+  function cancelSwitcher(): void {
+    closeSwitcher();
+    if (theme) void showTheme(theme.id);
+  }
+
   function showNotice(text: string): void {
     notice = text;
     window.clearTimeout(noticeTimer);
@@ -185,7 +305,11 @@
   }
 
   function onKeydown(event: KeyboardEvent): void {
-    if (event.ctrlKey && event.key === "\\") {
+    if (switcherOpen) return;
+    if (event.ctrlKey && (event.key === "t" || event.key === "T")) {
+      event.preventDefault();
+      void openSwitcher();
+    } else if (event.ctrlKey && event.key === "\\") {
       event.preventDefault();
       tocVisible = !tocVisible;
     } else if (event.altKey && event.key === "ArrowLeft") {
@@ -219,7 +343,7 @@
 <div class="sk-app" class:with-toc={tocVisible && doc !== null}>
   {#if doc}
     {#if tocVisible}
-      <TocSidebar toc={doc.toc} current={currentEntry} onselect={selectTocEntry} />
+      <TocSidebar toc={doc.toc} current={currentEntry} onselect={selectTocEntry} {numbering} />
     {/if}
     <main class="sk-main">
       <Reader
@@ -245,7 +369,22 @@
       remoteImages={doc.remoteImages}
       remoteImagesAllowed={doc.remoteImagesAllowed}
       onallowremote={allowRemoteImages}
+      {themeName}
+      onthemeclick={openSwitcher}
     />
+    {#if switcherOpen && theme}
+      <ThemeSwitcher
+        themes={themeList}
+        current={theme}
+        folder={themeFolder}
+        onpreview={(id) => void showTheme(id)}
+        onchoose={chooseTheme}
+        onmakedefault={makeDefaultTheme}
+        onreset={resetTheme}
+        onduplicate={duplicate}
+        oncancel={cancelSwitcher}
+      />
+    {/if}
   {:else}
     <main class="sk-main sk-message">
       <h1>Scrald</h1>

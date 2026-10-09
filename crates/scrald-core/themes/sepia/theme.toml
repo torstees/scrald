@@ -1,0 +1,52 @@
+# Sepia: a book page for long-form reading. Narrower measure, generous
+# leading, ornamental breaks, and italic pull quotes.
+
+[meta]
+name = "Sepia"
+author = "Scrald"
+schema = 1
+appearance = "light"
+
+[colors]
+background    = "#f4ecd8"
+foreground    = "#433422"
+muted         = "#7b6a55"
+accent        = "#9c5b2e"
+link          = "#7a4a1f"
+selection     = "#e6d6b2"
+border        = "#ddcca6"
+code_bg       = "#ece0c4"
+quote_bar     = "#b9935e"
+highlight_bg  = "#d9a44a55"
+ui_background = "#ebe1c8"
+
+[palette]
+black   = "#433422"
+red     = "#9c3f2a"
+green   = "#5d6f2c"
+yellow  = "#9c5b2e"
+blue    = "#3f5f7a"
+magenta = "#7d4a63"
+cyan    = "#3f6f66"
+white   = "#e6d6b2"
+
+[fonts]
+body    = { family = "Palatino Linotype", fallback = ["Book Antiqua", "Palatino", "Georgia"] }
+heading = { family = "Palatino Linotype", fallback = ["Book Antiqua", "Palatino", "Georgia"] }
+
+[layout]
+measure = 62
+font_size = 19
+line_height = 1.7
+paragraph_spacing = 0.9
+
+[elements.blockquote]
+style = "pull-quote"
+italic = true
+
+[elements.hr]
+style = "ornament"
+glyph = "❧"
+
+[elements.headings]
+h1_rule = false

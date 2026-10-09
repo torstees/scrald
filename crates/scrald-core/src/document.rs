@@ -13,7 +13,7 @@ use crate::assets::{self, AssetContext, ImageAsset, Resolved};
 use crate::frontmatter::{self, FrontMatter};
 use crate::render::{self, Renderer};
 use crate::source::{self, LineEnding, LineIndex, SourceRange};
-use crate::toc::{Slugger, TocEntry};
+use crate::toc::{self, Slugger, TocEntry};
 
 /// Everything the reader needs to display a document.
 #[derive(Debug, Clone, Serialize)]
@@ -231,6 +231,7 @@ pub fn parse_document_with(
                 text: heading,
                 slug,
                 block_id: id,
+                number: None,
             });
             sections.push(Section {
                 id: sections.len() as u32,
@@ -268,6 +269,15 @@ pub fn parse_document_with(
             hash: hash_text(source_text),
             section,
         });
+    }
+
+    // Outline numbers need every heading, so they're added afterwards.
+    let levels: Vec<u8> = toc.iter().map(|entry| entry.level).collect();
+    for (entry, number) in toc.iter_mut().zip(toc::number_headings(&levels)) {
+        if let (Some(n), Some(block)) = (&number, blocks.get_mut(entry.block_id as usize)) {
+            block.html = render::add_heading_number(&block.html, entry.level, n);
+        }
+        entry.number = number;
     }
 
     Ok(DocumentModel {
@@ -587,11 +597,19 @@ mod tests {
                 ("code & more", "code--more")
             ]
         );
+        // The lone H1 is the title (unnumbered); the H2s are 1 and 2.
+        assert!(
+            doc.blocks[0]
+                .html
+                .starts_with("<h1 id=\"user-content-intro\">")
+        );
         assert!(
             doc.blocks[1]
                 .html
-                .starts_with("<h2 id=\"user-content-intro-1\">")
+                .starts_with("<h2 data-number=\"1\" id=\"user-content-intro-1\">")
         );
+        let numbers: Vec<Option<&str>> = doc.toc.iter().map(|t| t.number.as_deref()).collect();
+        assert_eq!(numbers, [None, Some("1"), Some("2")]);
     }
 
     #[test]

@@ -15,6 +15,9 @@
     remoteImages: number;
     remoteImagesAllowed: boolean;
     onallowremote: () => void;
+    /** Name of the document's theme; clicking it opens the switcher. */
+    themeName: string | null;
+    onthemeclick: () => void;
   }
 
   let {
@@ -28,6 +31,8 @@
     remoteImages,
     remoteImagesAllowed,
     onallowremote,
+    themeName,
+    onthemeclick,
   }: Props = $props();
 </script>
 
@@ -48,6 +53,9 @@
       {remoteImages} remote {remoteImages === 1 ? "image" : "images"} blocked
       <button class="load" onclick={onallowremote} title="Load remote images for this document">Load</button>
     </span>
+  {/if}
+  {#if themeName}
+    <button class="theme" onclick={onthemeclick} title="Change theme (Ctrl+T)">{themeName}</button>
   {/if}
   <span>{formatWordCount(wordCount)}</span>
   <span title="Estimated reading time">{formatReadingTime(wordCount)}</span>
@@ -92,6 +100,16 @@
     font-size: 1rem;
     line-height: 1;
     padding: 0 0.35em 0.1em;
+  }
+
+  .theme {
+    border-color: transparent;
+    color: var(--sk-color-muted);
+  }
+
+  .theme:hover {
+    border-color: var(--sk-color-border);
+    color: var(--sk-color-foreground);
   }
 
   .load {

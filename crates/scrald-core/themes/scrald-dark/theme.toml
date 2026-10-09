@@ -1,0 +1,54 @@
+# Scrald Dark: the default dark theme. Soft contrast for long evenings.
+
+[meta]
+name = "Scrald Dark"
+author = "Scrald"
+schema = 1
+appearance = "dark"
+
+[colors]
+background    = "#22211f"
+foreground    = "#e6e1d6"
+muted         = "#9a958a"
+accent        = "#d6a463"
+link          = "#8fb6d9"
+selection     = "#3a3832"
+border        = "#3a3832"
+code_bg       = "#2c2a27"
+quote_bar     = "#6e6250"
+highlight_bg  = "#d6a46344"
+ui_background = "#1c1b19"
+
+[palette]
+black   = "#2c2a27"
+red     = "#d77a6a"
+green   = "#9cbf7f"
+yellow  = "#d6a463"
+blue    = "#8fb6d9"
+magenta = "#c39ac9"
+cyan    = "#86c1bd"
+white   = "#e6e1d6"
+bright_black   = "#6e6a62"
+bright_red     = "#e8968a"
+bright_green   = "#b3d498"
+bright_yellow  = "#e8bf86"
+bright_blue    = "#acc9e6"
+bright_magenta = "#d6b4db"
+bright_cyan    = "#a3d5d1"
+bright_white   = "#f6f2ea"
+
+[fonts]
+body = { family = "Iowan Old Style", fallback = ["Charter", "Georgia"] }
+mono = { family = "Cascadia Code", fallback = ["Consolas", "SF Mono", "Menlo"] }
+
+[layout]
+measure = 66
+font_size = 18
+line_height = 1.65
+
+[elements.blockquote]
+style = "bar"
+
+[elements.hr]
+style = "ornament"
+glyph = "❦"

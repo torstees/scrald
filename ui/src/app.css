@@ -1,6 +1,7 @@
 /*
- * Placeholder theme tokens until real themes arrive in M3 (DESIGN.md §7.2).
- * Components use only these --sk-* variables, never literal colors or fonts.
+ * Fallback theme tokens, used only until the document's theme is applied
+ * (themes/apply.ts injects the real ones). Components use only these --sk-*
+ * variables, never literal colors or fonts.
  */
 :root {
   /* Lets scrollbars and form controls follow the theme's light/dark appearance. */
@@ -113,17 +114,7 @@ body {
   padding: 0;
 }
 
-.sk-block blockquote {
-  border-left: 3px solid var(--sk-color-quote-bar);
-  padding-left: 1em;
-  color: var(--sk-color-muted);
-}
-
-.sk-block hr {
-  border: none;
-  border-top: 1px solid var(--sk-color-border);
-  margin: 2em 0;
-}
+/* Blockquote and hr styles come from the theme's [elements.*] (see theme/css.rs). */
 
 .sk-block table {
   border-collapse: collapse;

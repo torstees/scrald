@@ -133,6 +133,19 @@ pub fn add_heading_id(html: &str, level: u8, slug: &str) -> String {
     }
 }
 
+/// Adds `data-number="2.1"` to a heading that already has its id (see
+/// `add_heading_id`). Themes that number headings show it with CSS.
+pub fn add_heading_number(html: &str, level: u8, number: &str) -> String {
+    let open = format!("<h{level} id=");
+    match html.strip_prefix(&open) {
+        Some(rest) => format!(
+            "<h{level} data-number=\"{}\" id={rest}",
+            escape_text(number)
+        ),
+        None => html.to_string(),
+    }
+}
+
 /// Escapes text for use inside HTML.
 pub fn escape_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());

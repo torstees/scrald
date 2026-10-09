@@ -23,6 +23,8 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 insta = { version = "1.49.0", features = ["glob"] }
 criterion = "0.8.2"
 thiserror = "2.0.21"
+toml = "1.1"
+fontdb = "0.24.0"
 tracing = "0.1.44"
 notify-debouncer-mini = "0.7.0"
 tauri-plugin-opener = "2.7.0"
