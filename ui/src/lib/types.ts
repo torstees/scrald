@@ -1,4 +1,5 @@
 import type { ScrollAnchor } from "../reader/anchor";
+import type { TextSizing } from "../typography/typography";
 
 // TypeScript mirrors of the Tauri command payloads (crates/scrald-app/src/commands.rs)
 // and the core document model (crates/scrald-core/src/document.rs and friends).
@@ -134,6 +135,26 @@ export interface DocumentMemory {
   remoteImages: boolean;
   /** Theme the user picked for this document in Scrald, if any. */
   theme: string | null;
+  /** Text sizing mode chosen for this document, if any. */
+  textSizing: TextSizing | null;
+  /** Zoom chosen for this document, if any. */
+  zoom: number | null;
+}
+
+/** Mirrors `TypographyDefaults` (crates/scrald-app/src/state.rs). */
+export interface TypographyDefaults {
+  textSizing: TextSizing | null;
+  zoom: number | null;
+  fillWindow: boolean;
+}
+
+/** Mirrors `ThemeLayout` (crates/scrald-app/src/commands.rs). */
+export interface ThemeLayout {
+  measure: number;
+  fontSize: number;
+  minFontSize: number;
+  maxFontSize: number;
+  textSizing: TextSizing;
 }
 
 /** Mirrors `Appearance` (crates/scrald-core/src/theme/schema.rs). */
@@ -169,6 +190,7 @@ export interface ThemeStyle {
   appearance: Appearance;
   css: string;
   numbering: boolean;
+  layout: ThemeLayout;
 }
 
 /** Mirrors `RecentDocument` (crates/scrald-app/src/state.rs). */

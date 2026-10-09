@@ -11,7 +11,9 @@ import type {
   RecentDocument,
   ThemeStyle,
   ThemeSummary,
+  TypographyDefaults,
 } from "./types";
+import type { TextSizing } from "../typography/typography";
 
 export function launchInfo(): Promise<LaunchInfo> {
   return invoke<LaunchInfo>("launch_info");
@@ -69,6 +71,21 @@ export function userThemeFolder(): Promise<string | null> {
 /** Calls `handler` whenever a file in the user theme folder changes. */
 export function onThemesChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("themes-changed", () => handler());
+}
+
+/** Remembers a document's text sizing mode and zoom; `null` clears either. Never throws. */
+export function setDocumentTypography(path: string, textSizing: TextSizing | null, zoom: number | null): void {
+  invoke("set_document_typography", { path, textSizing, zoom }).catch((e: unknown) => {
+    console.warn("could not save typography", e);
+  });
+}
+
+export function typographyDefaults(): Promise<TypographyDefaults> {
+  return invoke<TypographyDefaults>("typography_defaults");
+}
+
+export function setTypographyDefaults(defaults: TypographyDefaults): Promise<void> {
+  return invoke("set_typography_defaults", { defaults });
 }
 
 /** Recently opened documents, newest (and pinned) first. */

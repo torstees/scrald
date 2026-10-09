@@ -7,14 +7,16 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Context;
-use scrald_core::theme::{Appearance, ThemeSource, ThemeSummary, resolve_theme};
+use scrald_core::theme::{Appearance, TextSizing, ThemeSource, ThemeSummary, resolve_theme};
 use scrald_core::{DocumentModel, LinkTarget, ParseOptions};
 use serde::Serialize;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::AssetRegistry;
-use crate::state::{DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore};
+use crate::state::{
+    DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore, TypographyDefaults,
+};
 use crate::themes::ThemeService;
 use crate::watcher::DocumentWatchers;
 use crate::window::WindowTracker;
@@ -68,6 +70,20 @@ pub struct ThemeStyle {
     pub css: String,
     /// Whether the theme numbers headings (the TOC shows numbers too).
     pub numbering: bool,
+    /// Layout numbers the frontend needs for text sizing and zoom.
+    pub layout: ThemeLayout,
+}
+
+/// The theme's `[layout]` values used by fit mode and zoom (DESIGN.md §7.4).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeLayout {
+    pub measure: u32,
+    pub font_size: f32,
+    pub min_font_size: f32,
+    pub max_font_size: f32,
+    /// The theme's suggested text sizing mode.
+    pub text_sizing: TextSizing,
 }
 
 /// Reads and parses a Markdown file, registers its images for serving, and
@@ -199,8 +215,43 @@ pub fn theme_style(
         name: theme.file.meta.name.clone(),
         appearance: theme.file.meta.appearance,
         numbering: theme.file.elements.headings.numbering,
+        layout: ThemeLayout {
+            measure: theme.file.layout.measure,
+            font_size: theme.file.layout.font_size,
+            min_font_size: theme.file.layout.min_font_size,
+            max_font_size: theme.file.layout.max_font_size,
+            text_sizing: theme.file.layout.text_sizing,
+        },
         id: theme.id,
     })
+}
+
+/// Sets a document's text sizing mode and zoom; `null` clears either, so the
+/// global default (or the theme's suggestion) applies again.
+#[tauri::command]
+pub fn set_document_typography(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+    text_sizing: Option<TextSizing>,
+    zoom: Option<f64>,
+) -> Result<(), CommandError> {
+    Ok(store.set_document_typography(&path, text_sizing, zoom)?)
+}
+
+/// Global typography settings ("Make this the default" and "fill window").
+#[tauri::command]
+pub fn typography_defaults(
+    store: tauri::State<'_, StateStore>,
+) -> Result<TypographyDefaults, CommandError> {
+    Ok(store.typography_defaults()?)
+}
+
+#[tauri::command]
+pub fn set_typography_defaults(
+    store: tauri::State<'_, StateStore>,
+    defaults: TypographyDefaults,
+) -> Result<(), CommandError> {
+    Ok(store.set_typography_defaults(defaults)?)
 }
 
 /// Sets the theme for one document, or with `null` returns it to its

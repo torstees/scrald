@@ -18,6 +18,9 @@
     /** Name of the document's theme; clicking it opens the switcher. */
     themeName: string | null;
     onthemeclick: () => void;
+    /** Text sizing and zoom summary; clicking it opens the typography panel. */
+    typography: string;
+    ontypographyclick: () => void;
   }
 
   let {
@@ -33,6 +36,8 @@
     onallowremote,
     themeName,
     onthemeclick,
+    typography,
+    ontypographyclick,
   }: Props = $props();
 </script>
 
@@ -57,6 +62,9 @@
   {#if themeName}
     <button class="theme" onclick={onthemeclick} title="Change theme (Ctrl+T)">{themeName}</button>
   {/if}
+  <button class="theme" data-typography-toggle onclick={ontypographyclick} title="Text size and zoom (Ctrl+wheel, Ctrl+=, Ctrl+−, Ctrl+0)"
+    >{typography}</button
+  >
   <span>{formatWordCount(wordCount)}</span>
   <span title="Estimated reading time">{formatReadingTime(wordCount)}</span>
 </footer>
