@@ -22,6 +22,7 @@
   import { launchMessage } from "./lib/launch";
   import type { DocumentModel, Flavor, ResolvedTheme, ThemeSummary } from "./lib/types";
   import { applyTheme } from "./themes/apply";
+  import { refreshRichForTheme } from "./render/renderers";
   import ThemeSwitcher from "./themes/ThemeSwitcher.svelte";
   import { NavHistory } from "./nav/history";
   import { TOP_ANCHOR, type ScrollAnchor } from "./reader/anchor";
@@ -265,6 +266,8 @@
     try {
       const style = await themeStyle(id);
       applyTheme(style);
+      // Diagrams and music carry the old theme's colors; redraw them.
+      void refreshRichForTheme();
       themeName = style.name;
       numbering = style.numbering;
       typography.setTheme(style.layout);

@@ -3,7 +3,7 @@ source: crates/scrald-core/tests/snapshots.rs
 expression: describe(&doc)
 input_file: crates/scrald-core/tests/fixtures/crlf-bom.md
 ---
-bom: true  line_ending: Crlf  words: 15  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true }
+bom: true  line_ending: Crlf  words: 15  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true, has_abc: false }
 flavor: Gfm (Default)
 front_matter: {
   "range": {

@@ -1,0 +1,39 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: describe(&doc)
+input_file: crates/scrald-core/tests/fixtures/abc.md
+---
+bom: false  line_ending: Lf  words: 11  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true, has_abc: true }
+flavor: Gfm (Default)
+toc: Music #music (block 0)
+section 0: heading=Some(0) level=1 blocks=0..6
+
+--- block 0 Heading { level: 1 } @0..7 section=0
+<h1 id="user-content-music">Music</h1>
+
+--- block 1 Paragraph @9..34 section=0
+<p>A full tune with headers:</p>
+
+--- block 2 CodeBlock { language: Some("abc") } @36..158 section=0
+<pre><code class="language-abc">X:1
+T:The Abbey
+R:reel
+M:4/4
+N:Arranged for Flute
+Q:1/2=40
+K:Ador
+|"Am"A3B A2GE|A2GA BddB|A3B AGEF|"G"G3A BddB|
+</code></pre>
+
+--- block 3 Paragraph @160..192 section=0
+<p>A snippet with violin tablature:</p>
+
+--- block 4 CodeBlock { language: Some("abc") } @194..275 section=0
+<pre><code class="language-abc">{"tablature": [{"instrument": "violin"}]}
+---
+|"Am"A3B A2GE|A2GA BddB|
+</code></pre>
+
+--- block 5 CodeBlock { language: Some("rust") } @277..306 section=0
+<pre><code class="language-rust sk-highlighted"><span class="sk-hl-source sk-hl-rust"><span class="sk-hl-storage sk-hl-type sk-hl-rust">let</span> tune <span class="sk-hl-keyword sk-hl-operator sk-hl-rust">=</span> <span class="sk-hl-string sk-hl-quoted sk-hl-double sk-hl-rust"><span class="sk-hl-punctuation sk-hl-definition sk-hl-string sk-hl-begin sk-hl-rust">"</span>abc<span class="sk-hl-punctuation sk-hl-definition sk-hl-string sk-hl-end sk-hl-rust">"</span></span><span class="sk-hl-punctuation sk-hl-terminator sk-hl-rust">;</span>
+</span></code></pre>

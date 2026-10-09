@@ -9,6 +9,7 @@ pub mod document;
 pub mod flavor;
 pub mod frontmatter;
 pub mod generate;
+pub mod highlight;
 pub mod links;
 pub mod render;
 pub mod source;

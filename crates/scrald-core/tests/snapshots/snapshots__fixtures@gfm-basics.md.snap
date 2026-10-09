@@ -3,7 +3,7 @@ source: crates/scrald-core/tests/snapshots.rs
 expression: describe(&doc)
 input_file: crates/scrald-core/tests/fixtures/gfm-basics.md
 ---
-bom: false  line_ending: Lf  words: 50  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true }
+bom: false  line_ending: Lf  words: 50  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true, has_abc: false }
 flavor: Gfm (Default)
 toc: GFM Basics #gfm-basics (block 0)
 toc:   Setext Heading #setext-heading (block 2)
@@ -53,10 +53,10 @@ spanning two lines.</p>
 <hr>
 
 --- block 8 CodeBlock { language: Some("rust") } @387..435 section=1
-<pre><code class="language-rust">fn main() {
-    println!("skål");
-}
-</code></pre>
+<pre><code class="language-rust sk-highlighted"><span class="sk-hl-source sk-hl-rust"><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-storage sk-hl-type sk-hl-function sk-hl-rust">fn</span> </span><span class="sk-hl-entity sk-hl-name sk-hl-function sk-hl-rust">main</span></span><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-meta sk-hl-function sk-hl-parameters sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-parameters sk-hl-begin sk-hl-rust">(</span></span><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-meta sk-hl-function sk-hl-parameters sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-parameters sk-hl-end sk-hl-rust">)</span></span></span></span><span class="sk-hl-meta sk-hl-function sk-hl-rust"> </span><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-meta sk-hl-block sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-block sk-hl-begin sk-hl-rust">{</span>
+    <span class="sk-hl-support sk-hl-macro sk-hl-rust">println!</span><span class="sk-hl-meta sk-hl-group sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-group sk-hl-begin sk-hl-rust">(</span></span><span class="sk-hl-meta sk-hl-group sk-hl-rust"><span class="sk-hl-string sk-hl-quoted sk-hl-double sk-hl-rust"><span class="sk-hl-punctuation sk-hl-definition sk-hl-string sk-hl-begin sk-hl-rust">"</span>skål<span class="sk-hl-punctuation sk-hl-definition sk-hl-string sk-hl-end sk-hl-rust">"</span></span></span><span class="sk-hl-meta sk-hl-group sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-group sk-hl-end sk-hl-rust">)</span></span><span class="sk-hl-punctuation sk-hl-terminator sk-hl-rust">;</span>
+</span><span class="sk-hl-meta sk-hl-block sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-block sk-hl-end sk-hl-rust">}</span></span></span>
+</span></code></pre>
 
 --- block 9 CodeBlock { language: None } @437..460 section=1
 <pre><code>indented code block

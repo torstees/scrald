@@ -7,6 +7,7 @@
   import type { DocumentModel } from "../lib/types";
   import { assetUrl } from "../lib/commands";
   import { contentId } from "../lib/ids";
+  import { richContent } from "../render/renderers";
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
   import { batchByBlocks, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
   import { blockIndexAtOffset, firstBoxBelow, fractionInto, TOP_ANCHOR, type ScrollAnchor } from "./anchor";
@@ -279,13 +280,15 @@
    * Svelte action: points a block's local images at the asset protocol.
    * Core emits `<img data-asset="id">` without a `src` (DESIGN.md §6.2).
    */
-  function assetImages(node: HTMLElement, token: number) {
-    const apply = (t: number) => {
+  function assetImages(node: HTMLElement, params: { token: number; html: string }) {
+    // Runs again whenever the token or the block's HTML changes: a live
+    // reload keeps the element but replaces its HTML, dropping the srcs.
+    const apply = ({ token }: { token: number; html: string }) => {
       for (const img of node.querySelectorAll<HTMLImageElement>("img[data-asset]")) {
-        img.src = assetUrl(t, Number(img.dataset.asset));
+        img.src = assetUrl(token, Number(img.dataset.asset));
       }
     };
-    apply(token);
+    apply(params);
     return { update: apply };
   }
 
@@ -334,7 +337,9 @@
         >
           {#each sectionBlocks(doc, section) as block (block.id)}
             <!-- Block.html is sanitized by core (ammonia); it's the only HTML we insert. -->
-            <div class="sk-block" data-block={block.id} use:assetImages={assetToken}>{@html block.html}</div>
+            <div class="sk-block" data-block={block.id} use:assetImages={{ token: assetToken, html: block.html }} use:richContent={block.html}
+              >{@html block.html}</div
+            >
           {/each}
         </section>
       {:else}

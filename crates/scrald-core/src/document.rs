@@ -5,13 +5,14 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use comrak::nodes::{ListType, Node, NodeValue};
+use comrak::nodes::{ListType, Node, NodeHtmlBlock, NodeValue};
 use serde::Serialize;
 
 use crate::DocumentError;
 use crate::assets::{self, AssetContext, ImageAsset, Resolved};
 use crate::flavor::{self, Flavor, FlavorSource};
 use crate::frontmatter::{self, FrontMatter};
+use crate::highlight;
 use crate::render::{self, Renderer};
 use crate::source::{self, LineEnding, LineIndex, SourceRange};
 use crate::toc::{self, Slugger, TocEntry};
@@ -132,6 +133,8 @@ pub struct FeatureFlags {
     pub has_math: bool,
     pub has_mermaid: bool,
     pub has_code: bool,
+    /// ABC music notation in ```abc fences (rendered with abcjs).
+    pub has_abc: bool,
 }
 
 /// Reads and parses a document from disk.
@@ -256,8 +259,14 @@ pub fn parse_document_with(
             word_count += count_words(node);
             update_features(node, &mut features);
             images.rewrite(node, &asset_ctx);
+            highlight_code_blocks(node);
         }
         let mut html = renderer.render_group(group, &options);
+        if kind == BlockKind::Table {
+            // Wide tables scroll sideways in their own box instead of
+            // widening the page (DESIGN.md §6.3).
+            html = format!("<div class=\"sk-table\">{html}</div>");
+        }
 
         if let (BlockKind::Heading { level }, Some(heading)) = (&kind, heading_text) {
             let level = *level;
@@ -496,6 +505,34 @@ fn count_tags(html: &str, prefix: &str) -> i32 {
         .count() as i32
 }
 
+/// Replaces fenced code in a known language with syntax-highlighted HTML
+/// (class-based; colors come from the theme). Unknown languages, frontend-
+/// rendered fences (math, mermaid, abc), and very large blocks stay as they are.
+fn highlight_code_blocks(node: Node<'_>) {
+    let code_nodes: Vec<Node<'_>> = node
+        .descendants()
+        .filter(|n| matches!(n.data().value, NodeValue::CodeBlock(_)))
+        .collect();
+    for code_node in code_nodes {
+        let highlighted = match &code_node.data().value {
+            NodeValue::CodeBlock(code) => code_language(&code.info).and_then(|language| {
+                highlight::highlight(&code.literal, &language).map(|spans| (language, spans))
+            }),
+            _ => None,
+        };
+        if let Some((language, spans)) = highlighted {
+            let literal = format!(
+                "<pre><code class=\"language-{} sk-highlighted\">{spans}</code></pre>\n",
+                render::escape_text(&language)
+            );
+            code_node.data_mut().value = NodeValue::HtmlBlock(NodeHtmlBlock {
+                block_type: 0,
+                literal,
+            });
+        }
+    }
+}
+
 /// A footnote definition comrak generated for an inline footnote (`^[...]`).
 fn is_generated_footnote(node: Node<'_>) -> bool {
     matches!(&node.data().value, NodeValue::FootnoteDefinition(def) if def.name.starts_with("__inline_"))
@@ -558,8 +595,10 @@ fn update_features(node: Node<'_>, features: &mut FeatureFlags) {
             NodeValue::Math(_) => features.has_math = true,
             NodeValue::CodeBlock(code) => {
                 features.has_code = true;
-                if code_language(&code.info).as_deref() == Some("mermaid") {
-                    features.has_mermaid = true;
+                match code_language(&code.info).as_deref() {
+                    Some("mermaid") => features.has_mermaid = true,
+                    Some("abc") => features.has_abc = true,
+                    _ => {}
                 }
             }
             _ => {}
