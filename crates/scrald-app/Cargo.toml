@@ -23,6 +23,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 tauri = { version = "2.12.1", features = [] }
 notify-debouncer-mini.workspace = true
+rusqlite.workspace = true
 tauri-plugin-opener.workspace = true
 
 [lints]

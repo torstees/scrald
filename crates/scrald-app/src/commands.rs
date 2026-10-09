@@ -13,7 +13,9 @@ use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::AssetRegistry;
+use crate::state::{DocumentMemory, RecentDocument, ScrollAnchor, StateStore};
 use crate::watcher::DocumentWatchers;
+use crate::window::WindowTracker;
 
 /// An error returned to the frontend, where it arrives as a rejected promise
 /// with this message.
@@ -39,6 +41,8 @@ pub struct OpenedDocument {
     /// Prefix for `scrald-asset` URLs: image `id` is at `<assetToken>-<id>`.
     pub asset_token: u64,
     pub document: DocumentModel,
+    /// What Scrald remembers about this document from earlier sessions.
+    pub memory: DocumentMemory,
 }
 
 /// Reads and parses a Markdown file, registers its images for serving, and
@@ -53,13 +57,24 @@ pub async fn open_document(
     window: tauri::WebviewWindow,
     registry: tauri::State<'_, AssetRegistry>,
     watchers: tauri::State<'_, DocumentWatchers>,
+    store: tauri::State<'_, StateStore>,
+    tracker: tauri::State<'_, WindowTracker>,
     path: PathBuf,
-    allow_remote_images: bool,
 ) -> Result<OpenedDocument, CommandError> {
     let started = Instant::now();
+    // Remembering is a convenience: a database problem never blocks reading.
+    let memory = store.record_open(&path).unwrap_or_else(|error| {
+        tracing::warn!(
+            error = format!("{error:#}"),
+            "could not read document state"
+        );
+        DocumentMemory::default()
+    });
+    tracker.set_document(window.label(), &path);
+
     let load_path = path.clone();
     let options = ParseOptions {
-        allow_remote_images,
+        allow_remote_images: memory.remote_images,
     };
     // Rust note: `move` makes the closure take ownership of `load_path` and
     // `options`, so it can run on another thread after this function's locals
@@ -97,7 +112,38 @@ pub async fn open_document(
     Ok(OpenedDocument {
         asset_token,
         document: doc,
+        memory,
     })
+}
+
+/// Remembers where the reader is in a document.
+#[tauri::command]
+pub fn save_reading_position(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+    anchor: ScrollAnchor,
+) -> Result<(), CommandError> {
+    Ok(store.save_reading_position(&path, anchor)?)
+}
+
+/// Remembers whether remote images may load for a document. The frontend
+/// reopens the document afterwards to apply it.
+#[tauri::command]
+pub fn set_remote_images(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+    allowed: bool,
+) -> Result<(), CommandError> {
+    Ok(store.set_remote_images(&path, allowed)?)
+}
+
+/// Recently opened documents, newest first (pinned first). For the start screen.
+#[tauri::command]
+pub fn recent_documents(
+    store: tauri::State<'_, StateStore>,
+    limit: usize,
+) -> Result<Vec<RecentDocument>, CommandError> {
+    Ok(store.recent_documents(limit)?)
 }
 
 /// Classifies a link clicked in the document at `document`.

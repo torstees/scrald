@@ -1,3 +1,5 @@
+import type { ScrollAnchor } from "../reader/anchor";
+
 // TypeScript mirrors of the Tauri command payloads (crates/scrald-app/src/commands.rs)
 // and the core document model (crates/scrald-core/src/document.rs and friends).
 // Keep these in sync with the Rust types; all use serde `rename_all = "camelCase"`.
@@ -122,9 +124,27 @@ export type LinkTarget =
   | { kind: "localFile"; path: string }
   | { kind: "unsupported"; href: string };
 
+/** Mirrors `DocumentMemory` (crates/scrald-app/src/state.rs). */
+export interface DocumentMemory {
+  /** Where the reader left off, if the document was opened before. */
+  anchor: ScrollAnchor | null;
+  /** Whether the user allowed remote images for this document. */
+  remoteImages: boolean;
+}
+
+/** Mirrors `RecentDocument` (crates/scrald-app/src/state.rs). */
+export interface RecentDocument {
+  path: string;
+  /** Unix time in milliseconds. */
+  lastOpened: number;
+  pinned: boolean;
+}
+
 /** Mirrors `OpenedDocument` (crates/scrald-app/src/commands.rs). */
 export interface OpenedDocument {
   /** Image `id` is served at the asset URL for `${assetToken}-${id}`. */
   assetToken: number;
   document: DocumentModel;
+  /** What Scrald remembers about this document from earlier sessions. */
+  memory: DocumentMemory;
 }

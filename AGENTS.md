@@ -128,7 +128,7 @@ Each completed chunk of work (usually a few related sub-issues) goes up as a pul
 - **YAML front matter** is edited with minimal text edits, never by parsing and re-serializing the whole block.
 - **Security.** All rendered HTML is sanitized. The asset protocol serves only resolved document assets and theme assets. No remote scripts, ever.
 - **Performance.** Before and after changes to parsing, rendering, or the reader's DOM structure, check the large fixtures. Don't introduce whole-document work on the frontend's main thread.
-- **Don't modify files outside the repository** and never run the app against the maintainer's real documents in automated steps. Use fixtures.
+- **Don't modify files outside the repository** and never run the app against the maintainer's real documents in automated steps. Use fixtures, and set `SCRALD_DATA_DIR=target/test-data` when launching the app so its state database (recent documents, positions, window geometry) stays out of the maintainer's real app data.
 
 ## When in doubt
 

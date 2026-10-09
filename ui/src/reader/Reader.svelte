@@ -24,10 +24,24 @@
     onfullymounted?: () => void;
     /** Called for clicks on links that aren't in-document anchors. */
     onlink?: (href: string) => void;
+    /** Called once scrolling has stopped for a moment (to save the position). */
+    onscrollsettled?: () => void;
   }
 
-  let { doc, assetToken, initialAnchor = TOP_ANCHOR, onsectionchange, onfirstscreen, onfullymounted, onlink }: Props =
-    $props();
+  let {
+    doc,
+    assetToken,
+    initialAnchor = TOP_ANCHOR,
+    onsectionchange,
+    onfirstscreen,
+    onfullymounted,
+    onlink,
+    onscrollsettled,
+  }: Props = $props();
+
+  /** How long scrolling must pause before the position counts as settled. */
+  const SETTLE_MS = 700;
+  let settleTimer = 0;
 
   /** Blocks per idle-time mount batch: enough to finish quickly, small enough not to jank. */
   const BLOCKS_PER_BATCH = 250;
@@ -153,6 +167,8 @@
   }
 
   function onScroll(): void {
+    window.clearTimeout(settleTimer);
+    settleTimer = window.setTimeout(() => onscrollsettled?.(), SETTLE_MS);
     if (scrollFrame) return;
     scrollFrame = requestAnimationFrame(() => {
       scrollFrame = 0;
