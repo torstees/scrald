@@ -406,7 +406,7 @@ The switcher offers "Save to document," which writes `scrald-theme` into the fro
 
 Scrald reads common keys at the top level so documents stay compatible with Obsidian, Hugo, Jekyll, and Pandoc. App-specific settings use flat, top-level keys with a `scrald-` prefix.
 
-Flat keys were chosen over a nested `scrald:` map for two reasons. Obsidian's Properties panel only handles flat values (text, lists, numbers, checkboxes, dates), so a nested map displays awkwardly and can't be edited there, while `scrald-theme` appears as an ordinary text property. Flat keys are also plain top-level scalars, so the minimal-edit YAML engine (section 8.3) never has to edit inside a nested map.
+Flat keys were chosen over a nested `scrald:` map for two reasons. Obsidian's Properties panel only handles flat values (text, lists, numbers, checkboxes, dates), so a nested map can't be edited there (confirmed manually, 2026-10-08: the nested map was shown read-only, the flat keys as ordinary editable text properties). Flat keys are also plain top-level scalars, so the minimal-edit YAML engine (section 8.3) never has to edit inside a nested map.
 
 ```yaml
 ---
@@ -445,6 +445,8 @@ A collapsible panel at the top of the document, collapsed by default when empty 
 ### 8.3 Editing YAML without damaging it
 
 Re-serializing YAML through a parser loses comments, key order, and quoting style. Scrald instead performs **minimal text edits** on the front matter block: it locates the line range for a given key and rewrites only that key's value. Supported edit types are scalar values, flow lists (`[a, b]`), and block lists (`- a`). If a key's existing formatting is too complex to edit safely, such as anchors or multi-document YAML, the panel shows it read-only with an "edit in raw mode" link.
+
+**Interaction with Obsidian.** Obsidian does *not* edit minimally: when a property is changed in its Properties panel, it rewrites the whole front matter block. Observed 2026-10-08: comments were dropped and the flow list `tags: [a, b]` became a block list, while key order and the (read-only) nested map were preserved. So Scrald's minimal edits only protect files from Scrald itself, and files from Obsidian vaults will commonly use block lists with no comments. The YAML editor must handle both list styles equally well, and Scrald's own edits should keep whichever style a key already uses.
 
 ---
 
