@@ -8,15 +8,15 @@ toc: Footnotes #footnotes (block 0)
 section 0: heading=Some(0) level=1 blocks=0..5
 
 --- block 0 Heading { level: 1 } @0..11 section=0
-<h1 id="footnotes">Footnotes</h1>
+<h1 id="user-content-footnotes">Footnotes</h1>
 
 --- block 1 Paragraph @13..66 section=0
-<p>A claim that needs support.<sup class="footnote-ref"><a href="#fn-source" id="fnref-source" data-footnote-ref="" rel="noopener noreferrer">1</a></sup> Another one.<sup class="footnote-ref"><a href="#fn-2" id="fnref-2" data-footnote-ref="" rel="noopener noreferrer">2</a></sup></p>
+<p>A claim that needs support.<sup class="footnote-ref"><a href="#fn-source" id="user-content-fnref-source" data-footnote-ref="" rel="noopener noreferrer">1</a></sup> Another one.<sup class="footnote-ref"><a href="#fn-2" id="user-content-fnref-2" data-footnote-ref="" rel="noopener noreferrer">2</a></sup></p>
 
 --- block 2 FootnoteDefinition @68..118 section=0
 
 <ol>
-<li id="fn-source">
+<li id="user-content-fn-source">
 <p>The supporting source, with <em>emphasis</em>. <a href="#fnref-source" class="footnote-backref" data-footnote-backref="" data-footnote-backref-idx="1" aria-label="Back to reference 1" rel="noopener noreferrer">↩</a></p>
 </li>
 </ol>
@@ -24,7 +24,7 @@ section 0: heading=Some(0) level=1 blocks=0..5
 --- block 3 FootnoteDefinition @120..170 section=0
 
 <ol>
-<li id="fn-2">
+<li id="user-content-fn-2">
 <p>A second note.
 With a continuation line. <a href="#fnref-2" class="footnote-backref" data-footnote-backref="" data-footnote-backref-idx="1" aria-label="Back to reference 1" rel="noopener noreferrer">↩</a></p>
 </li>

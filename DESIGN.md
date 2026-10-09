@@ -134,6 +134,7 @@ Block range rules (as implemented):
 - Blocks are listed in **source order**. comrak moves footnote definitions to the end of the document; Scrald re-sorts them back to where they're written, and the UI is responsible for presenting them as endnotes.
 - Between blocks there is only blank space or link reference definitions (which comrak keeps out of the AST). The round-trip test enforces this, so concatenating gaps and blocks reproduces the file exactly.
 - Word count counts whitespace-separated runs containing a letter or digit, in prose and inline code; code blocks, raw HTML, and math are excluded.
+- A raw HTML block that opens a container (`<details>`, `<div>`, `<section>`, `<aside>`, `<figure>`, `<article>`, `<blockquote>`, `<center>`) without closing it is **grouped** with the following blocks up to the one that closes it (or the end of the document). The group is one `Block` of kind `Html`, rendered and sanitized as a whole, so the container wraps its Markdown content. Headings inside such a group get no TOC entry.
 
 ---
 
@@ -543,6 +544,7 @@ The database stores only metadata, never document contents. The one place Scrald
 ## 13. Security
 
 - All rendered HTML passes through `ammonia`, with an allowlist that covers what Markdown and the transforms produce (including KaTeX and Mermaid output containers). `<script>`, event handler attributes, `javascript:` URLs, and `<iframe>` are always stripped.
+- Every HTML `id` from document content (heading slugs, footnote ids, raw HTML) gets the prefix `user-content-`, so a heading named "App" or raw `id="app"` can't clobber the app's own elements. Links keep the bare form (`#intro`, `#fn-1`) and the reader adds the prefix when resolving them.
 - A strict Tauri content security policy: no remote scripts; images only from `scrald-asset:`, `scrald-theme:`, and `data:` (plus remote origins when the user enables remote images for a document). Tauri's CSP is fixed at build time, so `img-src` permits `http:`/`https:` globally and the per-document gate is enforced by core and the sanitizer: no remote `src` reaches the page unless the user allowed remote images for that document.
 - The asset protocol only serves files resolved for the currently open documents and theme assets.
 - `theme.css` can style the page but cannot run code. Theme CSS `url()` references are limited to the theme's own assets and cached fonts.

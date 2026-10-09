@@ -6,6 +6,7 @@
   import { tick, untrack } from "svelte";
   import type { DocumentModel } from "../lib/types";
   import { assetUrl } from "../lib/commands";
+  import { contentId } from "../lib/ids";
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
   import { batchByBlocks, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
   import { blockIndexAtOffset, firstBoxBelow, fractionInto, TOP_ANCHOR, type ScrollAnchor } from "./anchor";
@@ -178,14 +179,14 @@
     const blockId = blockWithId(id);
     if (blockId === null) return;
     await scrollToBlock(blockId);
-    scroller?.querySelector(`[id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "start" });
+    scroller?.querySelector(`[id="${CSS.escape(contentId(id))}"]`)?.scrollIntoView({ block: "start" });
   }
 
   /** Finds the block whose rendered HTML defines `id` (headings, footnotes). */
   function blockWithId(id: string): number | null {
     const entry = doc.toc.find((t) => t.slug === id);
     if (entry) return entry.blockId;
-    const needle = `id="${id}"`;
+    const needle = `id="${contentId(id)}"`;
     const block = doc.blocks.find((b) => b.html.includes(needle));
     return block ? block.id : null;
   }

@@ -2,6 +2,12 @@
 
 use comrak::nodes::Node;
 
+/// Prefix for every HTML `id` that comes from document content, so a heading
+/// called "App" (or raw HTML with `id="app"`) can't clash with the app's own
+/// elements. Links keep the bare form (`#app`, `#fn-1`); the reader adds the
+/// prefix when it looks an id up.
+pub const ID_PREFIX: &str = "user-content-";
+
 /// Renders single top-level blocks to sanitized HTML. Build one per document
 /// (or reuse it): setting up the sanitizer allowlist isn't free.
 pub struct Renderer {
@@ -48,6 +54,7 @@ impl Renderer {
             .add_url_schemes(["data"])
             // `language-rust` on code blocks, `footnotes` sections, and so on.
             .add_generic_attributes(["class"])
+            .id_prefix(Some(ID_PREFIX))
             .attribute_filter(move |element, attribute, value| {
                 filter_attribute(element, attribute, value, allow_remote_images).map(Into::into)
             });
@@ -56,17 +63,31 @@ impl Renderer {
 
     /// Renders one block (and its children) to sanitized HTML.
     pub fn render(&self, node: Node<'_>, options: &comrak::Options) -> String {
+        self.render_group(&[node], options)
+    }
+
+    /// Renders several consecutive blocks and sanitizes them as one piece of
+    /// HTML, so a container opened in the first can wrap the rest.
+    pub fn render_group(&self, nodes: &[Node<'_>], options: &comrak::Options) -> String {
         let mut html = String::new();
+        for &node in nodes {
+            self.format_into(node, options, &mut html);
+        }
+        self.sanitize(&html)
+    }
+
+    fn format_into(&self, node: Node<'_>, options: &comrak::Options, html: &mut String) {
         // Rust note: writing into a `String` can't fail, but `format_html`
         // writes to any `fmt::Write` and so returns a Result. If it ever does
         // fail, show an error in place of the block instead of panicking.
-        if let Err(e) = comrak::format_html(node, options, &mut html) {
-            html = format!(
+        let mut piece = String::new();
+        match comrak::format_html(node, options, &mut piece) {
+            Ok(()) => html.push_str(&piece),
+            Err(e) => html.push_str(&format!(
                 "<p class=\"render-error\">{}</p>",
                 escape_text(&e.to_string())
-            );
+            )),
         }
-        self.sanitize(&html)
     }
 
     pub fn sanitize(&self, html: &str) -> String {
@@ -102,12 +123,12 @@ fn filter_attribute<'v>(
     }
 }
 
-/// Adds `id="slug"` to a rendered heading's opening tag. Runs after
-/// sanitizing; `slug` comes from `toc::slugify`, so it has no quotes or `<`.
+/// Adds `id="user-content-slug"` to a rendered heading's opening tag. Runs
+/// after sanitizing; `slug` comes from `toc::slugify`, so it has no quotes or `<`.
 pub fn add_heading_id(html: &str, level: u8, slug: &str) -> String {
     let open = format!("<h{level}>");
     match html.strip_prefix(&open) {
-        Some(rest) => format!("<h{level} id=\"{slug}\">{rest}"),
+        Some(rest) => format!("<h{level} id=\"{ID_PREFIX}{slug}\">{rest}"),
         None => html.to_string(),
     }
 }
@@ -210,10 +231,19 @@ mod tests {
     }
 
     #[test]
+    fn content_ids_are_prefixed() {
+        let r = Renderer::default();
+        assert_eq!(
+            r.sanitize("<a id=\"app\" href=\"#x\">x</a>"),
+            "<a id=\"user-content-app\" href=\"#x\" rel=\"noopener noreferrer\">x</a>"
+        );
+    }
+
+    #[test]
     fn heading_id_is_added() {
         assert_eq!(
             add_heading_id("<h2>Hi</h2>\n", 2, "hi"),
-            "<h2 id=\"hi\">Hi</h2>\n"
+            "<h2 id=\"user-content-hi\">Hi</h2>\n"
         );
         assert_eq!(add_heading_id("<p>x</p>", 2, "hi"), "<p>x</p>");
     }

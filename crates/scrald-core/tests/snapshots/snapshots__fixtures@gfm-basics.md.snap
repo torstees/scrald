@@ -10,14 +10,14 @@ section 0: heading=Some(0) level=1 blocks=0..2
 section 1: heading=Some(2) level=2 blocks=2..12
 
 --- block 0 Heading { level: 1 } @0..12 section=0
-<h1 id="gfm-basics">GFM Basics</h1>
+<h1 id="user-content-gfm-basics">GFM Basics</h1>
 
 --- block 1 Paragraph @14..139 section=0
 <p>Plain paragraph with <em>emphasis</em>, <strong>strong</strong>, <del>strikethrough</del>, and <code>inline code</code>.
 A soft line break continues the paragraph.</p>
 
 --- block 2 Heading { level: 2 } @141..170 section=1
-<h2 id="setext-heading">Setext Heading</h2>
+<h2 id="user-content-setext-heading">Setext Heading</h2>
 
 --- block 3 List { ordered: false } @172..288 section=1
 <ul>

@@ -193,21 +193,34 @@ pub fn parse_document_with(
         (start.line, start.column)
     });
 
-    for node in nodes {
+    for group in group_html_runs(&nodes) {
         let id = blocks.len() as u32;
-        let kind = block_kind(node);
-        let source = block_range(node, &index);
+        // Rust note: slice patterns: `[only]` matches a one-element slice and
+        // binds its element; `_` takes every other length.
+        let (kind, source) = match group {
+            [only] => (block_kind(only), block_range(only, &index)),
+            _ => {
+                let first = block_range(group[0], &index);
+                let last = block_range(group[group.len() - 1], &index);
+                (BlockKind::Html, SourceRange::new(first.start, last.end))
+            }
+        };
 
         // Original-file offsets include the BOM; subtract it to slice `text`.
         let source_text = &text[source.start - bom_len..source.end - bom_len];
 
         // Read the heading text first: rewriting images replaces their alt
         // text nodes with HTML.
-        let heading_text = matches!(kind, BlockKind::Heading { .. }).then(|| plain_text(node));
-        word_count += count_words(node);
-        update_features(node, &mut features);
-        images.rewrite(node, &asset_ctx);
-        let mut html = renderer.render(node, &options);
+        let heading_text = match group {
+            [only] if matches!(kind, BlockKind::Heading { .. }) => Some(plain_text(only)),
+            _ => None,
+        };
+        for &node in group {
+            word_count += count_words(node);
+            update_features(node, &mut features);
+            images.rewrite(node, &asset_ctx);
+        }
+        let mut html = renderer.render_group(group, &options);
 
         if let (BlockKind::Heading { level }, Some(heading)) = (&kind, heading_text) {
             let level = *level;
@@ -370,6 +383,69 @@ fn block_kind(node: Node<'_>) -> BlockKind {
     }
 }
 
+/// Container tags whose open/close balance is tracked across HTML blocks.
+const CONTAINER_TAGS: &[&str] = &[
+    "details",
+    "div",
+    "section",
+    "aside",
+    "figure",
+    "article",
+    "blockquote",
+    "center",
+];
+
+/// Groups top-level nodes so that a raw HTML block which opens a container
+/// (`<details>`, `<div>`, ...) without closing it is joined with the blocks
+/// that follow, up to the block that closes it. Each group becomes one
+/// `Block`, sanitized as a whole, so the container wraps its Markdown
+/// content instead of being closed early by the sanitizer. Every other node
+/// is a group of one.
+// Rust note: the result borrows from `nodes` (the slices point into it), so
+// it can't outlive it; Rust infers that link from the single borrowed input.
+fn group_html_runs<'n, 'a>(nodes: &'n [Node<'a>]) -> Vec<&'n [Node<'a>]> {
+    let mut groups = Vec::new();
+    let mut start = 0;
+    let mut depth: i32 = 0;
+    for (i, node) in nodes.iter().enumerate() {
+        if let NodeValue::HtmlBlock(html) = &node.data().value {
+            depth = (depth + container_depth_change(&html.literal)).max(0);
+        }
+        if depth == 0 {
+            groups.push(&nodes[start..=i]);
+            start = i + 1;
+        }
+    }
+    // A container never closed runs to the end of the document.
+    if start < nodes.len() {
+        groups.push(&nodes[start..]);
+    }
+    groups
+}
+
+/// Net number of container tags opened (minus closed) in raw HTML.
+fn container_depth_change(html: &str) -> i32 {
+    let lower = html.to_ascii_lowercase();
+    let mut change = 0;
+    for tag in CONTAINER_TAGS {
+        change += count_tags(&lower, &format!("<{tag}")) - count_tags(&lower, &format!("</{tag}"));
+    }
+    change
+}
+
+/// Occurrences of `prefix` that are followed by the end of a tag name
+/// (so `<div` doesn't also count `<divider`).
+fn count_tags(html: &str, prefix: &str) -> i32 {
+    html.match_indices(prefix)
+        .filter(|(i, _)| {
+            html[i + prefix.len()..]
+                .chars()
+                .next()
+                .is_none_or(|c| c == '>' || c == '/' || c.is_whitespace())
+        })
+        .count() as i32
+}
+
 /// The language word from a fence info string: "rust ignore" → "rust".
 fn code_language(info: &str) -> Option<String> {
     info.split_whitespace().next().map(str::to_string)
@@ -511,7 +587,42 @@ mod tests {
                 ("code & more", "code--more")
             ]
         );
-        assert!(doc.blocks[1].html.starts_with("<h2 id=\"intro-1\">"));
+        assert!(
+            doc.blocks[1]
+                .html
+                .starts_with("<h2 id=\"user-content-intro-1\">")
+        );
+    }
+
+    #[test]
+    fn html_container_wraps_following_markdown() {
+        let text =
+            "<details>\n<summary>More</summary>\n\nHidden **text**.\n\n</details>\n\nAfter.\n";
+        let doc = parse(text);
+        assert_eq!(doc.blocks.len(), 2);
+        assert_eq!(doc.blocks[0].kind, BlockKind::Html);
+        assert_eq!(
+            slices(&doc, text.as_bytes())[0],
+            "<details>\n<summary>More</summary>\n\nHidden **text**.\n\n</details>"
+        );
+        let html = &doc.blocks[0].html;
+        assert!(html.contains("<strong>text</strong>"));
+        assert!(html.trim_end().ends_with("</details>"));
+        assert_eq!(doc.blocks[1].kind, BlockKind::Paragraph);
+    }
+
+    #[test]
+    fn unclosed_container_runs_to_the_end() {
+        let doc = parse("<div>\n\nA\n\nB\n");
+        assert_eq!(doc.blocks.len(), 1);
+    }
+
+    #[test]
+    fn container_tag_counting() {
+        assert_eq!(container_depth_change("<details><summary>x</summary>"), 1);
+        assert_eq!(container_depth_change("<div class=\"a\"><div>\n</div>"), 1);
+        assert_eq!(container_depth_change("</DIV>"), -1);
+        assert_eq!(container_depth_change("<divider><detailsx>"), 0);
     }
 
     #[test]
