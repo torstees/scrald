@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { Flavor, FlavorSource } from "../lib/types";
+  import { autoLabel, FLAVOR_NAMES, switcherValue } from "./flavor";
   import { formatReadingTime, formatWordCount } from "./reading";
 
   interface Props {
@@ -20,6 +22,10 @@
     onthemeclick: () => void;
     tocVisible: boolean;
     ontoggletoc: () => void;
+    flavor: Flavor;
+    flavorSource: FlavorSource;
+    /** A flavor the user picked, or null for automatic. */
+    onflavor: (flavor: Flavor | null) => void;
     /** Text sizing and zoom summary; clicking it opens the typography panel. */
     typography: string;
     ontypographyclick: () => void;
@@ -42,7 +48,18 @@
     ontypographyclick,
     tocVisible,
     ontoggletoc,
+    flavor,
+    flavorSource,
+    onflavor,
   }: Props = $props();
+
+  // What "auto" currently resolves to; only shown when no flavor is chosen.
+  const auto = $derived(flavorSource === "document" ? null : autoLabel(flavor, flavorSource));
+
+  function onFlavorChange(event: Event & { currentTarget: HTMLSelectElement }): void {
+    const value = event.currentTarget.value;
+    onflavor(value === "auto" ? null : (value as Flavor));
+  }
 </script>
 
 <footer class="sk-status">
@@ -76,6 +93,18 @@
   <button class="theme" data-typography-toggle onclick={ontypographyclick} title="Text size and zoom (Ctrl+wheel, Ctrl+=, Ctrl+−, Ctrl+0)"
     >{typography}</button
   >
+  <select
+    class="flavor"
+    title="Markdown flavor"
+    aria-label="Markdown flavor"
+    value={switcherValue(flavor, flavorSource)}
+    onchange={onFlavorChange}
+  >
+    <option value="auto">{auto ?? "Auto"}</option>
+    {#each Object.entries(FLAVOR_NAMES) as [value, name] (value)}
+      <option {value}>{name}</option>
+    {/each}
+  </select>
   <span>{formatWordCount(wordCount)}</span>
   <span title="Estimated reading time">{formatReadingTime(wordCount)}</span>
 </footer>
@@ -139,6 +168,21 @@
   }
 
   .theme:hover {
+    border-color: var(--sk-color-border);
+    color: var(--sk-color-foreground);
+  }
+
+  .flavor {
+    font: inherit;
+    color: var(--sk-color-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .flavor:hover,
+  .flavor:focus {
     border-color: var(--sk-color-border);
     color: var(--sk-color-foreground);
   }

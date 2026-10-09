@@ -204,6 +204,10 @@ pub enum Flavor { Gfm, Obsidian, Pandoc }
 
 Because detection is instant, the detected result does not need to be stored. Only explicit user overrides are remembered. The UI shows the active flavor in the status bar with a dropdown to change it.
 
+As implemented (`crates/scrald-core/src/flavor.rs`): detection is a line scan that skips fenced code. Obsidian signals: wikilinks, `%%`, `==highlight==`, Obsidian-only callout types (GitHub's five alert types say nothing), foldable callouts; being inside a vault adds a weight of 10, more than stray syntax. Pandoc signals: `:::` lines, `^[`, `{.class}`/`{#id}`, a `% Title` first line, and `bibliography`/`csl`-style front matter keys. Ties go to Obsidian; no signals means GFM. A 500K-word document scans in a few milliseconds. The status bar dropdown offers "Auto: <flavor> (<why>)" plus the three flavors; choosing one stores it for the document and re-parses in place, and "Auto" clears it. A `flavor` key in `.scrald.toml` applies to a folder.
+
+Profiles as comrak options: all three share tables, task lists, footnotes, strikethrough, and math. GFM and Obsidian add autolinks and `> [!NOTE]` alerts; Obsidian adds `[[wikilinks]]` (target before the pipe) and `==highlight==`; Pandoc adds `~subscript~` (overriding single-tilde strikethrough; `~~x~~` still strikes through), `^superscript^`, inline footnotes, definition lists, and smart punctuation. Known difference: comrak treats single `~x~` as strikethrough in GFM and Obsidian; GitHub does too, Obsidian doesn't. Pandoc's inline footnotes produce definitions with no source text of their own, so they aren't blocks; the model carries them separately (`inline_footnotes`) for popovers and endnotes.
+
 ### 5.3 Supported features
 
 | Feature | GFM | Obsidian | Pandoc | Notes |

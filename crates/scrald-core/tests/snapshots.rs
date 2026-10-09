@@ -17,6 +17,7 @@ fn describe(doc: &DocumentModel) -> String {
         "bom: {}  line_ending: {:?}  words: {}  features: {:?}",
         doc.has_bom, doc.line_ending, doc.word_count, doc.features
     );
+    let _ = writeln!(out, "flavor: {:?} ({:?})", doc.flavor, doc.flavor_source);
     if let Some(fm) = &doc.front_matter {
         let json = serde_json::to_string_pretty(fm).unwrap_or_default();
         let _ = writeln!(out, "front_matter: {json}");
@@ -41,6 +42,9 @@ fn describe(doc: &DocumentModel) -> String {
             s.first_block,
             s.first_block + s.block_count
         );
+    }
+    for note in &doc.inline_footnotes {
+        let _ = writeln!(out, "inline footnote {}: {}", note.name, note.html.trim());
     }
     for b in &doc.blocks {
         let _ = writeln!(
