@@ -8,8 +8,8 @@ Milestones are ordered so that each one leaves a usable, testable app. Check ite
 
 - [ ] Cargo workspace with `crates/scrald-core` and `crates/scrald-app`
 - [ ] Tauri 2 app in `scrald-app` with Svelte 5 + TypeScript + Vite frontend in `ui/`
-- [ ] `.gitattributes` (LF in repo for code; leave `*.md` fixtures untouched with `-text` where line endings matter for tests)
-- [ ] `.gitignore`, `rustfmt.toml`, clippy config, TypeScript strict mode
+- [x] `.gitattributes` (LF everywhere in repo and working tree; fixtures stored byte-for-byte with `-text`) and `.editorconfig`
+- [ ] `.gitignore`, `rustfmt.toml` (`newline_style = "Unix"`), clippy config, TypeScript strict mode; Prettier `endOfLine: "lf"` if Prettier is added
 - [ ] Confirm all commands in `AGENTS.md` work on Windows; update the table to match reality
 - [ ] Minimal "hello" window that receives a file path from the command line
 - [ ] Enable `tracing` logging in the app
@@ -161,4 +161,5 @@ Record notable decisions made during implementation here (date, decision, reason
 | 2026-10-08 | Autosave off by default for v1; add close prompt and crash-recovery files in app data (DESIGN §9.3, §12, §15 Q2) | New edit/save path shouldn't write to user files unattended; recovery files cover crashes without touching the document |
 | 2026-10-08 | Note transclusion is post-v1; v1 renders `![[Other note]]` as a link card (DESIGN §5.3, §15 Q3) | Keeps v1 scope down; transclusion raises cross-file source-range, editing, and cycle questions worth designing properly |
 | 2026-10-08 | Windows first; macOS and Linux support is the final v1 milestone, M10 (DESIGN §11.1, §15 Q4) | Focus early work on one platform while keeping code portable so the port is mostly verification and packaging |
+| 2026-10-08 | LF line endings for all repo files, enforced by `.gitattributes` (`eol=lf`) and `.editorconfig`; test fixtures exempt (`-text`) | Maintainer preference; also keeps diffs clean across platforms. Fixtures must keep CRLF/BOM bytes to test preservation |
 | 2026-10-08 | `scrald-core` is tested on Windows, macOS, and Linux in CI from M0 (DESIGN §11.1) | Core has no GUI dependencies, so cross-platform CI is nearly free and catches portability slips early |
