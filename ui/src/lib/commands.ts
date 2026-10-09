@@ -3,15 +3,36 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { LaunchInfo, LinkTarget, OpenedDocument } from "./types";
+import type { ScrollAnchor } from "../reader/anchor";
+import type { LaunchInfo, LinkTarget, OpenedDocument, RecentDocument } from "./types";
 
 export function launchInfo(): Promise<LaunchInfo> {
   return invoke<LaunchInfo>("launch_info");
 }
 
-/** Reads and parses a document; rejects with an error message string. */
-export function openDocument(path: string, allowRemoteImages = false): Promise<OpenedDocument> {
-  return invoke<OpenedDocument>("open_document", { path, allowRemoteImages });
+/**
+ * Reads and parses a document, with what Scrald remembers about it (reading
+ * position, remote images choice). Rejects with an error message string.
+ */
+export function openDocument(path: string): Promise<OpenedDocument> {
+  return invoke<OpenedDocument>("open_document", { path });
+}
+
+/** Remembers the reading position in a document. Never throws. */
+export function saveReadingPosition(path: string, anchor: ScrollAnchor): void {
+  invoke("save_reading_position", { path, anchor }).catch((e: unknown) => {
+    console.warn("could not save reading position", e);
+  });
+}
+
+/** Remembers whether remote images may load for a document. */
+export function setRemoteImages(path: string, allowed: boolean): Promise<void> {
+  return invoke("set_remote_images", { path, allowed });
+}
+
+/** Recently opened documents, newest (and pinned) first. */
+export function recentDocuments(limit: number): Promise<RecentDocument[]> {
+  return invoke<RecentDocument[]>("recent_documents", { limit });
 }
 
 /**

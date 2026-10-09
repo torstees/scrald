@@ -509,7 +509,7 @@ Ctrl+E toggles between the reading view and a full-document CodeMirror 6 editor 
 - **Single instance:** using Tauri's single-instance plugin, opening another file while Scrald is running opens it in a new window of the existing process.
 - **Command line:** `scrald path/to/file.md` opens the file directly.
 - **Start screen:** launching with no file shows recent documents (title from front matter, path, last opened, theme swatch), pinned documents, an Open button, and a drop zone for drag and drop.
-- **Window state:** size, position, and maximized state are remembered per document, together with its text sizing mode and zoom. On restore, the window is clamped to a currently connected monitor, so a document last opened on a now-disconnected display still appears on screen. New documents open at the size of the most recently used window.
+- **Window state:** size, position, and maximized state are remembered per document, together with its text sizing mode and zoom. On restore, the window is clamped to a currently connected monitor, so a document last opened on a now-disconnected display still appears on screen. New documents open at the size of the most recently used window. As implemented: the main window starts hidden and is shown after its geometry is applied, so it never visibly jumps. The normal (un-maximized) bounds are tracked from move/resize events and saved on close with the maximized flag. A restored window counts as reachable if at least 120 px of it and its title bar lie within some monitor's work area; otherwise it is centered (and shrunk if needed) on the primary monitor. Navigating to another document in the same window does not move the window.
 
 ### 11.1 Platform support
 
@@ -536,6 +536,8 @@ A SQLite database in the app data directory:
 | `documents` | Canonical path, file identity hint (size + first-KB hash, used to reconnect moved files), theme override, flavor override, scroll anchor, text sizing mode, zoom, window geometry (size, position, maximized), last opened, pinned |
 | `settings` | Global settings key/value |
 | `font_cache` | Downloaded Google font families and file paths |
+
+As implemented (`crates/scrald-app/src/state.rs`): the database is `scrald.db` in Tauri's app data directory (`SCRALD_DATA_DIR` overrides it, for automated runs). The schema is versioned with `PRAGMA user_version` and migrated in order at startup. Paths are stored canonicalized (without Windows' `\?\` prefix). The file identity hint is the file size plus a 64-bit FNV-1a hash of the first KB (a hash that is stable across Rust versions, unlike `DefaultHasher`); a document opened at an unknown path takes over the row of a document with the same identity whose old path no longer exists, so its memory follows a move or rename, but a copy (old path still present) starts fresh. If the database can't be opened, Scrald runs with an in-memory store and remembers nothing.
 
 The database stores only metadata, never document contents. The one place Scrald keeps document text outside the document itself is crash-recovery files (section 9.3), stored as separate files in a `recovery/` folder in the app data directory and deleted once the changes are saved or discarded.
 

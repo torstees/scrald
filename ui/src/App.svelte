@@ -7,6 +7,8 @@
     openExternal,
     reportTiming,
     resolveLink,
+    saveReadingPosition,
+    setRemoteImages,
   } from "./lib/commands";
   import { launchMessage } from "./lib/launch";
   import type { DocumentModel } from "./lib/types";
@@ -28,9 +30,6 @@
   let canGoBack = $state(false);
   let canGoForward = $state(false);
 
-  // Documents (by path) whose remote images the user allowed this session.
-  // Remembered across launches once the state database exists (M3, #126).
-  const remoteAllowed = new Set<string>();
   const history = new NavHistory();
   // A heading slug to scroll to once a newly opened document is on screen.
   let pendingFragment: string | null = null;
@@ -69,15 +68,16 @@
   }
 
   /**
-   * Loads a document into the reader. Returns false (and shows why) if it
-   * couldn't be opened; the current document stays on screen in that case.
+   * Loads a document into the reader at `anchor`, or where the reader left
+   * off last time if `anchor` is "remembered". Returns false (and shows why)
+   * if it couldn't be opened; the current document stays on screen then.
    */
-  async function load(path: string, anchor: ScrollAnchor): Promise<boolean> {
+  async function load(path: string, anchor: ScrollAnchor | "remembered"): Promise<boolean> {
     openStarted = performance.now();
     try {
-      const opened = await openDocument(path, remoteAllowed.has(path));
+      const opened = await openDocument(path);
       reportTiming("ipc_open_document", performance.now() - openStarted);
-      initialAnchor = anchor;
+      initialAnchor = anchor === "remembered" ? (opened.memory.anchor ?? TOP_ANCHOR) : anchor;
       assetToken = opened.assetToken;
       doc = opened.document;
       message = null;
@@ -89,25 +89,28 @@
     }
   }
 
-  /** Opens a document as a new history entry. */
+  /**
+   * Opens a document as a new history entry: at `fragment` if given,
+   * otherwise where the reader left off last time.
+   */
   async function navigate(path: string, fragment: string | null = null): Promise<void> {
-    if (doc && reader) history.updateAnchor(reader.captureAnchor());
+    rememberPosition();
     pendingFragment = fragment;
-    if (await load(path, TOP_ANCHOR)) {
+    if (await load(path, fragment === null ? "remembered" : TOP_ANCHOR)) {
       history.push({ path, anchor: TOP_ANCHOR });
       syncHistory();
     }
   }
 
   async function goBack(): Promise<void> {
-    if (reader) history.updateAnchor(reader.captureAnchor());
+    rememberPosition();
     const entry = history.back();
     if (entry) await load(entry.path, entry.anchor);
     syncHistory();
   }
 
   async function goForward(): Promise<void> {
-    if (reader) history.updateAnchor(reader.captureAnchor());
+    rememberPosition();
     const entry = history.forward();
     if (entry) await load(entry.path, entry.anchor);
     syncHistory();
@@ -124,10 +127,22 @@
     await load(doc.path, reader?.captureAnchor() ?? TOP_ANCHOR);
   }
 
-  function allowRemoteImages(): void {
+  /** Saves the current reading position, in history and in the state database. */
+  function rememberPosition(): void {
+    if (!doc || !reader) return;
+    const anchor = reader.captureAnchor();
+    history.updateAnchor(anchor);
+    saveReadingPosition(doc.path, anchor);
+  }
+
+  async function allowRemoteImages(): Promise<void> {
     if (!doc) return;
-    remoteAllowed.add(doc.path);
-    void reload();
+    try {
+      await setRemoteImages(doc.path, true);
+      await reload();
+    } catch (e) {
+      showNotice(`Could not load remote images: ${String(e)}`);
+    }
   }
 
   async function onLink(href: string): Promise<void> {
@@ -216,6 +231,7 @@
         onfirstscreen={onFirstScreen}
         onfullymounted={() => reportTiming("full_mount", performance.now() - openStarted)}
         onlink={onLink}
+        onscrollsettled={rememberPosition}
       />
     </main>
     <StatusBar

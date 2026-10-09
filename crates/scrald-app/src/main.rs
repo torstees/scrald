@@ -4,7 +4,9 @@
 
 mod commands;
 mod protocol;
+mod state;
 mod watcher;
+mod window;
 
 use std::path::PathBuf;
 
@@ -26,6 +28,7 @@ fn main() -> anyhow::Result<()> {
     tracing::info!(path = ?launch.path, exists = launch.exists, "starting Scrald");
 
     let window_title = format!("{} \u{2014} Scrald", launch.title);
+    let launch_path = launch.path.clone();
 
     tauri::Builder::default()
         .manage(launch)
@@ -42,27 +45,50 @@ fn main() -> anyhow::Result<()> {
                 responder.respond(protocol::respond(&registry, &request));
             });
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
+        .manage(window::WindowTracker::default())
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                window.state::<window::WindowTracker>().observe(window);
+            }
+            tauri::WindowEvent::CloseRequested { .. } => remember_window(window),
+            tauri::WindowEvent::Destroyed => {
+                let label = window.label();
                 window
                     .state::<protocol::AssetRegistry>()
-                    .remove_window(window.label());
-                window
-                    .state::<watcher::DocumentWatchers>()
-                    .unwatch(window.label());
+                    .remove_window(label);
+                window.state::<watcher::DocumentWatchers>().unwatch(label);
+                window.state::<window::WindowTracker>().forget(label);
             }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             commands::launch_info,
             commands::open_document,
+            commands::save_reading_position,
+            commands::set_remote_images,
+            commands::recent_documents,
             commands::resolve_link,
             commands::open_external,
             commands::report_timing,
         ])
         .setup(move |app| {
-            if let Some(window) = app.get_webview_window("main") {
+            let store = open_state_store(app.handle());
+            // The main window starts hidden (tauri.conf.json) so it can be
+            // moved to its remembered place before anyone sees it.
+            if let Some(webview_window) = app.get_webview_window("main") {
+                // Geometry and window events work with the plain `Window`.
+                let window = webview_window.as_ref().window();
                 window.set_title(&window_title)?;
+                match store.window_for(launch_path.as_deref()) {
+                    Ok(Some(geometry)) => window::apply_geometry(&window, geometry)?,
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(error = format!("{error:#}"), "could not read window state")
+                    }
+                }
+                window.show()?;
             }
+            app.manage(store);
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -72,6 +98,46 @@ fn main() -> anyhow::Result<()> {
         .context("error while running the Tauri application")?;
 
     Ok(())
+}
+
+/// Opens the state database in the app data directory. If that fails, Scrald
+/// still runs, with an in-memory store that forgets everything on exit.
+///
+/// `SCRALD_DATA_DIR` overrides the directory, so automated test runs keep
+/// their state out of the user's real app data.
+fn open_state_store(app: &tauri::AppHandle) -> state::StateStore {
+    let dir = match std::env::var_os("SCRALD_DATA_DIR") {
+        Some(dir) => Ok(PathBuf::from(dir)),
+        None => app.path().app_data_dir().context("no app data directory"),
+    };
+    let opened = dir.and_then(|dir| {
+        let db = dir.join("scrald.db");
+        tracing::info!(path = %db.display(), "state database");
+        state::StateStore::open(&db)
+    });
+    match opened {
+        Ok(store) => store,
+        Err(error) => {
+            tracing::warn!(
+                error = format!("{error:#}"),
+                "state database unavailable; nothing will be remembered"
+            );
+            // An in-memory SQLite database can only fail to open if SQLite
+            // itself is broken, in which case nothing else would work either.
+            state::StateStore::in_memory().expect("in-memory SQLite database")
+        }
+    }
+}
+
+/// Saves a closing window's geometry for its document and as the last-used size.
+fn remember_window(window: &tauri::Window) {
+    let (document, geometry) = window.state::<window::WindowTracker>().snapshot(window);
+    let Some(geometry) = geometry else { return };
+    if let Some(store) = window.try_state::<state::StateStore>()
+        && let Err(error) = store.save_window(document.as_deref(), geometry)
+    {
+        tracing::warn!(error = format!("{error:#}"), "could not save window state");
+    }
 }
 
 /// Logs to stderr, or to the file named by `SCRALD_LOG_FILE` if set. Release
