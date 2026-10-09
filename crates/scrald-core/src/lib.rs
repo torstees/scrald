@@ -7,6 +7,7 @@ pub mod assets;
 pub mod document;
 pub mod frontmatter;
 pub mod generate;
+pub mod links;
 pub mod render;
 pub mod source;
 pub mod toc;
@@ -21,6 +22,7 @@ pub use document::{
     parse_document, parse_document_with,
 };
 pub use frontmatter::FrontMatter;
+pub use links::{LinkTarget, resolve_link};
 pub use source::{LineEnding, SourceRange};
 pub use toc::TocEntry;
 

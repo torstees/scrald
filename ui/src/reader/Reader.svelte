@@ -173,6 +173,14 @@
     return { update: apply };
   }
 
+  /** Scrolls to the element with HTML id `id` (a heading slug or footnote). */
+  export async function scrollToId(id: string): Promise<void> {
+    const blockId = blockWithId(id);
+    if (blockId === null) return;
+    await scrollToBlock(blockId);
+    scroller?.querySelector(`[id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "start" });
+  }
+
   /** Finds the block whose rendered HTML defines `id` (headings, footnotes). */
   function blockWithId(id: string): number | null {
     const entry = doc.toc.find((t) => t.slug === id);
@@ -189,11 +197,7 @@
     // Never let a click navigate the webview away from the app.
     event.preventDefault();
     if (href.startsWith("#")) {
-      const id = decodeURIComponent(href.slice(1));
-      const blockId = blockWithId(id);
-      if (blockId === null) return;
-      await scrollToBlock(blockId);
-      scroller?.querySelector(`[id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "start" });
+      await scrollToId(decodeURIComponent(href.slice(1)));
       return;
     }
     onlink?.(href);

@@ -5,21 +5,48 @@
     wordCount: number;
     /** Title of the section at the top of the viewport. */
     section: string | null;
+    /** A short-lived message (link problems and the like), shown instead of the section. */
+    notice: string | null;
+    canGoBack: boolean;
+    canGoForward: boolean;
+    onback: () => void;
+    onforward: () => void;
     /** Remote images in the document, and whether they're loading. */
     remoteImages: number;
     remoteImagesAllowed: boolean;
     onallowremote: () => void;
   }
 
-  let { wordCount, section, remoteImages, remoteImagesAllowed, onallowremote }: Props = $props();
+  let {
+    wordCount,
+    section,
+    notice,
+    canGoBack,
+    canGoForward,
+    onback,
+    onforward,
+    remoteImages,
+    remoteImagesAllowed,
+    onallowremote,
+  }: Props = $props();
 </script>
 
 <footer class="sk-status">
-  <span class="section" title={section ?? ""}>{section ?? ""}</span>
+  {#if canGoBack || canGoForward}
+    <span class="nav">
+      <button onclick={onback} disabled={!canGoBack} title="Back (Alt+Left)" aria-label="Back">‹</button>
+      <button onclick={onforward} disabled={!canGoForward} title="Forward (Alt+Right)" aria-label="Forward">›</button>
+    </span>
+  {/if}
+  {#if notice}
+    <span class="section notice" role="status" title={notice}>{notice}</span>
+  {:else}
+    <span class="section" title={section ?? ""}>{section ?? ""}</span>
+  {/if}
   {#if remoteImages > 0 && !remoteImagesAllowed}
     <span class="remote">
       {remoteImages} remote {remoteImages === 1 ? "image" : "images"} blocked
-      <button onclick={onallowremote} title="Load remote images for this document">Load</button>
+      <button class="load" onclick={onallowremote} title="Load remote images for this document">Load</button>
     </span>
   {/if}
   <span>{formatWordCount(wordCount)}</span>
@@ -40,20 +67,44 @@
     white-space: nowrap;
   }
 
-  .remote button {
+  button {
     font: inherit;
     color: var(--sk-color-link);
     background: none;
     border: 1px solid var(--sk-color-border);
     border-radius: 3px;
     padding: 0 0.4em;
-    margin-left: 0.3em;
     cursor: pointer;
+  }
+
+  button:disabled {
+    color: var(--sk-color-muted);
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .nav {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .nav button {
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.35em 0.1em;
+  }
+
+  .load {
+    margin-left: 0.3em;
   }
 
   .section {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .notice {
+    color: var(--sk-color-accent);
   }
 </style>

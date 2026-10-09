@@ -4,6 +4,7 @@
 
 mod commands;
 mod protocol;
+mod watcher;
 
 use std::path::PathBuf;
 
@@ -29,6 +30,8 @@ fn main() -> anyhow::Result<()> {
     tauri::Builder::default()
         .manage(launch)
         .manage(protocol::AssetRegistry::default())
+        .manage(watcher::DocumentWatchers::default())
+        .plugin(tauri_plugin_opener::init())
         // Rust note: the closure gets a context (for app state) and the
         // request; `responder` lets us answer later, from another thread, so
         // file reads never block the webview's main thread.
@@ -44,11 +47,16 @@ fn main() -> anyhow::Result<()> {
                 window
                     .state::<protocol::AssetRegistry>()
                     .remove_window(window.label());
+                window
+                    .state::<watcher::DocumentWatchers>()
+                    .unwatch(window.label());
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::launch_info,
             commands::open_document,
+            commands::resolve_link,
+            commands::open_external,
             commands::report_timing,
         ])
         .setup(move |app| {

@@ -487,7 +487,7 @@ Ctrl+E toggles between the reading view and a full-document CodeMirror 6 editor 
 - Autosave after a few seconds of inactivity is a setting, **off by default for v1**. The reasons: the edit and save path is new code, and manual save keeps a human check between any bug and the user's file; reading is the primary mode, so accidental edits (a stray double-click and keystroke) are likely and shouldn't become permanent on their own; documents often live in folders watched by Obsidian, git, or sync tools, where frequent writes cause churn and conflicts; and changing the default from off to on later is painless, while the reverse is not. Revisit the default after v1 once the edit path has proven reliable.
 - **Crash recovery.** While a document has unsaved changes, Scrald periodically writes them to a recovery file in the app data directory (never next to the document). Recovery files are deleted on save or discard. On launch, or when reopening a document that has a recovery file, Scrald offers to restore or discard it. This is what protects against crashes and power loss, independent of the autosave setting.
 - Saves are **atomic** (write a temp file in the same directory, then rename), preserve the original line endings and BOM, and never touch bytes outside edited ranges.
-- The file watcher reloads the document when it changes externally and there are no unsaved local edits, preserving scroll position. If there are unsaved edits, Scrald shows a banner offering to keep local changes, load the disk version, or compare them in raw mode.
+- The file watcher reloads the document when it changes externally and there are no unsaved local edits, preserving scroll position. It watches the document's **directory** (non-recursively) rather than the file, because editors that save by writing a temp file and renaming it would otherwise end the watch, and debounces events by 300 ms. If there are unsaved edits, Scrald shows a banner offering to keep local changes, load the disk version, or compare them in raw mode.
 
 ---
 
@@ -497,7 +497,7 @@ Ctrl+E toggles between the reading view and a full-document CodeMirror 6 editor 
 - **Search in document:** Ctrl+F searches the source text in Rust and maps hits back to blocks; the UI highlights matches in rendered blocks and scrolls to each.
 - **Footnotes:** hover popovers in reading view, plus the endnotes section.
 - **Status bar:** word count, estimated reading time, current section, flavor, theme, zoom.
-- **Links:** external links open in the default browser. Links to other Markdown files open in Scrald (same window, with back and forward navigation).
+- **Links:** external links open in the default browser. Links to other Markdown files open in Scrald (same window, with back and forward navigation). As implemented: core's `resolve_link` classifies each link; only `http`, `https`, and `mailto` are handed to the system (via the opener plugin, from a Rust command that re-checks the scheme, so the frontend has no opener permission). Links to other local files are **not opened**, since a link to an executable must never run it; a status-bar notice explains instead. Back/Forward: Alt+Left/Right, mouse side buttons, or the status-bar arrows; each history entry keeps its scroll anchor.
 - **Post-v1:** print/export to PDF using the active theme, and a reading-progress indicator.
 
 ---

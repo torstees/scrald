@@ -114,6 +114,14 @@ export interface DocumentModel {
   remoteImagesAllowed: boolean;
 }
 
+/** Mirrors `LinkTarget` (crates/scrald-core/src/links.rs, serde `tag = "kind"`). */
+export type LinkTarget =
+  | { kind: "external"; url: string }
+  | { kind: "document"; path: string; fragment: string | null }
+  | { kind: "fragment"; id: string }
+  | { kind: "localFile"; path: string }
+  | { kind: "unsupported"; href: string };
+
 /** Mirrors `OpenedDocument` (crates/scrald-app/src/commands.rs). */
 export interface OpenedDocument {
   /** Image `id` is served at the asset URL for `${assetToken}-${id}`. */

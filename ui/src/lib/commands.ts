@@ -2,7 +2,8 @@
 // `invoke` with raw strings.
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import type { LaunchInfo, OpenedDocument } from "./types";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { LaunchInfo, LinkTarget, OpenedDocument } from "./types";
 
 export function launchInfo(): Promise<LaunchInfo> {
   return invoke<LaunchInfo>("launch_info");
@@ -20,6 +21,21 @@ export function openDocument(path: string, allowRemoteImages = false): Promise<O
  */
 export function assetUrl(assetToken: number, imageId: number): string {
   return convertFileSrc(`${assetToken}-${imageId}`, "scrald-asset");
+}
+
+/** Classifies a link clicked in the document at `documentPath`. */
+export function resolveLink(documentPath: string, href: string): Promise<LinkTarget> {
+  return invoke<LinkTarget>("resolve_link", { document: documentPath, href });
+}
+
+/** Opens an http(s) or mailto link in the system's default handler. */
+export function openExternal(url: string): Promise<void> {
+  return invoke("open_external", { url });
+}
+
+/** Calls `handler` with the path whenever this window's document changes on disk. */
+export function onDocumentChanged(handler: (path: string) => void): Promise<UnlistenFn> {
+  return listen<string>("document-changed", (event) => handler(event.payload));
 }
 
 /** Sends a frontend timing to the backend log. Never throws. */

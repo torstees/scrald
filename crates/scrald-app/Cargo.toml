@@ -22,6 +22,8 @@ serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tauri = { version = "2.12.1", features = [] }
+notify-debouncer-mini.workspace = true
+tauri-plugin-opener.workspace = true
 
 [lints]
 workspace = true

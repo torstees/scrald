@@ -7,10 +7,13 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Context;
-use scrald_core::{DocumentModel, ParseOptions};
+use scrald_core::{DocumentModel, LinkTarget, ParseOptions};
 use serde::Serialize;
+use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::AssetRegistry;
+use crate::watcher::DocumentWatchers;
 
 /// An error returned to the frontend, where it arrives as a rejected promise
 /// with this message.
@@ -49,6 +52,7 @@ pub struct OpenedDocument {
 pub async fn open_document(
     window: tauri::WebviewWindow,
     registry: tauri::State<'_, AssetRegistry>,
+    watchers: tauri::State<'_, DocumentWatchers>,
     path: PathBuf,
     allow_remote_images: bool,
 ) -> Result<OpenedDocument, CommandError> {
@@ -83,10 +87,37 @@ pub async fn open_document(
 
     let files = doc.images.iter().map(|image| image.path.clone()).collect();
     let asset_token = registry.register(window.label(), files);
+
+    // Live reload is a convenience: if watching fails (say, on a network
+    // share), the document still opens.
+    if let Err(error) = watchers.watch(window.app_handle(), window.label(), &path) {
+        tracing::warn!(error = format!("{error:#}"), "live reload unavailable");
+    }
+
     Ok(OpenedDocument {
         asset_token,
         document: doc,
     })
+}
+
+/// Classifies a link clicked in the document at `document`.
+#[tauri::command]
+pub fn resolve_link(document: PathBuf, href: String) -> LinkTarget {
+    scrald_core::resolve_link(&document, &href)
+}
+
+/// Opens a web or mail link in the system's default handler. Anything that
+/// isn't `http`, `https`, or `mailto` is refused, so a document can't use
+/// this to launch programs.
+#[tauri::command]
+pub fn open_external(app: tauri::AppHandle, url: String) -> Result<(), CommandError> {
+    match scrald_core::resolve_link(std::path::Path::new(""), &url) {
+        LinkTarget::External { url } => {
+            app.opener().open_url(url, None::<&str>)?;
+            Ok(())
+        }
+        _ => Err(anyhow::anyhow!("not a web or mail link: {url}").into()),
+    }
 }
 
 /// Logs a timing measured in the frontend, so performance numbers end up in

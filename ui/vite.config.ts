@@ -16,6 +16,12 @@ export default defineConfig({
   build: {
     target: "es2022",
   },
+  // Pre-bundle the Tauri API modules up front. Otherwise Vite discovers them
+  // at runtime and reloads the page mid-startup, which aborts in-flight IPC
+  // calls (dev mode only).
+  optimizeDeps: {
+    include: ["@tauri-apps/api/core", "@tauri-apps/api/event"],
+  },
   test: {
     include: ["src/**/*.test.ts"],
   },
