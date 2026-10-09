@@ -1,21 +1,43 @@
 /*
- * Placeholder theme tokens until real themes arrive in M3.
+ * Placeholder theme tokens until real themes arrive in M3 (DESIGN.md §7.2).
  * Components use only these --sk-* variables, never literal colors or fonts.
  */
 :root {
+  /* Lets scrollbars and form controls follow the theme's light/dark appearance. */
+  color-scheme: light;
   --sk-color-background: #fbf8f1;
   --sk-color-foreground: #2b2a27;
   --sk-color-muted: #77736a;
+  --sk-color-accent: #8a5a2b;
+  --sk-color-link: #2f5f8a;
+  --sk-color-selection: #e8e0cd;
+  --sk-color-border: #e2dccd;
+  --sk-color-code-bg: #f1ece0;
+  --sk-color-quote-bar: #c9b88f;
+  --sk-color-ui-background: #f4f0e6;
   --sk-font-body: Georgia, "Times New Roman", serif;
+  --sk-font-heading: Georgia, "Times New Roman", serif;
+  --sk-font-mono: "Cascadia Code", Consolas, monospace;
   --sk-font-ui: system-ui, sans-serif;
   --sk-font-size: 18px;
+  --sk-line-height: 1.6;
+  --sk-measure: 66;
+  --sk-paragraph-spacing: 1em;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
     --sk-color-background: #22211f;
     --sk-color-foreground: #e6e1d6;
     --sk-color-muted: #9a958a;
+    --sk-color-accent: #d6a463;
+    --sk-color-link: #8fb6d9;
+    --sk-color-selection: #3a3832;
+    --sk-color-border: #3a3832;
+    --sk-color-code-bg: #2c2a27;
+    --sk-color-quote-bar: #6e6250;
+    --sk-color-ui-background: #1c1b19;
   }
 }
 
@@ -27,4 +49,103 @@ body {
   color: var(--sk-color-foreground);
   font-family: var(--sk-font-body);
   font-size: var(--sk-font-size);
+  line-height: var(--sk-line-height);
+}
+
+/*
+ * Rendered Markdown. Block HTML comes from core via {@html}, so these rules
+ * are global, scoped under .sk-block.
+ */
+.sk-block > :first-child {
+  margin-top: 0;
+}
+
+.sk-block {
+  margin-bottom: var(--sk-paragraph-spacing);
+}
+
+.sk-block p,
+.sk-block ul,
+.sk-block ol,
+.sk-block blockquote,
+.sk-block pre,
+.sk-block table {
+  margin: 0 0 var(--sk-paragraph-spacing);
+}
+
+.sk-block > :last-child {
+  margin-bottom: 0;
+}
+
+.sk-block h1,
+.sk-block h2,
+.sk-block h3,
+.sk-block h4,
+.sk-block h5,
+.sk-block h6 {
+  font-family: var(--sk-font-heading);
+  line-height: 1.25;
+  margin: 1.6em 0 0.4em;
+}
+
+.sk-block a {
+  color: var(--sk-color-link);
+}
+
+.sk-block code {
+  font-family: var(--sk-font-mono);
+  font-size: 0.88em;
+  background: var(--sk-color-code-bg);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+.sk-block pre {
+  background: var(--sk-color-code-bg);
+  padding: 0.8em 1em;
+  border-radius: 4px;
+  overflow-x: auto;
+  line-height: 1.45;
+}
+
+.sk-block pre code {
+  background: none;
+  padding: 0;
+}
+
+.sk-block blockquote {
+  border-left: 3px solid var(--sk-color-quote-bar);
+  padding-left: 1em;
+  color: var(--sk-color-muted);
+}
+
+.sk-block hr {
+  border: none;
+  border-top: 1px solid var(--sk-color-border);
+  margin: 2em 0;
+}
+
+.sk-block table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+.sk-block th,
+.sk-block td {
+  border: 1px solid var(--sk-color-border);
+  padding: 0.3em 0.6em;
+}
+
+.sk-block img {
+  max-width: 100%;
+  height: auto;
+}
+
+.sk-block li > input[type="checkbox"] {
+  margin-right: 0.4em;
+}
+
+::selection {
+  background: var(--sk-color-selection);
 }

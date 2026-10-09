@@ -158,6 +158,16 @@ Parsing is not the bottleneck: comrak parses a 100K-word file (~600–700 KB) in
 | Theme switch | < 300 ms |
 | Re-render after a single-block edit | < 100 ms |
 
+Measured 2026-10-08 (release build, Windows 11, WebView2; time from `open_document` call to paint):
+
+| Fixture | Parse + render (Rust) | First screen | Full document mounted |
+|---|---|---|---|
+| 100K words | ~35 ms | ~100 ms | ~180 ms |
+| 250K words | ~90 ms | ~175 ms | ~400 ms |
+| 500K words | ~172 ms | ~305 ms | ~780 ms |
+
+Section containment plus progressive mount is comfortably inside the budget, so virtualization (item 5) is not needed for now.
+
 A fixture generator in `scrald-core` produces 100K, 250K, and 500K-word documents with headings, lists, tables, code, images, and math, for benchmarks and manual testing.
 
 ---

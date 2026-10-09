@@ -27,7 +27,11 @@ fn main() -> anyhow::Result<()> {
 
     tauri::Builder::default()
         .manage(launch)
-        .invoke_handler(tauri::generate_handler![commands::launch_info])
+        .invoke_handler(tauri::generate_handler![
+            commands::launch_info,
+            commands::open_document,
+            commands::report_timing,
+        ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
                 window.set_title(&window_title)?;
@@ -43,8 +47,20 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Logs to stderr, or to the file named by `SCRALD_LOG_FILE` if set. Release
+/// builds have no console on Windows, so the file is how to see their logs
+/// (for example when measuring performance).
 fn init_logging() {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    let builder = tracing_subscriber::fmt().with_env_filter(filter);
+    match std::env::var_os("SCRALD_LOG_FILE").map(std::fs::File::create) {
+        // Rust note: `Mutex<File>` lets several threads share one file handle
+        // safely; tracing locks it for each log line.
+        Some(Ok(file)) => builder
+            .with_ansi(false)
+            .with_writer(std::sync::Mutex::new(file))
+            .init(),
+        _ => builder.init(),
+    }
 }

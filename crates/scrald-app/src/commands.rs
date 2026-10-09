@@ -4,8 +4,71 @@
 //! keep the two in sync.
 
 use std::path::PathBuf;
+use std::time::Instant;
 
+use anyhow::Context;
+use scrald_core::DocumentModel;
 use serde::Serialize;
+
+/// An error returned to the frontend, where it arrives as a rejected promise
+/// with this message.
+// Rust note: Tauri needs command errors to be `Serialize`. `anyhow::Error`
+// isn't, so this wrapper carries the message text across the boundary.
+#[derive(Debug, Serialize)]
+pub struct CommandError(String);
+
+// Rust note: implementing `From<E>` lets `?` convert errors automatically:
+// any error type that `anyhow::Error` accepts becomes a `CommandError`.
+impl<E: Into<anyhow::Error>> From<E> for CommandError {
+    fn from(error: E) -> Self {
+        let error: anyhow::Error = error.into();
+        // `{:#}` includes the chain of `.context()` messages.
+        CommandError(format!("{error:#}"))
+    }
+}
+
+/// Reads and parses a Markdown file, and sets the window title from it.
+///
+/// Parsing runs on a background thread so the window stays responsive.
+// Rust note: an `async fn` command runs on Tauri's async runtime instead of
+// the main thread. `spawn_blocking` then moves the CPU-bound parse onto a
+// thread pool, and `.await` waits for it without blocking anything.
+#[tauri::command]
+pub async fn open_document(
+    window: tauri::WebviewWindow,
+    path: PathBuf,
+) -> Result<DocumentModel, CommandError> {
+    let started = Instant::now();
+    let load_path = path.clone();
+    // Rust note: `move` makes the closure take ownership of `load_path`, so it
+    // can run on another thread after this function's locals are gone. The
+    // double `??` unwraps two layers: the thread's result, then the parse's.
+    let doc = tauri::async_runtime::spawn_blocking(move || scrald_core::load_document(&load_path))
+        .await
+        .context("document loading task failed")??;
+    tracing::info!(
+        path = %path.display(),
+        blocks = doc.blocks.len(),
+        words = doc.word_count,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "opened document"
+    );
+
+    let title = doc
+        .front_matter
+        .as_ref()
+        .and_then(|fm| fm.title.clone())
+        .unwrap_or_else(|| scrald_core::title_from_path(&path));
+    window.set_title(&format!("{title} \u{2014} Scrald"))?;
+    Ok(doc)
+}
+
+/// Logs a timing measured in the frontend, so performance numbers end up in
+/// the same log as the backend's (DESIGN.md §4 budget checks).
+#[tauri::command]
+pub fn report_timing(name: String, ms: f64) {
+    tracing::info!(name, ms = (ms * 10.0).round() / 10.0, "frontend timing");
+}
 
 /// What the app was launched with. Built once at startup and stored as Tauri
 /// managed state.
