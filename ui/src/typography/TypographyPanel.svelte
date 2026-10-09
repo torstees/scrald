@@ -1,5 +1,6 @@
 <script lang="ts">
   // Text sizing and zoom controls (DESIGN.md §7.4), opened from the status bar.
+  import Popover from "../status/Popover.svelte";
   import { formatZoom, MAX_ZOOM, MIN_ZOOM, type TextSizing } from "./typography";
 
   interface Props {
@@ -28,40 +29,9 @@
     onclose,
   }: Props = $props();
 
-  let panel: HTMLDivElement | undefined = $state();
-
-  $effect(() => {
-    panel?.focus();
-  });
-
-  function onKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onclose();
-    }
-  }
-
-  /**
-   * Close on a click anywhere outside the panel. The status bar button that
-   * opens the panel is exempt (marked `data-typography-toggle`); it toggles.
-   */
-  function onWindowPointerDown(event: PointerEvent): void {
-    const target = event.target as Element | null;
-    if (!target || panel?.contains(target) || target.closest("[data-typography-toggle]")) return;
-    onclose();
-  }
 </script>
 
-<svelte:window onpointerdown={onWindowPointerDown} />
-
-<div
-  class="panel"
-  bind:this={panel}
-  tabindex="-1"
-  role="dialog"
-  aria-label="Text size and zoom"
-  onkeydown={onKeydown}
->
+<Popover label="Text size and zoom" toggle="typography" {onclose}>
   <div class="row">
     <span class="label">Text size</span>
     <div class="segmented" role="radiogroup" aria-label="Text sizing mode">
@@ -90,29 +60,9 @@
 
   <button class="default" onclick={onmakedefault}>Make this the default</button>
   <p class="hint">Applies to documents without their own setting.</p>
-</div>
+</Popover>
 
 <style>
-  .panel {
-    position: fixed;
-    right: 0.75rem;
-    bottom: 2.2rem;
-    z-index: 10;
-    width: 17rem;
-    padding: 0.75rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    background: var(--sk-color-ui-background);
-    color: var(--sk-color-foreground);
-    border: 1px solid var(--sk-color-border);
-    border-radius: 8px;
-    box-shadow: 0 8px 28px color-mix(in srgb, var(--sk-color-foreground) 22%, transparent);
-    font-family: var(--sk-font-ui);
-    font-size: 0.8rem;
-    outline: none;
-  }
-
   .row {
     display: flex;
     align-items: center;

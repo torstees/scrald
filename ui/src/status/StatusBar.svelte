@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Flavor, FlavorSource } from "../lib/types";
-  import { autoLabel, FLAVOR_NAMES, switcherValue } from "./flavor";
+  import { FLAVOR_NAMES } from "./flavor";
+  import FlavorMenu from "./FlavorMenu.svelte";
   import { formatReadingTime, formatWordCount } from "./reading";
 
   interface Props {
@@ -53,13 +54,9 @@
     onflavor,
   }: Props = $props();
 
-  // What "auto" currently resolves to; only shown when no flavor is chosen.
-  const auto = $derived(flavorSource === "document" ? null : autoLabel(flavor, flavorSource));
-
-  function onFlavorChange(event: Event & { currentTarget: HTMLSelectElement }): void {
-    const value = event.currentTarget.value;
-    onflavor(value === "auto" ? null : (value as Flavor));
-  }
+  let flavorMenuOpen = $state(false);
+  // "Pandoc" when chosen for this document, "Pandoc (auto)" otherwise.
+  const flavorLabel = $derived(`${FLAVOR_NAMES[flavor]}${flavorSource === "document" ? "" : " (auto)"}`);
 </script>
 
 <footer class="sk-status">
@@ -90,21 +87,20 @@
   {#if themeName}
     <button class="theme" onclick={onthemeclick} title="Change theme (Ctrl+T)">{themeName}</button>
   {/if}
-  <button class="theme" data-typography-toggle onclick={ontypographyclick} title="Text size and zoom (Ctrl+wheel, Ctrl+=, Ctrl+−, Ctrl+0)"
+  <button class="theme" data-popover-toggle="typography" onclick={ontypographyclick} title="Text size and zoom (Ctrl+wheel, Ctrl+=, Ctrl+−, Ctrl+0)"
     >{typography}</button
   >
-  <select
-    class="flavor"
+  <button
+    class="theme"
+    data-popover-toggle="flavor"
     title="Markdown flavor"
-    aria-label="Markdown flavor"
-    value={switcherValue(flavor, flavorSource)}
-    onchange={onFlavorChange}
+    aria-haspopup="dialog"
+    aria-expanded={flavorMenuOpen}
+    onclick={() => (flavorMenuOpen = !flavorMenuOpen)}>{flavorLabel}</button
   >
-    <option value="auto">{auto ?? "Auto"}</option>
-    {#each Object.entries(FLAVOR_NAMES) as [value, name] (value)}
-      <option {value}>{name}</option>
-    {/each}
-  </select>
+  {#if flavorMenuOpen}
+    <FlavorMenu {flavor} {flavorSource} onchoose={onflavor} onclose={() => (flavorMenuOpen = false)} />
+  {/if}
   <span>{formatWordCount(wordCount)}</span>
   <span title="Estimated reading time">{formatReadingTime(wordCount)}</span>
 </footer>
@@ -168,21 +164,6 @@
   }
 
   .theme:hover {
-    border-color: var(--sk-color-border);
-    color: var(--sk-color-foreground);
-  }
-
-  .flavor {
-    font: inherit;
-    color: var(--sk-color-muted);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-
-  .flavor:hover,
-  .flavor:focus {
     border-color: var(--sk-color-border);
     color: var(--sk-color-foreground);
   }

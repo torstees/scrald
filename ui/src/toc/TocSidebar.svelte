@@ -104,9 +104,15 @@
   select {
     font: inherit;
     color: inherit;
-    background: transparent;
+    background: var(--sk-color-ui-background);
     border: 1px solid var(--sk-color-border);
     border-radius: 3px;
+  }
+
+  /* The drop-down list is drawn by the webview; set its colors explicitly. */
+  option {
+    background: var(--sk-color-ui-background);
+    color: var(--sk-color-foreground);
   }
 
   ul {
