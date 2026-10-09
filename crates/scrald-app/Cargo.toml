@@ -1,0 +1,27 @@
+[package]
+name = "scrald-app"
+description = "Scrald desktop app: the thin Tauri layer over scrald-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# The executable is named `scrald`, so `scrald path/to/file.md` works (DESIGN.md §11).
+[[bin]]
+name = "scrald"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7.1", features = [] }
+
+[dependencies]
+scrald-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tauri = { version = "2.12.1", features = [] }
+
+[lints]
+workspace = true

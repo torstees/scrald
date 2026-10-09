@@ -1,0 +1,30 @@
+/*
+ * Placeholder theme tokens until real themes arrive in M3.
+ * Components use only these --sk-* variables, never literal colors or fonts.
+ */
+:root {
+  --sk-color-background: #fbf8f1;
+  --sk-color-foreground: #2b2a27;
+  --sk-color-muted: #77736a;
+  --sk-font-body: Georgia, "Times New Roman", serif;
+  --sk-font-ui: system-ui, sans-serif;
+  --sk-font-size: 18px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sk-color-background: #22211f;
+    --sk-color-foreground: #e6e1d6;
+    --sk-color-muted: #9a958a;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--sk-color-background);
+  color: var(--sk-color-foreground);
+  font-family: var(--sk-font-body);
+  font-size: var(--sk-font-size);
+}

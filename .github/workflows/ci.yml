@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # scrald-core has no GUI dependencies and must pass on every platform (DESIGN.md §11.1).
+  core:
+    name: core (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: core
+      - run: cargo fmt --all --check
+      - run: cargo clippy -p scrald-core --all-targets -- -D warnings
+      - run: cargo test -p scrald-core
+
+  # The full app (Tauri + frontend) on Windows only until milestone M10.
+  app-windows:
+    name: app (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: app
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      # tauri::generate_context! needs the built frontend (frontendDist) to exist.
+      - run: npm run build --workspace ui
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace

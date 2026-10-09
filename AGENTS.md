@@ -19,8 +19,13 @@ The maintainer is an experienced developer (10+ years C++, 10 years Python, some
 
 ```
 crates/scrald-core/   # pure Rust library, no Tauri or GUI dependencies
-crates/scrald-app/    # Tauri application
-ui/                   # Svelte + TypeScript frontend
+crates/scrald-app/    # Tauri application (tauri.conf.json, capabilities/, icons/ live here)
+ui/                   # Svelte + TypeScript frontend (npm workspace)
+assets/               # source artwork, e.g. icon-source.png (regenerate icons with
+                      #   `npm run tauri -- icon assets/icon-source.png -o crates/scrald-app/icons`,
+                      #   then delete the android/, ios/, and Square*/StoreLogo outputs)
+.github/workflows/    # CI
+package.json          # root npm workspace + Tauri CLI
 DESIGN.md  TODO.md  AGENTS.md  CLAUDE.md
 ```
 
@@ -36,19 +41,26 @@ Logic belongs in `scrald-core` whenever it can be tested without a window. `scra
 
 ## Commands
 
-Run these from the repository root unless noted. Adjust this section as scripts are added.
+Run these from the repository root. They work in both PowerShell and Git Bash. The root `package.json` is an npm workspace containing `ui/`, so one `npm install` at the root installs everything.
 
 | Task | Command |
 |---|---|
-| Run app in dev mode | `npm run tauri dev` (from `ui/` or root, per final setup) |
+| Install frontend deps | `npm install` |
+| Run app in dev mode | `npm run tauri dev` |
+| Run app with a file | `npm run tauri -- dev -- -- path/to/file.md` (use an absolute path; the app's working directory is `crates/scrald-app`) |
 | Rust format | `cargo fmt --all` |
 | Rust lint | `cargo clippy --workspace --all-targets -- -D warnings` |
 | Rust tests | `cargo test --workspace` |
-| Review snapshots | `cargo insta review` |
-| Benchmarks | `cargo bench -p scrald-core` |
-| Frontend typecheck | `npm run check` (in `ui/`) |
-| Frontend tests | `npm run test` (in `ui/`) |
-| Release build | `npm run tauri build` |
+| Review snapshots | `cargo insta review` (from M1; needs `cargo install cargo-insta`) |
+| Benchmarks | `cargo bench -p scrald-core` (from M1) |
+| Frontend typecheck | `npm run check` |
+| Frontend tests | `npm test` |
+| Release build (no installer) | `npm run tauri -- build --no-bundle` |
+| Release build + installers | `npm run tauri build` (verified in M7) |
+
+Before `cargo clippy` or `cargo build` on a fresh checkout, build the frontend once (`npm run build --workspace ui`, or any `tauri dev`/`build` run): Tauri's `generate_context!` needs `ui/dist` to exist.
+
+Logging: set `RUST_LOG` to override the default filter (`info,scrald=debug,scrald_core=debug`), e.g. `RUST_LOG=trace`. Log output appears in the terminal for debug builds.
 
 ## Work tracking
 

@@ -1,0 +1,31 @@
+[workspace]
+resolver = "3"
+members = ["crates/scrald-core", "crates/scrald-app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/torstees/scrald"
+
+# Shared dependency versions. Member crates opt in with `name.workspace = true`.
+[workspace.dependencies]
+scrald-core = { path = "crates/scrald-core" }
+anyhow = "1.0.104"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+# Lints shared by every crate (each crate opts in with `[lints] workspace = true`).
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# AGENTS.md: no unwrap() outside tests; use expect("reason") only for true invariants.
+unwrap_used = "warn"
+# AGENTS.md: log with `tracing`, not println!.
+print_stdout = "warn"
+print_stderr = "warn"
+dbg_macro = "warn"

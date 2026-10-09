@@ -1,0 +1,16 @@
+{
+  "name": "scrald-workspace",
+  "private": true,
+  "description": "Root of the Scrald repo: runs the Tauri CLI and hosts the ui/ npm workspace.",
+  "workspaces": [
+    "ui"
+  ],
+  "scripts": {
+    "tauri": "tauri",
+    "check": "npm run check --workspace ui",
+    "test": "npm run test --workspace ui"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1"
+  }
+}
