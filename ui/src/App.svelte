@@ -28,6 +28,8 @@
   import TocSidebar from "./toc/TocSidebar.svelte";
   import { entryForHeadingBlock } from "./toc/tree";
   import StatusBar from "./status/StatusBar.svelte";
+  import { TypographyController } from "./typography/controller.svelte";
+  import TypographyPanel from "./typography/TypographyPanel.svelte";
 
   let doc = $state<DocumentModel | null>(null);
   let assetToken = $state(0);
@@ -48,6 +50,30 @@
   let themeList = $state<ThemeSummary[]>([]);
   let themeFolder = $state<string | null>(null);
 
+  let mainElement: HTMLElement | undefined = $state();
+  let typographyOpen = $state(false);
+  const typography = new TypographyController({
+    documentPath: () => doc?.path ?? null,
+    // Before the reader exists, estimate from the main area minus the reader's padding.
+    textAreaWidth: () => reader?.textAreaWidth() || (mainElement?.clientWidth ?? 800) - 48,
+    viewportTop: () => reader?.viewportTop() ?? 0,
+    captureAnchor: (offsetY) => reader?.captureAnchor(offsetY) ?? null,
+    stableAnchor: () => reader?.stableAnchor() ?? null,
+    previewScale: (scale, offsetY, ms) => reader?.previewScale(scale, offsetY, ms) ?? Promise.resolve(),
+    clearPreview: () => reader?.clearPreview(),
+    restoreAnchor: (anchor, offsetY) => reader?.scrollToAnchor(anchor, offsetY) ?? Promise.resolve(),
+  });
+
+  // Fit mode follows the width of the reading area (window resizes, TOC
+  // toggles). The <main> element only exists once a document is open.
+  $effect(() => {
+    const element = mainElement;
+    if (!element) return;
+    const observer = new ResizeObserver(() => typography.onResize());
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
+
   const history = new NavHistory();
   // A heading slug to scroll to once a newly opened document is on screen.
   let pendingFragment: string | null = null;
@@ -63,7 +89,7 @@
   const sectionTitle = $derived(currentEntry === null ? null : (doc?.toc[currentEntry]?.text ?? null));
 
   onMount(() => {
-    void start();
+    void typography.loadDefaults().then(start);
     // Live reload (DESIGN.md §9.3). There is no editing yet, so a change on
     // disk always reloads; M6 adds the "unsaved changes" banner.
     const unlisten = onDocumentChanged((path) => {
@@ -74,9 +100,17 @@
       if (theme && !switcherOpen) void showTheme(theme.id);
       if (switcherOpen) void refreshThemeList();
     });
+    // Ctrl+wheel and trackpad pinch zoom the text, not the whole webview.
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey || !doc) return;
+      event.preventDefault();
+      typography.wheel(event);
+    };
+    window.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       void unlisten.then((stop) => stop());
       void unlistenThemes.then((stop) => stop());
+      window.removeEventListener("wheel", onWheel);
     };
   });
 
@@ -106,6 +140,7 @@
       // Apply the theme before the document renders, so it never flashes
       // in the previous document's theme.
       theme = opened.theme;
+      typography.setDocument(opened.memory);
       await showTheme(opened.theme.id, false);
       initialAnchor = anchor === "remembered" ? (opened.memory.anchor ?? TOP_ANCHOR) : anchor;
       assetToken = opened.assetToken;
@@ -220,6 +255,7 @@
       applyTheme(style);
       themeName = style.name;
       numbering = style.numbering;
+      typography.setTheme(style.layout);
     } catch (e) {
       showNotice(`Could not load theme ${id}: ${String(e)}`);
       return;
@@ -306,10 +342,20 @@
 
   function onKeydown(event: KeyboardEvent): void {
     if (switcherOpen) return;
-    if (event.ctrlKey && (event.key === "t" || event.key === "T")) {
+    if (event.ctrlKey && doc && (event.key === "=" || event.key === "+")) {
+      event.preventDefault();
+      typography.zoomIn();
+    } else if (event.ctrlKey && doc && (event.key === "-" || event.key === "_")) {
+      event.preventDefault();
+      typography.zoomOut();
+    } else if (event.ctrlKey && doc && event.key === "0") {
+      event.preventDefault();
+      typography.resetZoom();
+    } else if (event.ctrlKey && (event.key === "t" || event.key === "T")) {
       event.preventDefault();
       void openSwitcher();
-    } else if (event.ctrlKey && event.key === "\\") {
+    } else if (event.ctrlKey && (event.key === "\\" || event.code === "Backslash")) {
+      // Match the physical key too: on many non-US layouts the backslash isn't on it.
       event.preventDefault();
       tocVisible = !tocVisible;
     } else if (event.altKey && event.key === "ArrowLeft") {
@@ -345,7 +391,7 @@
     {#if tocVisible}
       <TocSidebar toc={doc.toc} current={currentEntry} onselect={selectTocEntry} {numbering} />
     {/if}
-    <main class="sk-main">
+    <main class="sk-main" bind:this={mainElement}>
       <Reader
         bind:this={reader}
         {doc}
@@ -356,6 +402,8 @@
         onfullymounted={() => reportTiming("full_mount", performance.now() - openStarted)}
         onlink={onLink}
         onscrollsettled={rememberPosition}
+        fontSize={typography.fontSize}
+        fillWindow={typography.fillWindow}
       />
     </main>
     <StatusBar
@@ -371,7 +419,28 @@
       onallowremote={allowRemoteImages}
       {themeName}
       onthemeclick={openSwitcher}
+      {tocVisible}
+      ontoggletoc={() => (tocVisible = !tocVisible)}
+      typography={typography.summary}
+      ontypographyclick={() => (typographyOpen = !typographyOpen)}
     />
+    {#if typographyOpen}
+      <TypographyPanel
+        mode={typography.mode}
+        zoom={typography.zoom}
+        fillWindow={typography.fillWindow}
+        onmode={(mode) => typography.setMode(mode)}
+        onzoomin={() => typography.zoomIn()}
+        onzoomout={() => typography.zoomOut()}
+        onzoomreset={() => typography.resetZoom()}
+        onfillwindow={(fill) => void typography.setFillWindow(fill)}
+        onmakedefault={async () => {
+          await typography.makeDefault();
+          showNotice(`Default text size: ${typography.summary}`);
+        }}
+        onclose={() => (typographyOpen = false)}
+      />
+    {/if}
     {#if switcherOpen && theme}
       <ThemeSwitcher
         themes={themeList}

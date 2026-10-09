@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use rusqlite::{Connection, OptionalExtension, params};
+use scrald_core::theme::TextSizing;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +49,28 @@ const LAST_WINDOW: &str = "window.last";
 /// Setting key for the global default theme id (DESIGN.md §7.6).
 pub const DEFAULT_THEME: &str = "theme.default";
 
+/// Setting key for the global typography defaults (DESIGN.md §7.4).
+const TYPOGRAPHY: &str = "typography";
+
+/// Zoom is a multiplier on the base font size; outside this range the
+/// reader stops being useful.
+pub const MIN_ZOOM: f64 = 0.5;
+pub const MAX_ZOOM: f64 = 3.0;
+
+/// Global typography settings: what "Make this the default" stores, plus the
+/// per-user "fill window" toggle.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypographyDefaults {
+    /// `None` means "use the theme's suggestion".
+    pub text_sizing: Option<TextSizing>,
+    /// `None` means 100%.
+    pub zoom: Option<f64>,
+    /// Let text run the full window width, ignoring the measure.
+    #[serde(default)]
+    pub fill_window: bool,
+}
+
 /// A reading position (DESIGN.md §4); mirrors `ScrollAnchor` in ui/src/reader/anchor.ts.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +90,10 @@ pub struct DocumentMemory {
     pub remote_images: bool,
     /// Theme the user picked for this document in Scrald, if any.
     pub theme: Option<String>,
+    /// Text sizing mode chosen for this document, if any.
+    pub text_sizing: Option<TextSizing>,
+    /// Zoom chosen for this document, if any.
+    pub zoom: Option<f64>,
 }
 
 /// A window's position and size in physical pixels, plus whether it was
@@ -158,7 +185,8 @@ impl StateStore {
         )?;
 
         let memory = conn.query_row(
-            "SELECT scroll_offset, scroll_fraction, remote_images, theme FROM documents WHERE path = ?1",
+            "SELECT scroll_offset, scroll_fraction, remote_images, theme, text_sizing, zoom
+             FROM documents WHERE path = ?1",
             [&key],
             |row| {
                 let offset: Option<i64> = row.get(0)?;
@@ -172,6 +200,11 @@ impl StateStore {
                     anchor,
                     remote_images: row.get(2)?,
                     theme: row.get(3)?,
+                    text_sizing: row
+                        .get::<_, Option<String>>(4)?
+                        .as_deref()
+                        .and_then(parse_text_sizing),
+                    zoom: row.get(5)?,
                 })
             },
         )?;
@@ -201,6 +234,36 @@ impl StateStore {
             params![document_key(path), theme],
         )?;
         Ok(())
+    }
+
+    /// Sets (or with `None`, clears) a document's text sizing mode and zoom.
+    pub fn set_document_typography(
+        &self,
+        path: &Path,
+        text_sizing: Option<TextSizing>,
+        zoom: Option<f64>,
+    ) -> anyhow::Result<()> {
+        self.conn().execute(
+            "UPDATE documents SET text_sizing = ?2, zoom = ?3 WHERE path = ?1",
+            params![
+                document_key(path),
+                text_sizing.map(text_sizing_name),
+                zoom.map(clamp_zoom)
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn typography_defaults(&self) -> anyhow::Result<TypographyDefaults> {
+        Ok(self.get_setting(TYPOGRAPHY)?.unwrap_or_default())
+    }
+
+    pub fn set_typography_defaults(&self, defaults: TypographyDefaults) -> anyhow::Result<()> {
+        let defaults = TypographyDefaults {
+            zoom: defaults.zoom.map(clamp_zoom),
+            ..defaults
+        };
+        self.set_setting(TYPOGRAPHY, &defaults)
     }
 
     /// Saves a window's geometry for the document it showed (if any) and as
@@ -290,6 +353,30 @@ impl StateStore {
             params![key, serde_json::to_string(value)?],
         )?;
         Ok(())
+    }
+}
+
+fn text_sizing_name(mode: TextSizing) -> &'static str {
+    match mode {
+        TextSizing::Fixed => "fixed",
+        TextSizing::Fit => "fit",
+    }
+}
+
+fn parse_text_sizing(name: &str) -> Option<TextSizing> {
+    match name {
+        "fixed" => Some(TextSizing::Fixed),
+        "fit" => Some(TextSizing::Fit),
+        _ => None,
+    }
+}
+
+/// Keeps zoom in range, and treats a non-number as 100%.
+pub fn clamp_zoom(zoom: f64) -> f64 {
+    if zoom.is_finite() {
+        zoom.clamp(MIN_ZOOM, MAX_ZOOM)
+    } else {
+        1.0
     }
 }
 
@@ -431,6 +518,42 @@ mod tests {
         );
         store.set_document_theme(&path, None).unwrap();
         assert_eq!(store.record_open(&path).unwrap().theme, None);
+    }
+
+    #[test]
+    fn remembers_document_typography_clamped() {
+        let dir = temp_dir("typography");
+        let path = doc(&dir, "a.md", "# A");
+        let store = StateStore::in_memory().unwrap();
+        store.record_open(&path).unwrap();
+        store
+            .set_document_typography(&path, Some(TextSizing::Fit), Some(9.0))
+            .unwrap();
+        let memory = store.record_open(&path).unwrap();
+        assert_eq!(memory.text_sizing, Some(TextSizing::Fit));
+        assert_eq!(memory.zoom, Some(MAX_ZOOM));
+        store.set_document_typography(&path, None, None).unwrap();
+        let memory = store.record_open(&path).unwrap();
+        assert_eq!((memory.text_sizing, memory.zoom), (None, None));
+    }
+
+    #[test]
+    fn typography_defaults_round_trip() {
+        let store = StateStore::in_memory().unwrap();
+        assert_eq!(
+            store.typography_defaults().unwrap(),
+            TypographyDefaults::default()
+        );
+        let defaults = TypographyDefaults {
+            text_sizing: Some(TextSizing::Fit),
+            zoom: Some(0.1),
+            fill_window: true,
+        };
+        store.set_typography_defaults(defaults).unwrap();
+        let stored = store.typography_defaults().unwrap();
+        assert_eq!(stored.zoom, Some(MIN_ZOOM));
+        assert!(stored.fill_window);
+        assert_eq!(stored.text_sizing, Some(TextSizing::Fit));
     }
 
     #[test]

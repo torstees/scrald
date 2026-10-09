@@ -403,6 +403,15 @@ A per-user **"fill window"** toggle ignores the measure entirely, letting the te
 
 **Zoom** (Ctrl+wheel, Ctrl+plus/minus, trackpad pinch, Ctrl+0 to reset) scales a single `--sk-zoom` variable that multiplies the base font size. Changes animate smoothly over ~120 ms, and the block under the cursor (or at the top of the viewport for keyboard zoom) stays anchored in place.
 
+As implemented (`ui/src/typography/`):
+
+- Zoom and fit change only the **reading column's** font size (set in px on the column); the sidebar, status bar, and other UI keep their size. The measure is in `ch` of the column, so it scales with the text.
+- Fit mode measures the body font's real `ch` width and solves `measure × ch = available width`, clamped to `[min_font_size, max_font_size]`, then multiplies by zoom. It re-measures when web fonts finish loading.
+- Keyboard zoom steps like a browser (50% … 300%) and animates over ~180 ms as a CSS transform on the reading column (GPU, no text reflow); when it ends, the real font size is applied and the transform removed in the same frame. Re-laying-out text on every frame was too slow to look smooth. Quick repeated presses each count as a step and glide from wherever the animation is. `Ctrl+wheel` and trackpad pinch (which WebView2 delivers as `Ctrl+wheel`) are handled as a gesture: each event only updates the same GPU preview, centered on the cursor (a notched wheel eases each ~16% click over 80 ms; pinch and smooth-scrolling wheels follow the input exactly), and the real font size is applied once, 150 ms after the wheel stops, keeping the text under the cursor in place. Animation is skipped when the system asks for reduced motion. WebView2's own page zoom stays disabled (Tauri's default), so these keys reach Scrald.
+- Resizing keeps the reading position by restoring the anchor recorded at the last scroll: by the time a resize handler runs, the text has already rewrapped, so a fresh capture would already have drifted.
+- When capturing the reading position, a block with only a sliver (< 2 px) left on screen doesn't count; scroll positions snap to device pixels, and anchoring to such a sliver would let the paragraph gap after it grow with every zoom. The TOC highlight uses the same rule, so it always agrees with the saved position.
+- Per-document text sizing and zoom are stored in the state database; "Make this the default" stores the current mode and zoom as the global default, which documents without their own setting use. "Fill window" is a global toggle.
+
 ### 7.5 Fonts
 
 - **System fonts:** enumerated with `fontdb` and offered in the theme editor and font pickers.
@@ -500,7 +509,7 @@ Ctrl+E toggles between the reading view and a full-document CodeMirror 6 editor 
 
 ## 10. Navigation and reading features
 
-- **Table of contents:** a sidebar built from headings, with collapsible levels, the current section highlighted while scrolling, and click-to-jump. Toggle with Ctrl+\\. For novels, a setting to show only H1/H2 keeps the list manageable.
+- **Table of contents:** a sidebar built from headings, with collapsible levels, the current section highlighted while scrolling, and click-to-jump. Toggle with `Ctrl+\` or the ☰ button in the status bar. For novels, a setting to show only H1/H2 keeps the list manageable.
 - **Search in document:** Ctrl+F searches the source text in Rust and maps hits back to blocks; the UI highlights matches in rendered blocks and scrolls to each.
 - **Footnotes:** hover popovers in reading view, plus the endnotes section.
 - **Status bar:** word count, estimated reading time, current section, flavor, theme, zoom.

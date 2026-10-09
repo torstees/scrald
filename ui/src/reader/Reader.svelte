@@ -26,6 +26,10 @@
     onlink?: (href: string) => void;
     /** Called once scrolling has stopped for a moment (to save the position). */
     onscrollsettled?: () => void;
+    /** Reading font size in px (text sizing mode and zoom applied). */
+    fontSize?: number | null;
+    /** Ignore the measure and let text run the full width. */
+    fillWindow?: boolean;
   }
 
   let {
@@ -37,6 +41,8 @@
     onfullymounted,
     onlink,
     onscrollsettled,
+    fontSize = null,
+    fillWindow = false,
   }: Props = $props();
 
   /** How long scrolling must pause before the position counts as settled. */
@@ -85,7 +91,7 @@
     await afterPaint();
     if (gen !== generation) return;
     onfirstscreen?.();
-    updateCurrentSection();
+    noteScrolled();
 
     const step = () => {
       if (gen !== generation) return;
@@ -114,26 +120,59 @@
     return { top: r.top, height: r.height };
   }
 
-  /** The current reading position. */
-  export function captureAnchor(): ScrollAnchor {
+  /**
+   * The reading position at `offsetY` px below the top of the viewport (the
+   * top by default; zoom anchors at the cursor).
+   */
+  export function captureAnchor(offsetY = 0): ScrollAnchor {
     if (!scroller) return TOP_ANCHOR;
-    const viewTop = scroller.getBoundingClientRect().top;
-    const sections = sectionElements();
-    const s = firstBoxBelow(sections.length, (i) => extentOf(sections[i]), viewTop);
-    const blockEls = sections[s]?.querySelectorAll<HTMLElement>(":scope > .sk-block");
-    const section = doc.sections[s];
-    if (!blockEls || blockEls.length === 0 || !section) {
-      const first = section ? doc.blocks[section.firstBlock] : undefined;
-      return { offset: first?.source.start ?? 0, fraction: 0 };
-    }
-    const b = firstBoxBelow(blockEls.length, (i) => extentOf(blockEls[i]), viewTop);
-    const { top, height } = extentOf(blockEls[b]);
-    const block = doc.blocks[section.firstBlock + b];
+    const viewTop = scroller.getBoundingClientRect().top + offsetY;
+    const found = blockAt(viewTop);
+    if (!found) return TOP_ANCHOR;
+    const block = doc.blocks[found.blockId];
+    if (!found.element) return { offset: block?.source.start ?? 0, fraction: 0 };
+    const { top, height } = extentOf(found.element);
     return { offset: block?.source.start ?? 0, fraction: fractionInto(viewTop, top, height) };
   }
 
-  /** Scrolls so the anchored position is at the top of the viewport. */
-  export async function scrollToAnchor(anchor: ScrollAnchor): Promise<void> {
+  /**
+   * A block whose last few pixels are all that remain on screen doesn't
+   * count as "at" the position. Scroll positions snap to device pixels, so
+   * without this a 0.4 px sliver of the previous block could become the
+   * anchor, and the paragraph gap after it would then grow with every zoom.
+   */
+  const SLIVER_PX = 2;
+
+  /**
+   * The block at client y-coordinate `y`: the first block whose bottom is
+   * more than a sliver below `y`, so the gap between blocks belongs to the
+   * block after it. `element` is null when its section isn't mounted yet.
+   */
+  function blockAt(y: number): { blockId: number; sectionIndex: number; element: HTMLElement | null } | null {
+    const sections = sectionElements();
+    let s = firstBoxBelow(sections.length, (i) => extentOf(sections[i]), y + SLIVER_PX);
+    // Look at most two sections: if `y` is in the trailing
+    // gap of section s (below its last block), the answer is in section s + 1.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const section = doc.sections[s];
+      if (!section) return null;
+      const blockEls = sections[s]?.querySelectorAll<HTMLElement>(":scope > .sk-block");
+      if (!blockEls || blockEls.length === 0) {
+        return { blockId: section.firstBlock, sectionIndex: s, element: null };
+      }
+      const b = firstBoxBelow(blockEls.length, (i) => extentOf(blockEls[i]), y + SLIVER_PX);
+      const element = blockEls[b] ?? null;
+      const below = element !== null && element.getBoundingClientRect().bottom > y + SLIVER_PX;
+      if (below || s + 1 >= doc.sections.length) {
+        return { blockId: section.firstBlock + b, sectionIndex: s, element };
+      }
+      s += 1;
+    }
+    return null;
+  }
+
+  /** Scrolls so the anchored position is `offsetY` px below the top of the viewport. */
+  export async function scrollToAnchor(anchor: ScrollAnchor, offsetY = 0): Promise<void> {
     if (!scroller) return;
     const block = doc.blocks[blockIndexAtOffset(doc.blocks, anchor.offset)];
     if (!block) return;
@@ -144,8 +183,51 @@
     const el = scroller.querySelector<HTMLElement>(`[data-block="${block.id}"]`);
     if (!el) return;
     const { top, height } = extentOf(el);
-    scroller.scrollTop += top - scroller.getBoundingClientRect().top + anchor.fraction * height;
-    updateCurrentSection();
+    scroller.scrollTop += top - scroller.getBoundingClientRect().top - offsetY + anchor.fraction * height;
+    noteScrolled();
+  }
+
+  /** Width available to the text column: the scroller minus its padding and scrollbar. */
+  export function textAreaWidth(): number {
+    if (!scroller) return 0;
+    const style = getComputedStyle(scroller);
+    return scroller.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  }
+
+  let column: HTMLElement | undefined = $state();
+
+  /**
+   * Smoothly scales the text column with a CSS transform (no reflow), keeping
+   * the point `offsetY` px below the viewport top in place. Used to animate
+   * keyboard zoom; the real font size is applied afterwards.
+   */
+  export function previewScale(scale: number, offsetY: number, durationMs: number): Promise<void> {
+    if (!scroller || !column) return Promise.resolve();
+    // The fixed point, in the column's own (unscaled) coordinates. While a
+    // preview is already running, the column is scaled around that same
+    // point, and measuring it now would be off by the current scale: keep it.
+    if (!column.style.transform) {
+      const originY = scroller.getBoundingClientRect().top + offsetY - column.getBoundingClientRect().top;
+      column.style.transformOrigin = `50% ${originY}px`;
+      // Make the browser register "no transform" before the transition
+      // starts, or it could animate from a just-cleared earlier scale.
+      void column.offsetWidth;
+    }
+    column.style.transition = `transform ${durationMs}ms cubic-bezier(0.2, 0.7, 0.3, 1)`;
+    column.style.transform = `scale(${scale})`;
+    return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+  }
+
+  export function clearPreview(): void {
+    if (!column) return;
+    column.style.transition = "none";
+    column.style.transform = "";
+    column.style.transformOrigin = "";
+  }
+
+  /** Top of the reading viewport, in client coordinates (to anchor zoom at the cursor). */
+  export function viewportTop(): number {
+    return scroller?.getBoundingClientRect().top ?? 0;
   }
 
   /** Scrolls a block to the top of the viewport. */
@@ -156,14 +238,31 @@
 
   function updateCurrentSection(): void {
     if (!scroller) return;
-    const sections = sectionElements();
-    // A little below the top edge, so a heading counts once it's in view.
-    const y = scroller.getBoundingClientRect().top + 8;
-    const s = firstBoxBelow(sections.length, (i) => extentOf(sections[i]), y);
+    // The section of the block at the top: the same rule as the reading
+    // position, so the TOC highlight and the saved position always agree.
+    const found = blockAt(scroller.getBoundingClientRect().top);
+    if (!found) return;
+    const s = found.sectionIndex;
     if (s !== currentSection && doc.sections[s]) {
       currentSection = s;
       onsectionchange?.(s);
     }
+  }
+
+  // The last settled reading position. Resizing rewraps text before any
+  // resize handler runs, so a position captured then has already moved;
+  // restoring this one keeps the reader's place (DESIGN.md §7.4).
+  let lastAnchor: ScrollAnchor | null = null;
+
+  /** Refreshes the current section and the recorded reading position. */
+  function noteScrolled(): void {
+    updateCurrentSection();
+    lastAnchor = captureAnchor();
+  }
+
+  /** The reading position as of the last scroll or jump (not re-measured now). */
+  export function stableAnchor(): ScrollAnchor | null {
+    return lastAnchor;
   }
 
   function onScroll(): void {
@@ -172,7 +271,7 @@
     if (scrollFrame) return;
     scrollFrame = requestAnimationFrame(() => {
       scrollFrame = 0;
-      updateCurrentSection();
+      noteScrolled();
     });
   }
 
@@ -225,7 +324,7 @@
      keyboard-activatable themselves, so the container needs no key handler. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 <div class="sk-scroller" bind:this={scroller} onscroll={onScroll} onclick={onClick} role="document">
-  <article class="sk-column">
+  <article bind:this={column} class="sk-column" class:fill={fillWindow} style:font-size={fontSize === null ? null : `${fontSize}px`}>
     {#each doc.sections as section, i (section.id)}
       {#if mounted[i]}
         <section
@@ -249,12 +348,19 @@
   .sk-scroller {
     height: 100%;
     overflow-y: auto;
+    /* The zoom preview briefly scales the column wider than the view. */
+    overflow-x: hidden;
     overflow-anchor: auto;
     padding: 0 1.5rem;
     box-sizing: border-box;
   }
 
   /* The text column: at most --sk-measure characters wide (DESIGN.md §7.4). */
+  /* "Fill window": text runs the full width, ignoring the measure. */
+  .sk-column.fill {
+    max-width: 100%;
+  }
+
   .sk-column {
     max-width: min(calc(var(--sk-measure) * 1ch), 100%);
     margin: 0 auto;
