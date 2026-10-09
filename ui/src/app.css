@@ -93,6 +93,14 @@ body {
   color: var(--sk-color-link);
 }
 
+/* ==highlight== (Obsidian flavor), in the theme's highlight color. */
+.sk-block mark {
+  background: var(--sk-color-highlight-bg);
+  color: inherit;
+  padding: 0 0.1em;
+  border-radius: 2px;
+}
+
 .sk-block code {
   font-family: var(--sk-font-mono);
   font-size: 0.88em;
