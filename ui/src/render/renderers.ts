@@ -38,10 +38,19 @@ function getObserver(): IntersectionObserver {
   return observer;
 }
 
-/** Svelte action: render a block's rich content as it nears the viewport. */
-export function richContent(node: HTMLElement, needed: boolean) {
-  if (needed) getObserver().observe(node);
+/**
+ * Svelte action: render a block's rich content as it nears the viewport.
+ * Takes the block's HTML so it runs again when that changes: on a live
+ * reload Svelte keeps the element (same block id) and swaps in fresh,
+ * unrendered HTML, which must be rendered again.
+ */
+export function richContent(node: HTMLElement, html: string) {
+  const watch = (current: string) => {
+    if (needsRichRendering(current)) getObserver().observe(node);
+  };
+  watch(html);
   return {
+    update: watch,
     destroy() {
       observer?.unobserve(node);
     },
