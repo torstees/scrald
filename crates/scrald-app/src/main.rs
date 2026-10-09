@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod protocol;
 
 use std::path::PathBuf;
 
@@ -27,6 +28,24 @@ fn main() -> anyhow::Result<()> {
 
     tauri::Builder::default()
         .manage(launch)
+        .manage(protocol::AssetRegistry::default())
+        // Rust note: the closure gets a context (for app state) and the
+        // request; `responder` lets us answer later, from another thread, so
+        // file reads never block the webview's main thread.
+        .register_asynchronous_uri_scheme_protocol(protocol::SCHEME, |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            std::thread::spawn(move || {
+                let registry = app.state::<protocol::AssetRegistry>();
+                responder.respond(protocol::respond(&registry, &request));
+            });
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                window
+                    .state::<protocol::AssetRegistry>()
+                    .remove_window(window.label());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::launch_info,
             commands::open_document,

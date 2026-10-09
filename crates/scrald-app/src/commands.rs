@@ -7,8 +7,10 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Context;
-use scrald_core::DocumentModel;
+use scrald_core::{DocumentModel, ParseOptions};
 use serde::Serialize;
+
+use crate::protocol::AssetRegistry;
 
 /// An error returned to the frontend, where it arrives as a rejected promise
 /// with this message.
@@ -27,7 +29,17 @@ impl<E: Into<anyhow::Error>> From<E> for CommandError {
     }
 }
 
-/// Reads and parses a Markdown file, and sets the window title from it.
+/// A parsed document plus the token its images are served under.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedDocument {
+    /// Prefix for `scrald-asset` URLs: image `id` is at `<assetToken>-<id>`.
+    pub asset_token: u64,
+    pub document: DocumentModel,
+}
+
+/// Reads and parses a Markdown file, registers its images for serving, and
+/// sets the window title from it.
 ///
 /// Parsing runs on a background thread so the window stays responsive.
 // Rust note: an `async fn` command runs on Tauri's async runtime instead of
@@ -36,16 +48,24 @@ impl<E: Into<anyhow::Error>> From<E> for CommandError {
 #[tauri::command]
 pub async fn open_document(
     window: tauri::WebviewWindow,
+    registry: tauri::State<'_, AssetRegistry>,
     path: PathBuf,
-) -> Result<DocumentModel, CommandError> {
+    allow_remote_images: bool,
+) -> Result<OpenedDocument, CommandError> {
     let started = Instant::now();
     let load_path = path.clone();
-    // Rust note: `move` makes the closure take ownership of `load_path`, so it
-    // can run on another thread after this function's locals are gone. The
-    // double `??` unwraps two layers: the thread's result, then the parse's.
-    let doc = tauri::async_runtime::spawn_blocking(move || scrald_core::load_document(&load_path))
-        .await
-        .context("document loading task failed")??;
+    let options = ParseOptions {
+        allow_remote_images,
+    };
+    // Rust note: `move` makes the closure take ownership of `load_path` and
+    // `options`, so it can run on another thread after this function's locals
+    // are gone. The double `??` unwraps two layers: the thread's result, then
+    // the parse's.
+    let doc = tauri::async_runtime::spawn_blocking(move || {
+        scrald_core::load_document(&load_path, &options)
+    })
+    .await
+    .context("document loading task failed")??;
     tracing::info!(
         path = %path.display(),
         blocks = doc.blocks.len(),
@@ -60,7 +80,13 @@ pub async fn open_document(
         .and_then(|fm| fm.title.clone())
         .unwrap_or_else(|| scrald_core::title_from_path(&path));
     window.set_title(&format!("{title} \u{2014} Scrald"))?;
-    Ok(doc)
+
+    let files = doc.images.iter().map(|image| image.path.clone()).collect();
+    let asset_token = registry.register(window.label(), files);
+    Ok(OpenedDocument {
+        asset_token,
+        document: doc,
+    })
 }
 
 /// Logs a timing measured in the frontend, so performance numbers end up in

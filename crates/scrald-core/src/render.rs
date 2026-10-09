@@ -13,12 +13,14 @@ pub struct Renderer {
 
 impl Default for Renderer {
     fn default() -> Self {
-        Self::new()
+        Self::new(false)
     }
 }
 
 impl Renderer {
-    pub fn new() -> Self {
+    /// `allow_remote_images` lets `<img src="http(s)://...">` through; it is
+    /// off unless the user allowed remote images for this document (§6.1).
+    pub fn new(allow_remote_images: bool) -> Self {
         let mut sanitizer = ammonia::Builder::default();
         sanitizer
             // Task list checkboxes. They render disabled; reading never edits.
@@ -39,15 +41,15 @@ impl Renderer {
                     "aria-label",
                 ],
             )
+            // Images from core's asset pipeline (assets.rs).
+            .add_tag_attributes("img", ["data-asset", "loading", "referrerpolicy"])
+            // `data:` is allowed as a scheme only so `data:image/...` images
+            // work; the filter below removes it everywhere else.
+            .add_url_schemes(["data"])
             // `language-rust` on code blocks, `footnotes` sections, and so on.
             .add_generic_attributes(["class"])
-            // Only checkboxes may be inputs: drop any other `type`.
-            .attribute_filter(|element, attribute, value| {
-                if element == "input" && attribute == "type" && value != "checkbox" {
-                    None
-                } else {
-                    Some(value.into())
-                }
+            .attribute_filter(move |element, attribute, value| {
+                filter_attribute(element, attribute, value, allow_remote_images).map(Into::into)
             });
         Renderer { sanitizer }
     }
@@ -69,6 +71,34 @@ impl Renderer {
 
     pub fn sanitize(&self, html: &str) -> String {
         self.sanitizer.clean(html).to_string()
+    }
+}
+
+/// Extra attribute rules on top of ammonia's allowlist. Returns `None` to
+/// drop the attribute.
+// Rust note: the returned `Option<&str>` borrows from `value` (the only
+// borrowed input that could be returned); Rust infers that link itself here.
+fn filter_attribute<'v>(
+    element: &str,
+    attribute: &str,
+    value: &'v str,
+    allow_remote_images: bool,
+) -> Option<&'v str> {
+    let lower = value.trim_start().to_ascii_lowercase();
+    match (element, attribute) {
+        // Only checkboxes may be inputs.
+        ("input", "type") if value != "checkbox" => None,
+        // `<img src>` only for data images, and remote images when allowed.
+        // Local images never use `src`: core emits `data-asset` instead, so
+        // raw HTML can't point the webview at arbitrary files.
+        ("img", "src") => {
+            let remote = lower.starts_with("http://") || lower.starts_with("https://");
+            let data_image = lower.starts_with("data:image/");
+            (data_image || (remote && allow_remote_images)).then_some(value)
+        }
+        // `data:` URLs nowhere else (a `data:text/html` link could run script).
+        _ if lower.starts_with("data:") => None,
+        _ => Some(value),
     }
 }
 
@@ -104,14 +134,14 @@ mod tests {
 
     #[test]
     fn strips_scripts_and_handlers() {
-        let r = Renderer::new();
+        let r = Renderer::default();
         let out = r.sanitize("<p onclick=\"x()\">hi<script>alert(1)</script></p>");
         assert_eq!(out, "<p>hi</p>");
     }
 
     #[test]
     fn strips_javascript_urls_and_iframes() {
-        let r = Renderer::new();
+        let r = Renderer::default();
         assert_eq!(
             r.sanitize("<a href=\"javascript:alert(1)\">x</a>"),
             "<a rel=\"noopener noreferrer\">x</a>"
@@ -121,7 +151,7 @@ mod tests {
 
     #[test]
     fn keeps_checkbox_but_not_text_inputs() {
-        let r = Renderer::new();
+        let r = Renderer::default();
         assert_eq!(
             r.sanitize("<input type=\"checkbox\" checked=\"\" disabled=\"\" />"),
             "<input type=\"checkbox\" checked=\"\" disabled=\"\">"
@@ -131,16 +161,52 @@ mod tests {
 
     #[test]
     fn keeps_code_language_class() {
-        let r = Renderer::new();
+        let r = Renderer::default();
         let html = "<pre><code class=\"language-rust\">x</code></pre>";
         assert_eq!(r.sanitize(html), html);
     }
 
     #[test]
     fn keeps_math_markers() {
-        let r = Renderer::new();
+        let r = Renderer::default();
         let html = "<span data-math-style=\"inline\">x</span>";
         assert_eq!(r.sanitize(html), html);
+    }
+
+    #[test]
+    fn image_sources_are_restricted() {
+        let blocked = Renderer::new(false);
+        assert_eq!(
+            blocked.sanitize("<img src=\"https://e.com/a.png\">"),
+            "<img>"
+        );
+        assert_eq!(blocked.sanitize("<img src=\"secret.png\">"), "<img>");
+        assert_eq!(
+            blocked.sanitize("<img src=\"file:///etc/passwd\">"),
+            "<img>"
+        );
+        assert_eq!(
+            blocked.sanitize("<img src=\"data:image/png;base64,AA\">"),
+            "<img src=\"data:image/png;base64,AA\">"
+        );
+        assert_eq!(
+            blocked.sanitize("<img data-asset=\"3\">"),
+            "<img data-asset=\"3\">"
+        );
+        let allowed = Renderer::new(true);
+        assert_eq!(
+            allowed.sanitize("<img src=\"https://e.com/a.png\">"),
+            "<img src=\"https://e.com/a.png\">"
+        );
+    }
+
+    #[test]
+    fn data_urls_only_for_images() {
+        let r = Renderer::default();
+        assert_eq!(
+            r.sanitize("<a href=\"data:text/html,<script>x</script>\">x</a>"),
+            "<a rel=\"noopener noreferrer\">x</a>"
+        );
     }
 
     #[test]

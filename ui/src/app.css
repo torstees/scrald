@@ -149,3 +149,23 @@ body {
 ::selection {
   background: var(--sk-color-selection);
 }
+
+/* Image placeholders from core (missing files, blocked remote images). */
+.sk-block .sk-image-placeholder {
+  display: inline-block;
+  font-family: var(--sk-font-ui);
+  font-size: 0.8em;
+  color: var(--sk-color-muted);
+  border: 1px dashed var(--sk-color-border);
+  border-radius: 4px;
+  padding: 0.3em 0.7em;
+  cursor: help;
+}
+
+.sk-block .sk-image-missing::before {
+  content: "⚠ ";
+}
+
+.sk-block .sk-image-remote::before {
+  content: "🌐 ";
+}

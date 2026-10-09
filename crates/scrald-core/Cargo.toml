@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 ammonia.workspace = true
 comrak.workspace = true
+imagesize.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde-saphyr.workspace = true

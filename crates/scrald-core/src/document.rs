@@ -9,6 +9,7 @@ use comrak::nodes::{ListType, Node, NodeValue};
 use serde::Serialize;
 
 use crate::DocumentError;
+use crate::assets::{self, AssetContext, ImageAsset, Resolved};
 use crate::frontmatter::{self, FrontMatter};
 use crate::render::{self, Renderer};
 use crate::source::{self, LineEnding, LineIndex, SourceRange};
@@ -27,6 +28,20 @@ pub struct DocumentModel {
     pub toc: Vec<TocEntry>,
     pub word_count: usize,
     pub features: FeatureFlags,
+    /// Local image files the document uses. Block HTML refers to them as
+    /// `<img data-asset="id">`; only these files may be served (§6.2).
+    pub images: Vec<ImageAsset>,
+    /// How many remote (`http(s)`) images the document contains.
+    pub remote_images: usize,
+    /// Whether remote images were allowed to load in this parse.
+    pub remote_images_allowed: bool,
+}
+
+/// Choices that change how a document is parsed and rendered.
+#[derive(Debug, Clone, Default)]
+pub struct ParseOptions {
+    /// Load remote images (off by default, for privacy; DESIGN.md §6.1).
+    pub allow_remote_images: bool,
 }
 
 /// One top-level Markdown block, rendered on its own.
@@ -99,12 +114,12 @@ pub struct FeatureFlags {
 }
 
 /// Reads and parses a document from disk.
-pub fn load_document(path: &Path) -> Result<DocumentModel, DocumentError> {
+pub fn load_document(path: &Path, options: &ParseOptions) -> Result<DocumentModel, DocumentError> {
     let bytes = std::fs::read(path).map_err(|e| DocumentError::Io {
         path: path.to_path_buf(),
         message: e.to_string(),
     })?;
-    parse_document(path.to_path_buf(), &bytes)
+    parse_document_with(path.to_path_buf(), &bytes, options)
 }
 
 /// Comrak options for the GFM profile. Flavor profiles arrive in M4.
@@ -123,9 +138,19 @@ pub fn gfm_options() -> comrak::Options<'static> {
     options
 }
 
-/// Parses document bytes into the model. Never fails on Markdown content;
-/// only invalid UTF-8 is an error.
+/// Parses document bytes with default options. See `parse_document_with`.
 pub fn parse_document(path: PathBuf, bytes: &[u8]) -> Result<DocumentModel, DocumentError> {
+    parse_document_with(path, bytes, &ParseOptions::default())
+}
+
+/// Parses document bytes into the model. Never fails on Markdown content;
+/// only invalid UTF-8 is an error. Image paths are resolved relative to
+/// `path`, so it should be the document's real location.
+pub fn parse_document_with(
+    path: PathBuf,
+    bytes: &[u8],
+    parse_options: &ParseOptions,
+) -> Result<DocumentModel, DocumentError> {
     let decoded = source::decode(bytes)?;
     let text = &decoded.text;
     let bom_len = decoded.bom_len();
@@ -144,7 +169,12 @@ pub fn parse_document(path: PathBuf, bytes: &[u8]) -> Result<DocumentModel, Docu
     let root = comrak::parse_document(&arena, body, &options);
     let index = LineIndex::new(body, bom_len + body_start);
 
-    let renderer = Renderer::new();
+    let assets_dir = front_matter.as_ref().and_then(|fm| fm.assets.as_deref());
+    let asset_ctx =
+        AssetContext::for_document(&path, assets_dir, parse_options.allow_remote_images);
+    let mut images = ImageCollector::default();
+
+    let renderer = Renderer::new(parse_options.allow_remote_images);
     let mut slugger = Slugger::new();
     let mut blocks = Vec::new();
     let mut sections: Vec<Section> = Vec::new();
@@ -170,10 +200,17 @@ pub fn parse_document(path: PathBuf, bytes: &[u8]) -> Result<DocumentModel, Docu
 
         // Original-file offsets include the BOM; subtract it to slice `text`.
         let source_text = &text[source.start - bom_len..source.end - bom_len];
+
+        // Read the heading text first: rewriting images replaces their alt
+        // text nodes with HTML.
+        let heading_text = matches!(kind, BlockKind::Heading { .. }).then(|| plain_text(node));
+        word_count += count_words(node);
+        update_features(node, &mut features);
+        images.rewrite(node, &asset_ctx);
         let mut html = renderer.render(node, &options);
 
-        if let BlockKind::Heading { level } = kind {
-            let heading = plain_text(node);
+        if let (BlockKind::Heading { level }, Some(heading)) = (&kind, heading_text) {
+            let level = *level;
             let slug = slugger.slug(&heading);
             html = render::add_heading_id(&html, level, &slug);
             toc.push(TocEntry {
@@ -210,9 +247,6 @@ pub fn parse_document(path: PathBuf, bytes: &[u8]) -> Result<DocumentModel, Docu
             None => 0,
         };
 
-        word_count += count_words(node);
-        update_features(node, &mut features);
-
         blocks.push(Block {
             id,
             kind,
@@ -233,7 +267,85 @@ pub fn parse_document(path: PathBuf, bytes: &[u8]) -> Result<DocumentModel, Docu
         toc,
         word_count,
         features,
+        images: images.assets,
+        remote_images: images.remote_count,
+        remote_images_allowed: parse_options.allow_remote_images,
     })
+}
+
+/// Replaces Markdown images with Scrald's own markup (DESIGN.md §6), and
+/// collects the local files they resolve to.
+#[derive(Debug, Default)]
+struct ImageCollector {
+    assets: Vec<ImageAsset>,
+    remote_count: usize,
+}
+
+impl ImageCollector {
+    /// Rewrites every image under `node` into inline HTML: an asset
+    /// reference, a remote image (if allowed), or a placeholder.
+    fn rewrite(&mut self, node: Node<'_>, ctx: &AssetContext) {
+        // Collect first: changing nodes while walking the tree would confuse
+        // the iterator.
+        let image_nodes: Vec<Node<'_>> = node
+            .descendants()
+            .filter(|n| matches!(n.data().value, NodeValue::Image(_)))
+            .collect();
+
+        for image in image_nodes {
+            // Rust note: this block ends the `data()` borrow before
+            // `data_mut()` below; a RefCell panics if both are held at once.
+            let (url, title) = match &image.data().value {
+                NodeValue::Image(link) => (link.url.clone(), link.title.clone()),
+                _ => continue,
+            };
+            let alt = plain_text(image);
+            let title = Some(title.as_str());
+
+            let html = match assets::resolve(&url, ctx) {
+                Resolved::Local(file) => {
+                    let asset = self.asset_for(file);
+                    assets::local_image_html(&asset, &alt, title)
+                }
+                Resolved::Missing { attempted } => {
+                    assets::missing_image_html(&url, &alt, &attempted)
+                }
+                Resolved::Remote(remote) => {
+                    self.remote_count += 1;
+                    if ctx.allow_remote {
+                        assets::remote_image_html(&remote, &alt, title)
+                    } else {
+                        assets::blocked_image_html(&remote, &alt)
+                    }
+                }
+                Resolved::Data(data) => assets::remote_image_html(&data, &alt, title),
+                Resolved::Unsupported(src) => assets::unsupported_image_html(&src, &alt),
+            };
+
+            // The alt text now lives in the HTML; drop the child nodes.
+            let children: Vec<Node<'_>> = image.children().collect();
+            for child in children {
+                child.detach();
+            }
+            image.data_mut().value = NodeValue::HtmlInline(html);
+        }
+    }
+
+    /// The asset for `file`, reusing the id if the document uses it twice.
+    fn asset_for(&mut self, file: PathBuf) -> ImageAsset {
+        if let Some(existing) = self.assets.iter().find(|a| a.path == file) {
+            return existing.clone();
+        }
+        let size = assets::image_size(&file);
+        let asset = ImageAsset {
+            id: self.assets.len() as u32,
+            path: file,
+            width: size.map(|(w, _)| w),
+            height: size.map(|(_, h)| h),
+        };
+        self.assets.push(asset.clone());
+        asset
+    }
 }
 
 fn block_kind(node: Node<'_>) -> BlockKind {

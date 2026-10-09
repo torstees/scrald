@@ -5,13 +5,23 @@
     wordCount: number;
     /** Title of the section at the top of the viewport. */
     section: string | null;
+    /** Remote images in the document, and whether they're loading. */
+    remoteImages: number;
+    remoteImagesAllowed: boolean;
+    onallowremote: () => void;
   }
 
-  let { wordCount, section }: Props = $props();
+  let { wordCount, section, remoteImages, remoteImagesAllowed, onallowremote }: Props = $props();
 </script>
 
 <footer class="sk-status">
   <span class="section" title={section ?? ""}>{section ?? ""}</span>
+  {#if remoteImages > 0 && !remoteImagesAllowed}
+    <span class="remote">
+      {remoteImages} remote {remoteImages === 1 ? "image" : "images"} blocked
+      <button onclick={onallowremote} title="Load remote images for this document">Load</button>
+    </span>
+  {/if}
   <span>{formatWordCount(wordCount)}</span>
   <span title="Estimated reading time">{formatReadingTime(wordCount)}</span>
 </footer>
@@ -28,6 +38,17 @@
     background: var(--sk-color-ui-background);
     border-top: 1px solid var(--sk-color-border);
     white-space: nowrap;
+  }
+
+  .remote button {
+    font: inherit;
+    color: var(--sk-color-link);
+    background: none;
+    border: 1px solid var(--sk-color-border);
+    border-radius: 3px;
+    padding: 0 0.4em;
+    margin-left: 0.3em;
+    cursor: pointer;
   }
 
   .section {

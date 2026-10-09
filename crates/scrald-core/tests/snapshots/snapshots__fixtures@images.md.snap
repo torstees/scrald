@@ -1,0 +1,33 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: describe(&doc)
+input_file: crates/scrald-core/tests/fixtures/images.md
+---
+bom: false  line_ending: Lf  words: 31  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false }
+toc: Images #images (block 0)
+section 0: heading=Some(0) level=1 blocks=0..7
+
+--- block 0 Heading { level: 1 } @0..8 section=0
+<h1 id="images">Images</h1>
+
+--- block 1 Paragraph @10..79 section=0
+<p>A missing local image: <span class="sk-image-placeholder sk-image-missing" title="Image not found: images/fjord.png
+Tried:
+images/fjord.png">The fjord</span></p>
+
+--- block 2 Paragraph @81..136 section=0
+<p>Spaces are percent-decoded: <span class="sk-image-placeholder sk-image-missing" title="Image not found: my%20pictures/boat.png
+Tried:
+my pictures/boat.png">boat.png</span></p>
+
+--- block 3 Paragraph @138..211 section=0
+<p>A remote image, blocked by default: <span class="sk-image-placeholder sk-image-remote" title="Remote image not loaded: https://example.com/logo.png">Logo</span></p>
+
+--- block 4 Paragraph @213..277 section=0
+<p>A data image: <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="dot" loading="lazy" referrerpolicy="no-referrer"></p>
+
+--- block 5 Paragraph @279..327 section=0
+<p>An unsupported scheme: <span class="sk-image-placeholder sk-image-missing" title="Unsupported image source: javascript:alert(1)">x</span></p>
+
+--- block 6 Paragraph @329..423 section=0
+<p>Raw HTML images never load files: <img> <img></p>

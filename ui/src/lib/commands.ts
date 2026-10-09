@@ -1,16 +1,25 @@
 // Typed wrappers around the Tauri commands, so components never call
 // `invoke` with raw strings.
 
-import { invoke } from "@tauri-apps/api/core";
-import type { DocumentModel, LaunchInfo } from "./types";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import type { LaunchInfo, OpenedDocument } from "./types";
 
 export function launchInfo(): Promise<LaunchInfo> {
   return invoke<LaunchInfo>("launch_info");
 }
 
 /** Reads and parses a document; rejects with an error message string. */
-export function openDocument(path: string): Promise<DocumentModel> {
-  return invoke<DocumentModel>("open_document", { path });
+export function openDocument(path: string, allowRemoteImages = false): Promise<OpenedDocument> {
+  return invoke<OpenedDocument>("open_document", { path, allowRemoteImages });
+}
+
+/**
+ * URL of a document image served by the `scrald-asset` protocol. Tauri
+ * formats custom-scheme URLs differently per platform (DESIGN.md §11.1), so
+ * this is the one place they are built.
+ */
+export function assetUrl(assetToken: number, imageId: number): string {
+  return convertFileSrc(`${assetToken}-${imageId}`, "scrald-asset");
 }
 
 /** Sends a frontend timing to the backend log. Never throws. */

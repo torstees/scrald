@@ -3,6 +3,7 @@
 //! This crate must stay free of Tauri and GUI dependencies, and must build
 //! and pass its tests on Windows, macOS, and Linux (see DESIGN.md §11.1).
 
+pub mod assets;
 pub mod document;
 pub mod frontmatter;
 pub mod generate;
@@ -14,8 +15,10 @@ use std::path::{Path, PathBuf};
 
 // Rust note: `pub use` re-exports items so callers can write
 // `scrald_core::DocumentModel` instead of `scrald_core::document::DocumentModel`.
+pub use assets::ImageAsset;
 pub use document::{
-    Block, BlockKind, DocumentModel, FeatureFlags, Section, load_document, parse_document,
+    Block, BlockKind, DocumentModel, FeatureFlags, ParseOptions, Section, load_document,
+    parse_document, parse_document_with,
 };
 pub use frontmatter::FrontMatter;
 pub use source::{LineEnding, SourceRange};

@@ -84,6 +84,14 @@ export interface FrontMatter {
   error: string | null;
 }
 
+/** Mirrors `ImageAsset`: a local image file the document uses. */
+export interface ImageAsset {
+  id: number;
+  path: string;
+  width: number | null;
+  height: number | null;
+}
+
 /** Mirrors `LineEnding` (serde `rename_all = "lowercase"`). */
 export type LineEnding = "lf" | "crlf";
 
@@ -98,4 +106,17 @@ export interface DocumentModel {
   toc: TocEntry[];
   wordCount: number;
   features: FeatureFlags;
+  /** Local images; block HTML refers to them as `<img data-asset="id">`. */
+  images: ImageAsset[];
+  /** Number of remote (http/https) images in the document. */
+  remoteImages: number;
+  /** Whether remote images were allowed to load in this parse. */
+  remoteImagesAllowed: boolean;
+}
+
+/** Mirrors `OpenedDocument` (crates/scrald-app/src/commands.rs). */
+export interface OpenedDocument {
+  /** Image `id` is served at the asset URL for `${assetToken}-${id}`. */
+  assetToken: number;
+  document: DocumentModel;
 }

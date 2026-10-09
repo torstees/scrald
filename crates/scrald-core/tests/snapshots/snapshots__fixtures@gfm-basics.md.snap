@@ -66,4 +66,6 @@ spanning two lines.</p>
 and after.</p>
 
 --- block 11 Paragraph @496..537 section=1
-<p><img src="images/fjord.png" alt="Alt text" title="The fjord"></p>
+<p><span class="sk-image-placeholder sk-image-missing" title="Image not found: images/fjord.png
+Tried:
+images/fjord.png">Alt text</span></p>

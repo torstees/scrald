@@ -263,6 +263,13 @@ Missing images render as a placeholder showing the filename, with the attempted 
 
 Images are served through a custom URI scheme (`scrald-asset://`) registered in `scrald-app`, never via `file://`. The handler only serves files the current document legitimately resolved, preventing a document from reading arbitrary files. Theme assets use a separate scheme (`scrald-theme://<theme-id>/...`).
 
+As implemented:
+
+- Core replaces each Markdown image with its own markup: `<img data-asset="id" width height loading="lazy">` for a resolved local file (dimensions read from the file header so layout space is reserved), a placeholder `<span>` for missing or blocked images, or `<img src>` only for `data:image/...` and allowed remote images. Local images never carry a file path in `src`.
+- `open_document` registers the document's resolved files with an **asset token**. URLs carry only `<token>-<id>`, never a path, and opening another document in the window revokes the previous token. The frontend builds URLs in one place (`assetUrl`, via Tauri's `convertFileSrc`), because the URL format differs per platform.
+- The sanitizer drops `src` from any `<img>` in raw HTML unless it is a `data:image` URL or an allowed remote image, so raw HTML can't reference local files at all. Resolving raw-HTML images through the asset pipeline is a follow-up.
+- The remote-image toggle re-parses the document with remote images allowed and restores the scroll anchor. It is remembered per session until the state database exists (M3).
+
 ### 6.3 Layout
 
 Layout uses classes and attributes, with the theme defining what they look like:
@@ -536,7 +543,7 @@ The database stores only metadata, never document contents. The one place Scrald
 ## 13. Security
 
 - All rendered HTML passes through `ammonia`, with an allowlist that covers what Markdown and the transforms produce (including KaTeX and Mermaid output containers). `<script>`, event handler attributes, `javascript:` URLs, and `<iframe>` are always stripped.
-- A strict Tauri content security policy: no remote scripts; images only from `scrald-asset:`, `scrald-theme:`, and `data:` (plus remote origins when the user enables remote images for a document).
+- A strict Tauri content security policy: no remote scripts; images only from `scrald-asset:`, `scrald-theme:`, and `data:` (plus remote origins when the user enables remote images for a document). Tauri's CSP is fixed at build time, so `img-src` permits `http:`/`https:` globally and the per-document gate is enforced by core and the sanitizer: no remote `src` reaches the page unless the user allowed remote images for that document.
 - The asset protocol only serves files resolved for the currently open documents and theme assets.
 - `theme.css` can style the page but cannot run code. Theme CSS `url()` references are limited to the theme's own assets and cached fonts.
 

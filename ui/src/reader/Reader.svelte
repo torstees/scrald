@@ -5,12 +5,15 @@
   // mounted outward from the initial position, the rest in idle time.
   import { tick, untrack } from "svelte";
   import type { DocumentModel } from "../lib/types";
+  import { assetUrl } from "../lib/commands";
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
   import { batchByBlocks, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
   import { blockIndexAtOffset, firstBoxBelow, fractionInto, TOP_ANCHOR, type ScrollAnchor } from "./anchor";
 
   interface Props {
     doc: DocumentModel;
+    /** Token for this document's images in the asset protocol. */
+    assetToken: number;
     initialAnchor?: ScrollAnchor;
     /** Called when the section at the top of the viewport changes. */
     onsectionchange?: (sectionId: number) => void;
@@ -22,7 +25,8 @@
     onlink?: (href: string) => void;
   }
 
-  let { doc, initialAnchor = TOP_ANCHOR, onsectionchange, onfirstscreen, onfullymounted, onlink }: Props = $props();
+  let { doc, assetToken, initialAnchor = TOP_ANCHOR, onsectionchange, onfirstscreen, onfullymounted, onlink }: Props =
+    $props();
 
   /** Blocks per idle-time mount batch: enough to finish quickly, small enough not to jank. */
   const BLOCKS_PER_BATCH = 250;
@@ -155,6 +159,20 @@
     });
   }
 
+  /**
+   * Svelte action: points a block's local images at the asset protocol.
+   * Core emits `<img data-asset="id">` without a `src` (DESIGN.md §6.2).
+   */
+  function assetImages(node: HTMLElement, token: number) {
+    const apply = (t: number) => {
+      for (const img of node.querySelectorAll<HTMLImageElement>("img[data-asset]")) {
+        img.src = assetUrl(t, Number(img.dataset.asset));
+      }
+    };
+    apply(token);
+    return { update: apply };
+  }
+
   /** Finds the block whose rendered HTML defines `id` (headings, footnotes). */
   function blockWithId(id: string): number | null {
     const entry = doc.toc.find((t) => t.slug === id);
@@ -196,7 +214,7 @@
         >
           {#each sectionBlocks(doc, section) as block (block.id)}
             <!-- Block.html is sanitized by core (ammonia); it's the only HTML we insert. -->
-            <div class="sk-block" data-block={block.id}>{@html block.html}</div>
+            <div class="sk-block" data-block={block.id} use:assetImages={assetToken}>{@html block.html}</div>
           {/each}
         </section>
       {:else}

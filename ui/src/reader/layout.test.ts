@@ -21,6 +21,9 @@ function doc(blocks: Block[], sections: Section[]): DocumentModel {
     toc: [],
     wordCount: 0,
     features: { hasMath: false, hasMermaid: false, hasCode: false },
+    images: [],
+    remoteImages: 0,
+    remoteImagesAllowed: false,
   };
 }
 

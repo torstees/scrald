@@ -3,12 +3,18 @@
   import { launchInfo, openDocument, reportTiming } from "./lib/commands";
   import { launchMessage } from "./lib/launch";
   import type { DocumentModel } from "./lib/types";
+  import { TOP_ANCHOR, type ScrollAnchor } from "./reader/anchor";
   import Reader from "./reader/Reader.svelte";
   import TocSidebar from "./toc/TocSidebar.svelte";
   import { entryForHeadingBlock } from "./toc/tree";
   import StatusBar from "./status/StatusBar.svelte";
 
   let doc = $state<DocumentModel | null>(null);
+  let assetToken = $state(0);
+  let initialAnchor = $state<ScrollAnchor>(TOP_ANCHOR);
+  // Documents (by path) whose remote images the user allowed this session.
+  // Remembered across launches once the state database exists (M3).
+  const remoteAllowed = new Set<string>();
   let message = $state<string | null>(null);
   let tocVisible = $state(true);
   let currentSection = $state(0);
@@ -37,16 +43,31 @@
     }
   });
 
-  async function open(path: string): Promise<void> {
+  /** Opens a document, optionally keeping the reading position (reloads). */
+  async function open(path: string, anchor: ScrollAnchor = TOP_ANCHOR): Promise<void> {
     openStarted = performance.now();
     try {
-      doc = await openDocument(path);
+      const opened = await openDocument(path, remoteAllowed.has(path));
       reportTiming("ipc_open_document", performance.now() - openStarted);
-      currentSection = 0;
+      initialAnchor = anchor;
+      assetToken = opened.assetToken;
+      doc = opened.document;
       message = null;
     } catch (e) {
       message = `Could not open ${path}: ${String(e)}`;
     }
+  }
+
+  /** Re-parses the current document in place, keeping the reading position. */
+  async function reload(): Promise<void> {
+    if (!doc) return;
+    await open(doc.path, reader?.captureAnchor() ?? TOP_ANCHOR);
+  }
+
+  function allowRemoteImages(): void {
+    if (!doc) return;
+    remoteAllowed.add(doc.path);
+    void reload();
   }
 
   function onKeydown(event: KeyboardEvent): void {
@@ -78,13 +99,21 @@
       <Reader
         bind:this={reader}
         {doc}
+        {assetToken}
+        {initialAnchor}
         onsectionchange={(s) => (currentSection = s)}
         onfirstscreen={() => reportTiming("first_screen", performance.now() - openStarted)}
         onfullymounted={() => reportTiming("full_mount", performance.now() - openStarted)}
         onlink={onLink}
       />
     </main>
-    <StatusBar wordCount={doc.wordCount} section={sectionTitle} />
+    <StatusBar
+      wordCount={doc.wordCount}
+      section={sectionTitle}
+      remoteImages={doc.remoteImages}
+      remoteImagesAllowed={doc.remoteImagesAllowed}
+      onallowremote={allowRemoteImages}
+    />
   {:else}
     <main class="sk-main sk-message">
       <h1>Scrald</h1>
