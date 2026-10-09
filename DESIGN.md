@@ -509,7 +509,7 @@ Ctrl+E toggles between the reading view and a full-document CodeMirror 6 editor 
 
 ## 10. Navigation and reading features
 
-- **Table of contents:** a sidebar built from headings, with collapsible levels, the current section highlighted while scrolling, and click-to-jump. Toggle with Ctrl+\\. For novels, a setting to show only H1/H2 keeps the list manageable.
+- **Table of contents:** a sidebar built from headings, with collapsible levels, the current section highlighted while scrolling, and click-to-jump. Toggle with `Ctrl+\` or the ☰ button in the status bar. For novels, a setting to show only H1/H2 keeps the list manageable.
 - **Search in document:** Ctrl+F searches the source text in Rust and maps hits back to blocks; the UI highlights matches in rendered blocks and scrolls to each.
 - **Footnotes:** hover popovers in reading view, plus the endnotes section.
 - **Status bar:** word count, estimated reading time, current section, flavor, theme, zoom.
