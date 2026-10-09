@@ -27,6 +27,10 @@ const BUNDLED: &[(&str, &str)] = &[
         "technical",
         include_str!("../../themes/technical/theme.toml"),
     ),
+    (
+        "technical-dark",
+        include_str!("../../themes/technical-dark/theme.toml"),
+    ),
 ];
 
 /// The default theme for light and dark system appearance.
