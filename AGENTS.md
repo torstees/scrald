@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for coding agents (Claude Code and others) working on Scrald. Read `DESIGN.md` for architecture and decisions, and `TODO.md` for the current build order.
+Guidance for coding agents (Claude Code and others) working on Scrald. Read `DESIGN.md` for architecture and decisions, and the GitHub issues (indexed in `TODO.md`) for the current build order.
 
 ## Project in one paragraph
 
@@ -50,12 +50,21 @@ Run these from the repository root unless noted. Adjust this section as scripts 
 | Frontend tests | `npm run test` (in `ui/`) |
 | Release build | `npm run tauri build` |
 
+## Work tracking
+
+Work is tracked in GitHub issues on `torstees/scrald`, not in `TODO.md`:
+
+- Each milestone (M0–M10, plus "Later / ideas") is a **parent issue** with a matching GitHub **Milestone**. Individual work items are **sub-issues** of that parent, assigned to the same Milestone.
+- `TODO.md` is only an index of the milestone issues plus the **decisions log**. Record notable implementation decisions there, and update `DESIGN.md` to match.
+- To add work: `gh issue create -R torstees/scrald --milestone "<milestone>" ...`, then attach it to the parent with `gh api --method POST repos/torstees/scrald/issues/<parent>/sub_issues -F sub_issue_id=<issue id>` (the numeric `id`, not the issue number).
+- Only ever run `gh` against `torstees/scrald`. The maintainer's account is linked to work organizations that must never be touched, so never run account-wide or unscoped queries (`gh repo list`, `gh search` without `repo:`, org APIs).
+
 ## Definition of done for any change
 
 1. `cargo fmt`, `cargo clippy` (no warnings), and `cargo test` all pass.
 2. Frontend typecheck and tests pass if `ui/` changed.
 3. New core behavior has tests. Rendering changes have snapshot tests with reviewed snapshots.
-4. Relevant `TODO.md` items are checked off, and new follow-up work is added there.
+4. Relevant GitHub sub-issues are closed (reference them in the commit, e.g. `Closes #12`), and new follow-up work is filed as sub-issues of the right milestone issue.
 5. If a change contradicts or extends `DESIGN.md`, update `DESIGN.md` in the same change and call it out in your summary.
 
 ## Coding conventions

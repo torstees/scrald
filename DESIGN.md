@@ -2,7 +2,7 @@
 
 Scrald is a themeable Markdown reader with lightweight editing. The name plays on *scrawled*, *skald* (the Norse poet), and *skål* (the Viking toast). It is built for anything from technical documentation and Obsidian vault notes to full-length novels, and its defining promise is that **large documents (100K+ words) open fast and read beautifully**, with an integrated table of contents.
 
-This document describes the architecture and the decisions behind it. `TODO.md` holds the build order, and `AGENTS.md` holds the working conventions for coding agents.
+This document describes the architecture and the decisions behind it. GitHub issues hold the build order (indexed in `TODO.md`), and `AGENTS.md` holds the working conventions for coding agents.
 
 ---
 
@@ -485,7 +485,7 @@ Ctrl+E toggles between the reading view and a full-document CodeMirror 6 editor 
 
 ### 11.1 Platform support
 
-Scrald is developed and tested on Windows first. macOS and Linux support is the **final milestone of v1** (TODO M10). Until then, code stays portable: no Windows-only APIs outside a clearly isolated module, and paths come from Tauri's path API rather than hard-coded locations.
+Scrald is developed and tested on Windows first. macOS and Linux support is the **final milestone of v1** (milestone M10). Until then, code stays portable: no Windows-only APIs outside a clearly isolated module, and paths come from Tauri's path API rather than hard-coded locations.
 
 `scrald-core` is the exception: it has no GUI dependencies, so it is supported on Windows, macOS, and Linux **from the start**. CI runs its tests on all three platforms from M0 onward, which catches portability slips (hard-coded `\` separators, case-sensitive file names, path normalization) as they're written rather than at M10.
 
