@@ -352,7 +352,8 @@
     } else if (event.ctrlKey && (event.key === "t" || event.key === "T")) {
       event.preventDefault();
       void openSwitcher();
-    } else if (event.ctrlKey && event.key === "\\") {
+    } else if (event.ctrlKey && (event.key === "\\" || event.code === "Backslash")) {
+      // Match the physical key too: on many non-US layouts the backslash isn't on it.
       event.preventDefault();
       tocVisible = !tocVisible;
     } else if (event.altKey && event.key === "ArrowLeft") {
@@ -416,6 +417,8 @@
       onallowremote={allowRemoteImages}
       {themeName}
       onthemeclick={openSwitcher}
+      {tocVisible}
+      ontoggletoc={() => (tocVisible = !tocVisible)}
       typography={typography.summary}
       ontypographyclick={() => (typographyOpen = !typographyOpen)}
     />

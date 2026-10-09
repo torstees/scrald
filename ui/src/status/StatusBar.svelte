@@ -18,6 +18,8 @@
     /** Name of the document's theme; clicking it opens the switcher. */
     themeName: string | null;
     onthemeclick: () => void;
+    tocVisible: boolean;
+    ontoggletoc: () => void;
     /** Text sizing and zoom summary; clicking it opens the typography panel. */
     typography: string;
     ontypographyclick: () => void;
@@ -38,10 +40,19 @@
     onthemeclick,
     typography,
     ontypographyclick,
+    tocVisible,
+    ontoggletoc,
   }: Props = $props();
 </script>
 
 <footer class="sk-status">
+  <button
+    class="toc"
+    onclick={ontoggletoc}
+    aria-pressed={tocVisible}
+    title={`${tocVisible ? "Hide" : "Show"} contents (Ctrl+\\)`}
+    aria-label="Toggle contents">☰</button
+  >
   {#if canGoBack || canGoForward}
     <span class="nav">
       <button onclick={onback} disabled={!canGoBack} title="Back (Alt+Left)" aria-label="Back">‹</button>
@@ -97,6 +108,18 @@
     color: var(--sk-color-muted);
     opacity: 0.5;
     cursor: default;
+  }
+
+  .toc {
+    border-color: transparent;
+    color: var(--sk-color-muted);
+    font-size: 0.95rem;
+    line-height: 1;
+    padding: 0.1em 0.35em;
+  }
+
+  .toc[aria-pressed="true"] {
+    color: var(--sk-color-foreground);
   }
 
   .nav {
