@@ -9,6 +9,7 @@
     resolveLink,
     saveReadingPosition,
     setRemoteImages,
+    setDocumentFlavor,
     listThemes,
     themeStyle,
     setDocumentTheme,
@@ -19,7 +20,7 @@
   } from "./lib/commands";
   import { afterPaint } from "./lib/idle";
   import { launchMessage } from "./lib/launch";
-  import type { DocumentModel, ResolvedTheme, ThemeSummary } from "./lib/types";
+  import type { DocumentModel, Flavor, ResolvedTheme, ThemeSummary } from "./lib/types";
   import { applyTheme } from "./themes/apply";
   import ThemeSwitcher from "./themes/ThemeSwitcher.svelte";
   import { NavHistory } from "./nav/history";
@@ -198,6 +199,17 @@
     const anchor = reader.captureAnchor();
     history.updateAnchor(anchor);
     saveReadingPosition(doc.path, anchor);
+  }
+
+  /** Re-parses the document in another flavor (null: back to automatic). */
+  async function chooseFlavor(flavor: Flavor | null): Promise<void> {
+    if (!doc) return;
+    try {
+      await setDocumentFlavor(doc.path, flavor);
+      await reload();
+    } catch (e) {
+      showNotice(`Could not change flavor: ${String(e)}`);
+    }
   }
 
   async function allowRemoteImages(): Promise<void> {
@@ -421,6 +433,9 @@
       onthemeclick={openSwitcher}
       {tocVisible}
       ontoggletoc={() => (tocVisible = !tocVisible)}
+      flavor={doc.flavor}
+      flavorSource={doc.flavorSource}
+      onflavor={chooseFlavor}
       typography={typography.summary}
       ontypographyclick={() => (typographyOpen = !typographyOpen)}
     />

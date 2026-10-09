@@ -4,6 +4,7 @@ expression: describe(&doc)
 input_file: crates/scrald-core/tests/fixtures/gfm-basics.md
 ---
 bom: false  line_ending: Lf  words: 50  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true }
+flavor: Gfm (Default)
 toc: GFM Basics #gfm-basics (block 0)
 toc:   Setext Heading #setext-heading (block 2)
 section 0: heading=Some(0) level=1 blocks=0..2

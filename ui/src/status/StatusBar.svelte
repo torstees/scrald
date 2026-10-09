@@ -1,4 +1,7 @@
 <script lang="ts">
+  import type { Flavor, FlavorSource } from "../lib/types";
+  import { FLAVOR_NAMES } from "./flavor";
+  import FlavorMenu from "./FlavorMenu.svelte";
   import { formatReadingTime, formatWordCount } from "./reading";
 
   interface Props {
@@ -20,6 +23,10 @@
     onthemeclick: () => void;
     tocVisible: boolean;
     ontoggletoc: () => void;
+    flavor: Flavor;
+    flavorSource: FlavorSource;
+    /** A flavor the user picked, or null for automatic. */
+    onflavor: (flavor: Flavor | null) => void;
     /** Text sizing and zoom summary; clicking it opens the typography panel. */
     typography: string;
     ontypographyclick: () => void;
@@ -42,7 +49,14 @@
     ontypographyclick,
     tocVisible,
     ontoggletoc,
+    flavor,
+    flavorSource,
+    onflavor,
   }: Props = $props();
+
+  let flavorMenuOpen = $state(false);
+  // "Pandoc" when chosen for this document, "Pandoc (auto)" otherwise.
+  const flavorLabel = $derived(`${FLAVOR_NAMES[flavor]}${flavorSource === "document" ? "" : " (auto)"}`);
 </script>
 
 <footer class="sk-status">
@@ -73,9 +87,20 @@
   {#if themeName}
     <button class="theme" onclick={onthemeclick} title="Change theme (Ctrl+T)">{themeName}</button>
   {/if}
-  <button class="theme" data-typography-toggle onclick={ontypographyclick} title="Text size and zoom (Ctrl+wheel, Ctrl+=, Ctrl+−, Ctrl+0)"
+  <button class="theme" data-popover-toggle="typography" onclick={ontypographyclick} title="Text size and zoom (Ctrl+wheel, Ctrl+=, Ctrl+−, Ctrl+0)"
     >{typography}</button
   >
+  <button
+    class="theme"
+    data-popover-toggle="flavor"
+    title="Markdown flavor"
+    aria-haspopup="dialog"
+    aria-expanded={flavorMenuOpen}
+    onclick={() => (flavorMenuOpen = !flavorMenuOpen)}>{flavorLabel}</button
+  >
+  {#if flavorMenuOpen}
+    <FlavorMenu {flavor} {flavorSource} onchoose={onflavor} onclose={() => (flavorMenuOpen = false)} />
+  {/if}
   <span>{formatWordCount(wordCount)}</span>
   <span title="Estimated reading time">{formatReadingTime(wordCount)}</span>
 </footer>

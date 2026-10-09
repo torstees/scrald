@@ -1,0 +1,48 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: describe(&doc)
+input_file: crates/scrald-core/tests/fixtures/pandoc.md
+---
+bom: false  line_ending: Lf  words: 20  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false }
+flavor: Pandoc (Detected)
+front_matter: {
+  "range": {
+    "start": 0,
+    "end": 52
+  },
+  "title": "Pandoc sample",
+  "authors": [],
+  "summary": null,
+  "tags": [],
+  "notes": null,
+  "source": null,
+  "assets": null,
+  "theme": null,
+  "flavor": null,
+  "extra": {
+    "bibliography": "refs.bib"
+  },
+  "error": null
+}
+toc: Chemistry #chemistry (block 0)
+section 0: heading=Some(0) level=1 blocks=0..4
+inline footnote __inline_1: <ol>
+<li id="user-content-fn-__inline_1">
+<p>Einstein, 1905. <a href="#fnref-__inline_1" class="footnote-backref" data-footnote-backref="" data-footnote-backref-idx="1" aria-label="Back to reference 1" rel="noopener noreferrer">↩</a></p>
+</li>
+</ol>
+
+--- block 0 Heading { level: 1 } @52..63 section=0
+<h1 id="user-content-chemistry">Chemistry</h1>
+
+--- block 1 Paragraph @65..118 section=0
+<p>Water is H<sub>2</sub>O and energy is mc<sup>2</sup>.<sup class="footnote-ref"><a href="#fn-__inline_1" id="user-content-fnref-__inline_1" data-footnote-ref="" rel="noopener noreferrer">1</a></sup></p>
+
+--- block 2 DescriptionList @120..143 section=0
+<dl>
+<dt>Term</dt>
+<dd>Its definition.</dd>
+</dl>
+
+--- block 3 Paragraph @144..187 section=0
+<p>“Smart quotes” – and dashes — like this.</p>

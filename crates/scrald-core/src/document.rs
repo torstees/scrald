@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use crate::DocumentError;
 use crate::assets::{self, AssetContext, ImageAsset, Resolved};
+use crate::flavor::{self, Flavor, FlavorSource};
 use crate::frontmatter::{self, FrontMatter};
 use crate::render::{self, Renderer};
 use crate::source::{self, LineEnding, LineIndex, SourceRange};
@@ -35,6 +36,23 @@ pub struct DocumentModel {
     pub remote_images: usize,
     /// Whether remote images were allowed to load in this parse.
     pub remote_images_allowed: bool,
+    /// The Markdown flavor the document was parsed as.
+    pub flavor: Flavor,
+    /// Why that flavor was chosen.
+    pub flavor_source: FlavorSource,
+    /// Footnotes written inline (`^[...]`, Pandoc), which have no block of
+    /// their own. Shown as popovers and endnotes by the reader.
+    pub inline_footnotes: Vec<InlineFootnote>,
+}
+
+/// A footnote written inline, rendered for display.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineFootnote {
+    /// comrak's generated name, e.g. `__inline_1` (references link to `#fn-<name>`).
+    pub name: String,
+    /// Sanitized HTML of the footnote definition.
+    pub html: String,
 }
 
 /// Choices that change how a document is parsed and rendered.
@@ -42,6 +60,9 @@ pub struct DocumentModel {
 pub struct ParseOptions {
     /// Load remote images (off by default, for privacy; DESIGN.md §6.1).
     pub allow_remote_images: bool,
+    /// The flavor the user chose for this document, overriding front
+    /// matter, folder config, and detection (DESIGN.md §5.2).
+    pub flavor: Option<Flavor>,
 }
 
 /// One top-level Markdown block, rendered on its own.
@@ -122,22 +143,6 @@ pub fn load_document(path: &Path, options: &ParseOptions) -> Result<DocumentMode
     parse_document_with(path.to_path_buf(), &bytes, options)
 }
 
-/// Comrak options for the GFM profile. Flavor profiles arrive in M4.
-pub fn gfm_options() -> comrak::Options<'static> {
-    let mut options = comrak::Options::default();
-    options.extension.strikethrough = true;
-    options.extension.table = true;
-    options.extension.autolink = true;
-    options.extension.tasklist = true;
-    options.extension.footnotes = true;
-    options.extension.math_dollars = true;
-    options.extension.math_code = true;
-    // Raw HTML is passed through to ammonia, which removes anything unsafe.
-    // Without this, comrak would replace raw HTML with a comment instead.
-    options.render.r#unsafe = true;
-    options
-}
-
 /// Parses document bytes with default options. See `parse_document_with`.
 pub fn parse_document(path: PathBuf, bytes: &[u8]) -> Result<DocumentModel, DocumentError> {
     parse_document_with(path, bytes, &ParseOptions::default())
@@ -164,7 +169,18 @@ pub fn parse_document_with(
     });
     let body = &text[body_start..];
 
-    let options = gfm_options();
+    let fm_flavor = front_matter.as_ref().and_then(|fm| fm.flavor.clone());
+    let folder_flavor = crate::config::find_folder_config(&path)
+        .and_then(|found| found.config.ok())
+        .and_then(|config| config.flavor);
+    let (flavor, flavor_source) = flavor::resolve(
+        parse_options.flavor,
+        fm_flavor.as_deref(),
+        folder_flavor.as_deref(),
+        || flavor::detect(text, flavor::in_obsidian_vault(&path)).0,
+    );
+
+    let options = flavor::comrak_options(flavor);
     let arena = comrak::Arena::new();
     let root = comrak::parse_document(&arena, body, &options);
     let index = LineIndex::new(body, bom_len + body_start);
@@ -187,7 +203,28 @@ pub fn parse_document_with(
     // into the right place; the UI gathers footnotes into endnotes itself.
     // Rust note: `collect()` builds a Vec from the iterator; `sort_by_key`
     // then sorts in place by the key the closure returns (a tuple here).
-    let mut nodes: Vec<Node<'_>> = root.children().collect();
+    // Pandoc's inline footnotes (`^[...]`) make comrak add a definition for
+    // each at the end of the document, positioned inside the paragraph that
+    // holds the note. They have no source text of their own, so they aren't
+    // blocks (they would overlap that paragraph's range); their rendered
+    // HTML is kept separately for footnote popovers and endnotes.
+    // Rust note: `partition` splits one iterator into two collections by a
+    // test, like two list comprehensions in one pass.
+    let (generated, mut nodes): (Vec<Node<'_>>, Vec<Node<'_>>) =
+        root.children().partition(|n| is_generated_footnote(n));
+    let inline_footnotes = generated
+        .into_iter()
+        .map(|node| {
+            let name = match &node.data().value {
+                NodeValue::FootnoteDefinition(def) => def.name.clone(),
+                _ => String::new(),
+            };
+            InlineFootnote {
+                html: renderer.render(node, &options),
+                name,
+            }
+        })
+        .collect();
     nodes.sort_by_key(|n| {
         let start = n.data().sourcepos.start;
         (start.line, start.column)
@@ -293,6 +330,9 @@ pub fn parse_document_with(
         images: images.assets,
         remote_images: images.remote_count,
         remote_images_allowed: parse_options.allow_remote_images,
+        flavor,
+        flavor_source,
+        inline_footnotes,
     })
 }
 
@@ -454,6 +494,11 @@ fn count_tags(html: &str, prefix: &str) -> i32 {
                 .is_none_or(|c| c == '>' || c == '/' || c.is_whitespace())
         })
         .count() as i32
+}
+
+/// A footnote definition comrak generated for an inline footnote (`^[...]`).
+fn is_generated_footnote(node: Node<'_>) -> bool {
+    matches!(&node.data().value, NodeValue::FootnoteDefinition(def) if def.name.starts_with("__inline_"))
 }
 
 /// The language word from a fence info string: "rust ignore" → "rust".

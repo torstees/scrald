@@ -4,6 +4,7 @@ expression: describe(&doc)
 input_file: crates/scrald-core/tests/fixtures/crlf-bom.md
 ---
 bom: true  line_ending: Crlf  words: 15  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true }
+flavor: Gfm (Default)
 front_matter: {
   "range": {
     "start": 3,

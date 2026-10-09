@@ -97,6 +97,18 @@ export interface ImageAsset {
   height: number | null;
 }
 
+/** Mirrors `Flavor` (crates/scrald-core/src/flavor.rs). */
+export type Flavor = "gfm" | "obsidian" | "pandoc";
+
+/** Mirrors `FlavorSource`: why a document has its flavor. */
+export type FlavorSource = "document" | "frontMatter" | "folder" | "detected" | "default";
+
+/** Mirrors `InlineFootnote`: a `^[...]` footnote, rendered. */
+export interface InlineFootnote {
+  name: string;
+  html: string;
+}
+
 /** Mirrors `LineEnding` (serde `rename_all = "lowercase"`). */
 export type LineEnding = "lf" | "crlf";
 
@@ -117,6 +129,10 @@ export interface DocumentModel {
   remoteImages: number;
   /** Whether remote images were allowed to load in this parse. */
   remoteImagesAllowed: boolean;
+  flavor: Flavor;
+  flavorSource: FlavorSource;
+  /** Inline (`^[...]`) footnotes, which have no block of their own. */
+  inlineFootnotes: InlineFootnote[];
 }
 
 /** Mirrors `LinkTarget` (crates/scrald-core/src/links.rs, serde `tag = "kind"`). */
@@ -139,6 +155,8 @@ export interface DocumentMemory {
   textSizing: TextSizing | null;
   /** Zoom chosen for this document, if any. */
   zoom: number | null;
+  /** Flavor chosen for this document, if any. */
+  flavor: Flavor | null;
 }
 
 /** Mirrors `TypographyDefaults` (crates/scrald-app/src/state.rs). */

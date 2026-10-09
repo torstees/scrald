@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use rusqlite::{Connection, OptionalExtension, params};
+use scrald_core::Flavor;
 use scrald_core::theme::TextSizing;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -94,6 +95,8 @@ pub struct DocumentMemory {
     pub text_sizing: Option<TextSizing>,
     /// Zoom chosen for this document, if any.
     pub zoom: Option<f64>,
+    /// Flavor chosen for this document, if any (detected flavors aren't stored).
+    pub flavor: Option<Flavor>,
 }
 
 /// A window's position and size in physical pixels, plus whether it was
@@ -185,7 +188,7 @@ impl StateStore {
         )?;
 
         let memory = conn.query_row(
-            "SELECT scroll_offset, scroll_fraction, remote_images, theme, text_sizing, zoom
+            "SELECT scroll_offset, scroll_fraction, remote_images, theme, text_sizing, zoom, flavor
              FROM documents WHERE path = ?1",
             [&key],
             |row| {
@@ -205,6 +208,10 @@ impl StateStore {
                         .as_deref()
                         .and_then(parse_text_sizing),
                     zoom: row.get(5)?,
+                    flavor: row
+                        .get::<_, Option<String>>(6)?
+                        .as_deref()
+                        .and_then(Flavor::from_name),
                 })
             },
         )?;
@@ -250,6 +257,16 @@ impl StateStore {
                 text_sizing.map(text_sizing_name),
                 zoom.map(clamp_zoom)
             ],
+        )?;
+        Ok(())
+    }
+
+    /// Sets (or with `None`, clears) the flavor chosen for a document. Only
+    /// explicit choices are stored; detection runs fresh each time.
+    pub fn set_document_flavor(&self, path: &Path, flavor: Option<Flavor>) -> anyhow::Result<()> {
+        self.conn().execute(
+            "UPDATE documents SET flavor = ?2 WHERE path = ?1",
+            params![document_key(path), flavor.map(Flavor::name)],
         )?;
         Ok(())
     }
@@ -535,6 +552,23 @@ mod tests {
         store.set_document_typography(&path, None, None).unwrap();
         let memory = store.record_open(&path).unwrap();
         assert_eq!((memory.text_sizing, memory.zoom), (None, None));
+    }
+
+    #[test]
+    fn remembers_and_clears_document_flavor() {
+        let dir = temp_dir("flavor");
+        let path = doc(&dir, "a.md", "# A");
+        let store = StateStore::in_memory().unwrap();
+        store.record_open(&path).unwrap();
+        store
+            .set_document_flavor(&path, Some(Flavor::Pandoc))
+            .unwrap();
+        assert_eq!(
+            store.record_open(&path).unwrap().flavor,
+            Some(Flavor::Pandoc)
+        );
+        store.set_document_flavor(&path, None).unwrap();
+        assert_eq!(store.record_open(&path).unwrap().flavor, None);
     }
 
     #[test]

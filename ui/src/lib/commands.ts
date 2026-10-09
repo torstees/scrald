@@ -12,6 +12,7 @@ import type {
   ThemeStyle,
   ThemeSummary,
   TypographyDefaults,
+  Flavor,
 } from "./types";
 import type { TextSizing } from "../typography/typography";
 
@@ -78,6 +79,11 @@ export function setDocumentTypography(path: string, textSizing: TextSizing | nul
   invoke("set_document_typography", { path, textSizing, zoom }).catch((e: unknown) => {
     console.warn("could not save typography", e);
   });
+}
+
+/** Sets a document's flavor; `null` returns to front matter, folder config, or detection. */
+export function setDocumentFlavor(path: string, flavor: Flavor | null): Promise<void> {
+  return invoke("set_document_flavor", { path, flavor });
 }
 
 export function typographyDefaults(): Promise<TypographyDefaults> {

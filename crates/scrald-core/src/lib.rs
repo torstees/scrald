@@ -6,6 +6,7 @@
 pub mod assets;
 pub mod config;
 pub mod document;
+pub mod flavor;
 pub mod frontmatter;
 pub mod generate;
 pub mod links;
@@ -23,6 +24,7 @@ pub use document::{
     Block, BlockKind, DocumentModel, FeatureFlags, ParseOptions, Section, load_document,
     parse_document, parse_document_with,
 };
+pub use flavor::{Flavor, FlavorSource};
 pub use frontmatter::FrontMatter;
 pub use links::{LinkTarget, resolve_link};
 pub use source::{LineEnding, SourceRange};

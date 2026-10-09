@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use anyhow::Context;
 use scrald_core::theme::{Appearance, TextSizing, ThemeSource, ThemeSummary, resolve_theme};
-use scrald_core::{DocumentModel, LinkTarget, ParseOptions};
+use scrald_core::{DocumentModel, Flavor, LinkTarget, ParseOptions};
 use serde::Serialize;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
@@ -117,6 +117,7 @@ pub async fn open_document(
     let load_path = path.clone();
     let options = ParseOptions {
         allow_remote_images: memory.remote_images,
+        flavor: memory.flavor,
     };
     // Rust note: `move` makes the closure take ownership of `load_path` and
     // `options`, so it can run on another thread after this function's locals
@@ -236,6 +237,18 @@ pub fn set_document_typography(
     zoom: Option<f64>,
 ) -> Result<(), CommandError> {
     Ok(store.set_document_typography(&path, text_sizing, zoom)?)
+}
+
+/// Sets the Markdown flavor for one document, or with `null` goes back to
+/// front matter, folder config, or detection. The frontend reopens the
+/// document afterwards to apply it.
+#[tauri::command]
+pub fn set_document_flavor(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+    flavor: Option<Flavor>,
+) -> Result<(), CommandError> {
+    Ok(store.set_document_flavor(&path, flavor)?)
 }
 
 /// Global typography settings ("Make this the default" and "fill window").

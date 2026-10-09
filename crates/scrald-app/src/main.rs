@@ -89,6 +89,7 @@ fn main() -> anyhow::Result<()> {
             commands::user_theme_folder,
             commands::system_fonts,
             commands::set_document_typography,
+            commands::set_document_flavor,
             commands::typography_defaults,
             commands::set_typography_defaults,
             commands::resolve_link,

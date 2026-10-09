@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use scrald_core::generate::generate_document;
-use scrald_core::{BlockKind, DocumentModel, parse_document};
+use scrald_core::{BlockKind, DocumentModel, ParseOptions, parse_document, parse_document_with};
 
 fn fixture_paths() -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -78,7 +78,14 @@ fn check_blocks_reparse(name: &str, bytes: &[u8], doc: &DocumentModel) {
             continue;
         }
         let slice = &bytes[block.source.as_range()];
-        let again = parse_document(PathBuf::from("block.md"), slice).expect("block parses");
+        // Re-parse in the document's flavor: one block alone may not carry
+        // enough signals to be detected the same way.
+        let options = ParseOptions {
+            flavor: Some(doc.flavor),
+            ..ParseOptions::default()
+        };
+        let again =
+            parse_document_with(PathBuf::from("block.md"), slice, &options).expect("block parses");
         let kinds: Vec<&BlockKind> = again.blocks.iter().map(|b| &b.kind).collect();
         assert_eq!(
             kinds,
