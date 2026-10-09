@@ -563,7 +563,15 @@ The database stores only metadata, never document contents. The one place Scrald
 
 ---
 
-## 15. Open questions
+## 15. User documentation
+
+The user-facing documentation is a [docsify](https://docsify.js.org) site in the repository's `docs/` folder, intended to be published with GitHub Pages from that folder. Docsify renders the Markdown files in the browser, so the site is plain Markdown plus an `index.html`, with no build step.
+
+- `docs/` holds only the published site. Design and developer documents stay at the repository root.
+- Planned content: getting started (installing, opening files, file associations), the reading view and navigation, themes and a `theme.toml` reference, front matter keys (§8.1), Markdown flavors and supported syntax (§5), keyboard shortcuts, and where Scrald stores its data.
+- The pages are also good real-world fixtures: Scrald should render its own manual well.
+
+## 16. Open questions
 
 1. ~~**Front matter namespacing:** Is `scrald: { theme, flavor }` acceptable, or should these be flat keys such as `scrald-theme`?~~ **Resolved (2026-10-08):** flat `scrald-*` keys; the nested form is read but never written. See section 8.1.
 2. ~~**Autosave:** off by default for v1, or on?~~ **Resolved (2026-10-08):** off by default, with a prompt on close and crash-recovery files covering lost work. See section 9.3.

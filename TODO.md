@@ -31,10 +31,10 @@ Record notable decisions made during implementation here (date, decision, reason
 
 | Date | Decision | Reason |
 |---|---|---|
-| 2026-10-08 | Front matter settings use flat `scrald-theme` / `scrald-flavor` keys; nested `scrald:` map is read but never written (DESIGN §8.1, §15 Q1) | Obsidian's Properties panel can't display or edit nested maps; flat keys keep the minimal-edit YAML engine to top-level scalars |
-| 2026-10-08 | Autosave off by default for v1; add close prompt and crash-recovery files in app data (DESIGN §9.3, §12, §15 Q2) | New edit/save path shouldn't write to user files unattended; recovery files cover crashes without touching the document |
-| 2026-10-08 | Note transclusion is post-v1; v1 renders `![[Other note]]` as a link card (DESIGN §5.3, §15 Q3) | Keeps v1 scope down; transclusion raises cross-file source-range, editing, and cycle questions worth designing properly |
-| 2026-10-08 | Windows first; macOS and Linux support is the final v1 milestone, M10 (DESIGN §11.1, §15 Q4) | Focus early work on one platform while keeping code portable so the port is mostly verification and packaging |
+| 2026-10-08 | Front matter settings use flat `scrald-theme` / `scrald-flavor` keys; nested `scrald:` map is read but never written (DESIGN §8.1, §16 Q1) | Obsidian's Properties panel can't display or edit nested maps; flat keys keep the minimal-edit YAML engine to top-level scalars |
+| 2026-10-08 | Autosave off by default for v1; add close prompt and crash-recovery files in app data (DESIGN §9.3, §12, §16 Q2) | New edit/save path shouldn't write to user files unattended; recovery files cover crashes without touching the document |
+| 2026-10-08 | Note transclusion is post-v1; v1 renders `![[Other note]]` as a link card (DESIGN §5.3, §16 Q3) | Keeps v1 scope down; transclusion raises cross-file source-range, editing, and cycle questions worth designing properly |
+| 2026-10-08 | Windows first; macOS and Linux support is the final v1 milestone, M10 (DESIGN §11.1, §16 Q4) | Focus early work on one platform while keeping code portable so the port is mostly verification and packaging |
 | 2026-10-08 | LF line endings for all repo files, enforced by `.gitattributes` (`eol=lf`) and `.editorconfig`; test fixtures exempt (`-text`) | Maintainer preference; also keeps diffs clean across platforms. Fixtures must keep CRLF/BOM bytes to test preservation |
 | 2026-10-08 | `scrald-core` is tested on Windows, macOS, and Linux in CI from M0 (DESIGN §11.1) | Core has no GUI dependencies, so cross-platform CI is nearly free and catches portability slips early |
 | 2026-10-08 | Manual Obsidian check (#15): nested `scrald:` map is read-only in Properties, flat keys editable; Obsidian property edits drop comments and turn flow lists into block lists, but keep key order and the nested map (DESIGN §8.1, §8.3) | Confirms the flat-key decision; the YAML editor must treat block lists as the common case |

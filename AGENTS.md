@@ -27,8 +27,11 @@ assets/               # source artwork, e.g. icon-source.png (regenerate icons w
 .github/workflows/    # CI
 package.json          # root npm workspace + Tauri CLI
 justfile              # task shortcuts (`just` lists them)
+docs/                 # reserved: the published user documentation site (docsify)
 DESIGN.md  TODO.md  AGENTS.md  CLAUDE.md
 ```
+
+`docs/` is reserved for the user documentation site, published with [docsify](https://docsify.js.org) (DESIGN.md §15). Don't put design notes, plans, or developer docs there; those stay at the repository root (`DESIGN.md`, `AGENTS.md`, `TODO.md`). Until the site is set up, leave `docs/` alone.
 
 Logic belongs in `scrald-core` whenever it can be tested without a window. `scrald-app` should mostly translate between Tauri and core.
 
