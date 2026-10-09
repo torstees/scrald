@@ -365,6 +365,7 @@ fn read_attachment_folder(root: &Path) -> Option<PathBuf> {
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
     let folder = value.get("attachmentFolderPath")?.as_str()?.trim();
     let folder = folder.trim_start_matches("./").trim_matches('/');
+    // Rust note: `cond.then(|| x)` is `Some(x)` when true, else `None`.
     (!folder.is_empty() && !folder.contains("..")).then(|| PathBuf::from(folder))
 }
 
@@ -504,6 +505,8 @@ pub fn split_inline(text: &str, at_block_end: bool) -> Vec<Piece> {
 
 fn flush(plain: &mut String, pieces: &mut Vec<Piece>) {
     if !plain.is_empty() {
+        // Rust note: `mem::take` moves the String out and leaves an empty one
+        // behind, avoiding a copy (like `std::move` followed by `clear()`).
         pieces.push(Piece::Text(std::mem::take(plain)));
     }
 }
