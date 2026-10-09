@@ -145,6 +145,8 @@ Parsing is not the bottleneck: comrak parses a 100K-word file (~600–700 KB) in
 1. **Section containment.** Group blocks into sections by heading. Each section element gets `content-visibility: auto` and a `contain-intrinsic-size` estimate, so the browser skips layout and paint for offscreen sections.
 2. **Progressive mount.** Render the sections around the initial scroll position immediately, then mount the rest in `requestIdleCallback` chunks.
 3. **Lazy heavy work.** Syntax highlighting, KaTeX, and Mermaid run only when a block approaches the viewport (`IntersectionObserver`). Code blocks arrive from Rust already highlighted only if they are cheap. Otherwise the UI requests highlighting per block.
+
+   As implemented: syntax highlighting happens in core at parse time (syntect, pure-Rust regex engine, class-based output; code blocks over 64 KB stay plain), which costs about 18 ms per 100K words on the generated fixture and keeps the frontend simpler. KaTeX, Mermaid, and abcjs are frontend libraries loaded with dynamic `import()` only when a block needs them, and a block is rendered when it comes within one screen of the viewport (`ui/src/render/renderers.ts`). After a theme change, diagrams and music are redrawn in the new colors; math uses the text color directly.
 4. **Lazy images.** `loading="lazy"`, with known dimensions reserved when available (read image headers in Rust) to prevent scroll jumps.
 5. **Virtualization (fallback only).** If profiling shows containment is not enough, mount only nearby sections and use placeholders with measured or estimated heights. This adds complexity, so it is deferred until measurements justify it.
 
@@ -219,6 +221,7 @@ Profiles as comrak options: all three share tables, task lists, footnotes, strik
 | Callouts `> [!type]+/-` (foldable) | | ✓ | | Transform pass |
 | Math `$...$`, `$$...$$` | ✓ | ✓ | ✓ | KaTeX, lazy |
 | Mermaid code blocks | ✓ | ✓ | | Lazy |
+| ABC music notation (```` ```abc ````) | ✓ | ✓ | ✓ | Lazy (abcjs), display only; optional JSON options header + `---` (Obsidian plugin format); playback post-v1 |
 | Wikilinks `[[Note]]`, `[[Note\|alias]]`, `[[Note#Heading]]` | | ✓ | | Resolved within the vault root (nearest ancestor with `.obsidian/`) or the document's folder |
 | Image embeds `![[img.png]]`, `![[img.png\|300]]` | | ✓ | | Width/height syntax supported |
 | Note embeds `![[Other note]]` | | ✓ | | v1: rendered as a link card that opens the note; post-v1: transclusion |
@@ -368,7 +371,7 @@ numbering = false
 h1_rule = true
 
 [syntax]
-source = "palette"             # "palette" derives from [palette]; or name a bundled syntect theme
+source = "palette"             # "palette" derives from [palette] (the only option so far)
 
 [css]
 file = "theme.css"
@@ -565,6 +568,7 @@ The database stores only metadata, never document contents. The one place Scrald
 ## 13. Security
 
 - All rendered HTML passes through `ammonia`, with an allowlist that covers what Markdown and the transforms produce (including KaTeX and Mermaid output containers). `<script>`, event handler attributes, `javascript:` URLs, and `<iframe>` are always stripped.
+- **Trusted renderers.** KaTeX, Mermaid, and abcjs build their own markup (HTML or SVG) in the frontend from the *text* of a math, diagram, or music block, after core's sanitized HTML is in place. They are the only code allowed to insert markup other than core's `Block.html`, each configured defensively: KaTeX with `trust: false` (no `\href`, `\url`, or HTML extensions), Mermaid with `securityLevel: "strict"` (labels are sanitized, no click handlers), and abcjs with an allowlist of options read from the block's JSON header.
 - Every HTML `id` from document content (heading slugs, footnote ids, raw HTML) gets the prefix `user-content-`, so a heading named "App" or raw `id="app"` can't clobber the app's own elements. Links keep the bare form (`#intro`, `#fn-1`) and the reader adds the prefix when resolving them.
 - A strict Tauri content security policy: no remote scripts; images only from `scrald-asset:`, `scrald-theme:`, and `data:` (plus remote origins when the user enables remote images for a document). Tauri's CSP is fixed at build time, so `img-src` permits `http:`/`https:` globally and the per-document gate is enforced by core and the sanitizer: no remote `src` reaches the page unless the user allowed remote images for that document.
 - The asset protocol only serves files resolved for the currently open documents and theme assets.

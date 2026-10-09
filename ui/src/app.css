@@ -124,10 +124,28 @@ body {
 
 /* Blockquote and hr styles come from the theme's [elements.*] (see theme/css.rs). */
 
+/* Wide tables scroll sideways in their own box (core wraps them in .sk-table). */
+.sk-block .sk-table {
+  overflow-x: auto;
+  margin: 0 0 var(--sk-paragraph-spacing);
+}
+
 .sk-block table {
   border-collapse: collapse;
-  display: block;
-  overflow-x: auto;
+}
+
+/* Natural width (scrolling if wider than the column) instead of squeezing
+   every column; long cells still wrap at a readable width. */
+.sk-block .sk-table > table {
+  margin: 0;
+  width: max-content;
+  max-width: none;
+}
+
+.sk-block .sk-table th,
+.sk-block .sk-table td {
+  max-width: 24em;
+  vertical-align: top;
 }
 
 .sk-block th,
@@ -167,4 +185,97 @@ body {
 
 .sk-block .sk-image-remote::before {
   content: "🌐 ";
+}
+
+/*
+ * Syntax highlighting (core emits sk-hl-* classes from syntect scopes).
+ * Colors come from the theme's [palette], falling back to its semantic colors.
+ */
+.sk-block .sk-hl-comment {
+  color: var(--sk-color-muted);
+  font-style: italic;
+}
+
+.sk-block .sk-hl-string {
+  color: var(--sk-palette-green, var(--sk-color-accent));
+}
+
+.sk-block .sk-hl-constant {
+  color: var(--sk-palette-cyan, var(--sk-color-link));
+}
+
+.sk-block .sk-hl-keyword,
+.sk-block .sk-hl-storage {
+  color: var(--sk-palette-magenta, var(--sk-color-accent));
+}
+
+/* Operators are keywords to syntect, but coloring every + and = is noisy. */
+.sk-block .sk-hl-keyword.sk-hl-operator {
+  color: inherit;
+}
+
+.sk-block .sk-hl-entity.sk-hl-function,
+.sk-block .sk-hl-support.sk-hl-function,
+.sk-block .sk-hl-support.sk-hl-macro {
+  color: var(--sk-palette-blue, var(--sk-color-link));
+}
+
+.sk-block .sk-hl-entity.sk-hl-type,
+.sk-block .sk-hl-entity.sk-hl-class,
+.sk-block .sk-hl-support.sk-hl-type,
+.sk-block .sk-hl-support.sk-hl-class,
+.sk-block .sk-hl-entity.sk-hl-tag,
+.sk-block .sk-hl-entity.sk-hl-attribute-name {
+  color: var(--sk-palette-yellow, var(--sk-color-accent));
+}
+
+.sk-block .sk-hl-variable.sk-hl-language,
+.sk-block .sk-hl-constant.sk-hl-language {
+  font-style: italic;
+}
+
+.sk-block .sk-hl-markup.sk-hl-heading {
+  color: var(--sk-color-accent);
+  font-weight: 600;
+}
+
+.sk-block .sk-hl-invalid {
+  color: var(--sk-palette-red, var(--sk-color-accent));
+}
+
+/* Rendered math, diagrams, and music (ui/src/render/renderers.ts). */
+.sk-block .sk-math-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0 0 var(--sk-paragraph-spacing);
+}
+
+.sk-block .sk-mermaid {
+  overflow-x: auto;
+  text-align: center;
+  margin: 0 0 var(--sk-paragraph-spacing);
+}
+
+.sk-block .sk-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.sk-block .sk-abc {
+  margin: 0 0 var(--sk-paragraph-spacing);
+}
+
+.sk-block .sk-render-error {
+  font-family: var(--sk-font-ui);
+  font-size: 0.75em;
+  color: var(--sk-palette-red, var(--sk-color-accent));
+  border-left: 3px solid currentColor;
+  padding-left: 0.6em;
+  margin: 0 0 0.5em;
+}
+
+.sk-block .sk-render-failed {
+  font-family: var(--sk-font-mono);
+  white-space: pre-wrap;
+  text-align: left;
 }

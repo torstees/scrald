@@ -117,7 +117,7 @@ Each completed chunk of work (usually a few related sub-issues) goes up as a pul
 - TypeScript strict mode. No `any` without a comment explaining why.
 - Theme values reach the page only through CSS custom properties (`--sk-*`). Components must not hard-code colors or fonts.
 - Heavy libraries (KaTeX, Mermaid, CodeMirror) are loaded with dynamic `import()` only when needed.
-- Never insert HTML from anywhere except the sanitized `Block.html` produced by core.
+- Never insert HTML from anywhere except the sanitized `Block.html` produced by core. The one exception is the trusted renderers in `ui/src/render/` (KaTeX, Mermaid, abcjs), which build markup from a block's source text with defensive settings (DESIGN.md §13). Don't add another without updating DESIGN.md.
 
 ### Tauri boundary
 

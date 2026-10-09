@@ -70,6 +70,8 @@ export interface FeatureFlags {
   hasMath: boolean;
   hasMermaid: boolean;
   hasCode: boolean;
+  /** ABC music notation (rendered with abcjs). */
+  hasAbc: boolean;
 }
 
 /** Mirrors `FrontMatter`. */

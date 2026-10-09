@@ -20,7 +20,7 @@ function doc(blocks: Block[], sections: Section[]): DocumentModel {
     sections,
     toc: [],
     wordCount: 0,
-    features: { hasMath: false, hasMermaid: false, hasCode: false },
+    features: { hasMath: false, hasMermaid: false, hasCode: false, hasAbc: false },
     images: [],
     remoteImages: 0,
     remoteImagesAllowed: false,

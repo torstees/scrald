@@ -7,6 +7,7 @@
   import type { DocumentModel } from "../lib/types";
   import { assetUrl } from "../lib/commands";
   import { contentId } from "../lib/ids";
+  import { needsRichRendering, richContent } from "../render/renderers";
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
   import { batchByBlocks, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
   import { blockIndexAtOffset, firstBoxBelow, fractionInto, TOP_ANCHOR, type ScrollAnchor } from "./anchor";
@@ -334,7 +335,9 @@
         >
           {#each sectionBlocks(doc, section) as block (block.id)}
             <!-- Block.html is sanitized by core (ammonia); it's the only HTML we insert. -->
-            <div class="sk-block" data-block={block.id} use:assetImages={assetToken}>{@html block.html}</div>
+            <div class="sk-block" data-block={block.id} use:assetImages={assetToken} use:richContent={needsRichRendering(block.html)}
+              >{@html block.html}</div
+            >
           {/each}
         </section>
       {:else}

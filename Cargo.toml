@@ -24,6 +24,8 @@ insta = { version = "1.49.0", features = ["glob"] }
 criterion = "0.8.2"
 thiserror = "2.0.21"
 toml = "1.1"
+# Pure-Rust regex engine (no Oniguruma C build); class-based HTML output.
+syntect = { version = "5.3.0", default-features = false, features = ["default-syntaxes", "html", "regex-fancy"] }
 fontdb = "0.24.0"
 tracing = "0.1.44"
 notify-debouncer-mini = "0.7.0"

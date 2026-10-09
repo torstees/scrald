@@ -3,7 +3,7 @@ source: crates/scrald-core/tests/snapshots.rs
 expression: describe(&doc)
 input_file: crates/scrald-core/tests/fixtures/front-matter.md
 ---
-bom: false  line_ending: Lf  words: 8  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false }
+bom: false  line_ending: Lf  words: 8  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false, has_abc: false }
 flavor: Obsidian (FrontMatter)
 front_matter: {
   "range": {
