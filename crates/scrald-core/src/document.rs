@@ -4,15 +4,17 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use comrak::nodes::{ListType, Node, NodeHtmlBlock, NodeValue};
 use serde::Serialize;
 
 use crate::DocumentError;
-use crate::assets::{self, AssetContext, ImageAsset, Resolved};
+use crate::assets::{AssetContext, ImageAsset, ImageCollector};
 use crate::flavor::{self, Flavor, FlavorSource};
 use crate::frontmatter::{self, FrontMatter};
 use crate::highlight;
+use crate::obsidian::{self, VaultIndex};
 use crate::render::{self, Renderer};
 use crate::source::{self, LineEnding, LineIndex, SourceRange};
 use crate::toc::{self, Slugger, TocEntry};
@@ -184,13 +186,25 @@ pub fn parse_document_with(
     );
 
     let options = flavor::comrak_options(flavor);
+    let obsidian = flavor == Flavor::Obsidian;
+    // Obsidian comments are blanked to spaces of the same byte length, so the
+    // parser never sees them but every offset stays the same.
+    let parse_text = if obsidian {
+        obsidian::blank_comments(body)
+    } else {
+        body.to_string()
+    };
     let arena = comrak::Arena::new();
-    let root = comrak::parse_document(&arena, body, &options);
+    let root = comrak::parse_document(&arena, &parse_text, &options);
     let index = LineIndex::new(body, bom_len + body_start);
 
     let assets_dir = front_matter.as_ref().and_then(|fm| fm.assets.as_deref());
-    let asset_ctx =
+    let mut asset_ctx =
         AssetContext::for_document(&path, assets_dir, parse_options.allow_remote_images);
+    // The vault index is only built when something could use it.
+    let vault = (obsidian && (body.contains("[[") || body.contains("![") || body.contains("<img")))
+        .then(|| Arc::new(VaultIndex::for_document(&path)));
+    asset_ctx.vault = vault.clone();
     let mut images = ImageCollector::default();
 
     let renderer = Renderer::new(parse_options.allow_remote_images);
@@ -258,8 +272,18 @@ pub fn parse_document_with(
         for &node in group {
             word_count += count_words(node);
             update_features(node, &mut features);
+            if let Some(vault) = &vault {
+                let link_ctx = obsidian::LinkContext {
+                    doc_path: &path,
+                    vault,
+                };
+                obsidian::transform_links(&arena, node, &link_ctx, &mut images);
+            }
             images.rewrite(node, &asset_ctx);
             highlight_code_blocks(node);
+            if obsidian {
+                obsidian::transform_callouts(node, &options);
+            }
         }
         let mut html = renderer.render_group(group, &options);
         if kind == BlockKind::Table {
@@ -343,81 +367,6 @@ pub fn parse_document_with(
         flavor_source,
         inline_footnotes,
     })
-}
-
-/// Replaces Markdown images with Scrald's own markup (DESIGN.md §6), and
-/// collects the local files they resolve to.
-#[derive(Debug, Default)]
-struct ImageCollector {
-    assets: Vec<ImageAsset>,
-    remote_count: usize,
-}
-
-impl ImageCollector {
-    /// Rewrites every image under `node` into inline HTML: an asset
-    /// reference, a remote image (if allowed), or a placeholder.
-    fn rewrite(&mut self, node: Node<'_>, ctx: &AssetContext) {
-        // Collect first: changing nodes while walking the tree would confuse
-        // the iterator.
-        let image_nodes: Vec<Node<'_>> = node
-            .descendants()
-            .filter(|n| matches!(n.data().value, NodeValue::Image(_)))
-            .collect();
-
-        for image in image_nodes {
-            // Rust note: this block ends the `data()` borrow before
-            // `data_mut()` below; a RefCell panics if both are held at once.
-            let (url, title) = match &image.data().value {
-                NodeValue::Image(link) => (link.url.clone(), link.title.clone()),
-                _ => continue,
-            };
-            let alt = plain_text(image);
-            let title = Some(title.as_str());
-
-            let html = match assets::resolve(&url, ctx) {
-                Resolved::Local(file) => {
-                    let asset = self.asset_for(file);
-                    assets::local_image_html(&asset, &alt, title)
-                }
-                Resolved::Missing { attempted } => {
-                    assets::missing_image_html(&url, &alt, &attempted)
-                }
-                Resolved::Remote(remote) => {
-                    self.remote_count += 1;
-                    if ctx.allow_remote {
-                        assets::remote_image_html(&remote, &alt, title)
-                    } else {
-                        assets::blocked_image_html(&remote, &alt)
-                    }
-                }
-                Resolved::Data(data) => assets::remote_image_html(&data, &alt, title),
-                Resolved::Unsupported(src) => assets::unsupported_image_html(&src, &alt),
-            };
-
-            // The alt text now lives in the HTML; drop the child nodes.
-            let children: Vec<Node<'_>> = image.children().collect();
-            for child in children {
-                child.detach();
-            }
-            image.data_mut().value = NodeValue::HtmlInline(html);
-        }
-    }
-
-    /// The asset for `file`, reusing the id if the document uses it twice.
-    fn asset_for(&mut self, file: PathBuf) -> ImageAsset {
-        if let Some(existing) = self.assets.iter().find(|a| a.path == file) {
-            return existing.clone();
-        }
-        let size = assets::image_size(&file);
-        let asset = ImageAsset {
-            id: self.assets.len() as u32,
-            path: file,
-            width: size.map(|(w, _)| w),
-            height: size.map(|(_, h)| h),
-        };
-        self.assets.push(asset.clone());
-        asset
-    }
 }
 
 fn block_kind(node: Node<'_>) -> BlockKind {
@@ -555,7 +504,7 @@ fn block_range(node: Node<'_>, index: &LineIndex) -> SourceRange {
 }
 
 /// The text content of a node, as shown to the reader (no markup).
-fn plain_text(node: Node<'_>) -> String {
+pub(crate) fn plain_text(node: Node<'_>) -> String {
     let mut out = String::new();
     // Rust note: `descendants()` walks the subtree depth-first, starting with
     // `node` itself; it borrows the tree rather than copying it.

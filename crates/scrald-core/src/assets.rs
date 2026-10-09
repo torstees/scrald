@@ -2,9 +2,12 @@
 //! Markdown images in rendered blocks.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use comrak::nodes::{Node, NodeValue};
 use serde::Serialize;
 
+use crate::obsidian::VaultIndex;
 use crate::render::escape_text;
 
 /// A local file an image in the document resolved to. The app serves only
@@ -27,6 +30,13 @@ pub struct AssetContext {
     pub search_dirs: Vec<PathBuf>,
     /// Whether `http(s)` images may load (off by default, for privacy).
     pub allow_remote: bool,
+    /// For Obsidian documents: the vault, searched by file name when the
+    /// directories above don't have the image (§6.1).
+    // Rust note: `Arc` (atomically reference-counted pointer) shares one
+    // index between clones without copying it, like `std::shared_ptr`.
+    pub vault: Option<Arc<VaultIndex>>,
+    /// The document's path, for vault lookups that prefer nearby files.
+    pub doc_path: PathBuf,
 }
 
 impl AssetContext {
@@ -42,6 +52,8 @@ impl AssetContext {
         AssetContext {
             search_dirs,
             allow_remote,
+            vault: None,
+            doc_path: doc_path.to_path_buf(),
         }
     }
 }
@@ -93,6 +105,13 @@ pub fn resolve(src: &str, ctx: &AssetContext) -> Resolved {
             return Resolved::Local(candidate);
         }
         attempted.push(candidate);
+    }
+    if let Some(vault) = &ctx.vault {
+        let name = relative.to_string_lossy();
+        if let Some(found) = vault.resolve_attachment(&name, &ctx.doc_path) {
+            return Resolved::Local(found);
+        }
+        attempted.push(vault.root.join(format!("(anywhere in the vault)/{name}")));
     }
     Resolved::Missing { attempted }
 }
@@ -205,6 +224,38 @@ pub fn local_image_html(asset: &ImageAsset, alt: &str, title: Option<&str>) -> S
     html
 }
 
+/// HTML for a local image at a requested size (Obsidian `![[pic.png|300]]`
+/// or `|300x200`). A width alone keeps the natural aspect ratio.
+pub fn local_image_html_sized(
+    asset: &ImageAsset,
+    alt: &str,
+    width: Option<u32>,
+    height: Option<u32>,
+) -> String {
+    let (w, h) = match (width, height, asset.width, asset.height) {
+        (Some(w), Some(h), _, _) => (Some(w), Some(h)),
+        (Some(w), None, Some(nw), Some(nh)) if nw > 0 => (
+            Some(w),
+            Some((u64::from(w) * u64::from(nh) / u64::from(nw)) as u32),
+        ),
+        (Some(w), None, _, _) => (Some(w), None),
+        (None, _, nw, nh) => (nw, nh),
+    };
+    let mut html = format!(
+        "<img data-asset=\"{}\" alt=\"{}\" loading=\"lazy\"",
+        asset.id,
+        escape_text(alt)
+    );
+    if let Some(w) = w {
+        html.push_str(&format!(" width=\"{w}\""));
+    }
+    if let Some(h) = h {
+        html.push_str(&format!(" height=\"{h}\""));
+    }
+    html.push('>');
+    html
+}
+
 /// HTML for a remote image the user allowed for this document.
 pub fn remote_image_html(url: &str, alt: &str, title: Option<&str>) -> String {
     let mut html = format!(
@@ -250,6 +301,226 @@ fn push_title(html: &mut String, title: Option<&str>) {
     if let Some(t) = title.filter(|t| !t.is_empty()) {
         html.push_str(&format!(" title=\"{}\"", escape_text(t)));
     }
+}
+
+/// Replaces images in a document with Scrald's own markup (DESIGN.md §6),
+/// and collects the local files they resolve to: Markdown images, raw HTML
+/// `<img>` tags, and Obsidian image embeds.
+#[derive(Debug, Default)]
+pub struct ImageCollector {
+    pub assets: Vec<ImageAsset>,
+    pub remote_count: usize,
+}
+
+impl ImageCollector {
+    /// Rewrites every image under `node`: Markdown images become inline HTML
+    /// (an asset reference, a remote image if allowed, or a placeholder), and
+    /// `<img>` tags in raw HTML get the same resolution.
+    pub fn rewrite(&mut self, node: Node<'_>, ctx: &AssetContext) {
+        // Collect first: changing nodes while walking the tree would confuse
+        // the iterator.
+        let targets: Vec<Node<'_>> = node
+            .descendants()
+            .filter(|n| {
+                matches!(
+                    n.data().value,
+                    NodeValue::Image(_) | NodeValue::HtmlBlock(_) | NodeValue::HtmlInline(_)
+                )
+            })
+            .collect();
+
+        for target in targets {
+            // Rust note: this block ends the `data()` borrow before
+            // `data_mut()` below; a RefCell panics if both are held at once.
+            let image = match &target.data().value {
+                NodeValue::Image(link) => Some((link.url.clone(), link.title.clone())),
+                _ => None,
+            };
+            if let Some((url, title)) = image {
+                let alt = crate::document::plain_text(target);
+                let html = self.image_html(&url, &alt, Some(title.as_str()), ctx);
+                // The alt text now lives in the HTML; drop the child nodes.
+                let children: Vec<Node<'_>> = target.children().collect();
+                for child in children {
+                    child.detach();
+                }
+                target.data_mut().value = NodeValue::HtmlInline(html);
+                continue;
+            }
+            // Raw HTML: rewrite any <img> tags in place.
+            let mut data = target.data_mut();
+            match &mut data.value {
+                NodeValue::HtmlBlock(block) if contains_img(&block.literal) => {
+                    block.literal = self.rewrite_raw_images(&block.literal, ctx);
+                }
+                NodeValue::HtmlInline(literal) if contains_img(literal) => {
+                    *literal = self.rewrite_raw_images(literal, ctx);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// The markup for one Markdown image.
+    fn image_html(
+        &mut self,
+        url: &str,
+        alt: &str,
+        title: Option<&str>,
+        ctx: &AssetContext,
+    ) -> String {
+        match resolve(url, ctx) {
+            Resolved::Local(file) => {
+                let asset = self.asset_for(file);
+                local_image_html(&asset, alt, title)
+            }
+            Resolved::Missing { attempted } => missing_image_html(url, alt, &attempted),
+            Resolved::Remote(remote) => {
+                self.remote_count += 1;
+                if ctx.allow_remote {
+                    remote_image_html(&remote, alt, title)
+                } else {
+                    blocked_image_html(&remote, alt)
+                }
+            }
+            Resolved::Data(data) => remote_image_html(&data, alt, title),
+            Resolved::Unsupported(src) => unsupported_image_html(&src, alt),
+        }
+    }
+
+    /// The markup for an Obsidian image embed that resolved to `file`.
+    pub fn embed_html(
+        &mut self,
+        file: PathBuf,
+        alt: &str,
+        width: Option<u32>,
+        height: Option<u32>,
+    ) -> String {
+        let asset = self.asset_for(file);
+        local_image_html_sized(&asset, alt, width, height)
+    }
+
+    /// The asset for `file`, reusing the id if the document uses it twice.
+    pub fn asset_for(&mut self, file: PathBuf) -> ImageAsset {
+        if let Some(existing) = self.assets.iter().find(|a| a.path == file) {
+            return existing.clone();
+        }
+        let size = image_size(&file);
+        let asset = ImageAsset {
+            id: self.assets.len() as u32,
+            path: file,
+            width: size.map(|(w, _)| w),
+            height: size.map(|(_, h)| h),
+        };
+        self.assets.push(asset.clone());
+        asset
+    }
+
+    /// Resolves the `src` of each `<img>` tag in raw HTML (#125): a local
+    /// file becomes `data-asset`, like Markdown images; a missing one loses
+    /// its `src` and gets a tooltip; remote ones follow the remote-images
+    /// setting. Other attributes (`width`, `alt`) are kept.
+    fn rewrite_raw_images(&mut self, html: &str, ctx: &AssetContext) -> String {
+        let mut out = String::with_capacity(html.len());
+        let mut rest = html;
+        while let Some(start) = find_img_tag(rest) {
+            out.push_str(&rest[..start]);
+            let tag_and_after = &rest[start..];
+            let end = tag_and_after
+                .find('>')
+                .map_or(tag_and_after.len(), |e| e + 1);
+            out.push_str(&self.rewrite_img_tag(&tag_and_after[..end], ctx));
+            rest = &tag_and_after[end..];
+        }
+        out.push_str(rest);
+        out
+    }
+
+    fn rewrite_img_tag(&mut self, tag: &str, ctx: &AssetContext) -> String {
+        let Some((src_start, src_end, src)) = find_attribute(tag, "src") else {
+            return tag.to_string();
+        };
+        let replacement = match resolve(&src, ctx) {
+            Resolved::Local(file) => {
+                let asset = self.asset_for(file);
+                format!("data-asset=\"{}\"", asset.id)
+            }
+            Resolved::Missing { .. } | Resolved::Unsupported(_) => {
+                format!(
+                    "title=\"{}\"",
+                    escape_text(&format!("Image not found: {src}"))
+                )
+            }
+            Resolved::Remote(_) => {
+                self.remote_count += 1;
+                if ctx.allow_remote {
+                    tag[src_start..src_end].to_string()
+                } else {
+                    String::new()
+                }
+            }
+            Resolved::Data(_) => tag[src_start..src_end].to_string(),
+        };
+        format!("{}{}{}", &tag[..src_start], replacement, &tag[src_end..])
+    }
+}
+
+fn contains_img(html: &str) -> bool {
+    html.to_ascii_lowercase().contains("<img")
+}
+
+/// Byte offset of the next `<img` tag (followed by whitespace, `/`, or `>`).
+fn find_img_tag(html: &str) -> Option<usize> {
+    let lower = html.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(i) = lower[from..].find("<img") {
+        let at = from + i;
+        match lower[at + 4..].chars().next() {
+            Some(c) if c.is_whitespace() || c == '/' || c == '>' => return Some(at),
+            None => return None,
+            _ => from = at + 4,
+        }
+    }
+    None
+}
+
+/// The span of `name=value` inside a tag, and the unquoted value.
+fn find_attribute(tag: &str, name: &str) -> Option<(usize, usize, String)> {
+    let lower = tag.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(i) = lower[from..].find(name) {
+        let at = from + i;
+        from = at + name.len();
+        let preceded = lower[..at]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_whitespace);
+        let after = lower[at + name.len()..].trim_start();
+        if !preceded || !after.starts_with('=') {
+            continue;
+        }
+        let value_start = tag.len() - after.len() + 1;
+        let value_part = &tag[value_start..];
+        let trimmed = value_part.trim_start();
+        let lead = value_part.len() - trimmed.len();
+        let (value, consumed) = match trimmed.chars().next() {
+            Some(q @ ('"' | '\'')) => {
+                let close = trimmed[1..].find(q).map_or(trimmed.len() - 1, |c| c + 1);
+                (
+                    trimmed[1..close].to_string(),
+                    (close + 1).min(trimmed.len()),
+                )
+            }
+            _ => {
+                let len = trimmed
+                    .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+                    .unwrap_or(trimmed.len());
+                (trimmed[..len].to_string(), len)
+            }
+        };
+        return Some((at, value_start + lead + consumed, value));
+    }
+    None
 }
 
 #[cfg(test)]

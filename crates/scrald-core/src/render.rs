@@ -50,8 +50,12 @@ impl Renderer {
             // Images from core's asset pipeline (assets.rs).
             .add_tag_attributes("img", ["data-asset", "loading", "referrerpolicy"])
             // `data:` is allowed as a scheme only so `data:image/...` images
-            // work; the filter below removes it everywhere else.
-            .add_url_schemes(["data"])
+            // work; the filter below removes it everywhere else. `file:` is
+            // how resolved wikilinks point at notes; clicks go through the
+            // app's link handler, which only opens Markdown files.
+            .add_url_schemes(["data", "file"])
+            // Foldable callouts.
+            .add_tag_attributes("details", ["open"])
             // `language-rust` on code blocks, `footnotes` sections, and so on.
             .add_generic_attributes(["class"])
             .id_prefix(Some(ID_PREFIX))

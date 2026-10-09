@@ -279,3 +279,131 @@ body {
   white-space: pre-wrap;
   text-align: left;
 }
+
+/*
+ * Callouts (Obsidian) and alerts (GitHub), DESIGN.md §5.3. Each type sets
+ * --sk-callout-color from the theme palette; the box tints from it.
+ */
+.sk-block .sk-callout,
+.sk-block .markdown-alert {
+  --sk-callout-color: var(--sk-palette-blue, var(--sk-color-link));
+  border-left: 4px solid var(--sk-callout-color);
+  background: color-mix(in srgb, var(--sk-callout-color) 9%, transparent);
+  border-radius: 4px;
+  padding: 0.6em 1em;
+  margin: 0 0 var(--sk-paragraph-spacing);
+}
+
+.sk-block .sk-callout-title,
+.sk-block .markdown-alert-title {
+  font-family: var(--sk-font-heading, inherit);
+  font-weight: 600;
+  color: var(--sk-callout-color);
+  margin: 0;
+}
+
+.sk-block .sk-callout-body > :first-child {
+  margin-top: 0.4em;
+}
+
+.sk-block .sk-callout-body > :last-child,
+.sk-block .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+
+.sk-block .markdown-alert-title + * {
+  margin-top: 0.4em;
+}
+
+.sk-block details.sk-callout > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.sk-block details.sk-callout > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sk-block details.sk-callout > summary::after {
+  content: "›";
+  display: inline-block;
+  margin-left: 0.5em;
+  transition: transform 120ms ease;
+}
+
+.sk-block details.sk-callout[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.sk-block details.sk-callout:not([open]) > summary {
+  margin-bottom: 0;
+}
+
+.sk-block .sk-callout-abstract,
+.sk-block .sk-callout-tip {
+  --sk-callout-color: var(--sk-palette-cyan, var(--sk-color-link));
+}
+
+.sk-block .sk-callout-success,
+.sk-block .markdown-alert-tip {
+  --sk-callout-color: var(--sk-palette-green, var(--sk-color-accent));
+}
+
+.sk-block .sk-callout-question,
+.sk-block .sk-callout-warning,
+.sk-block .markdown-alert-warning {
+  --sk-callout-color: var(--sk-palette-yellow, var(--sk-color-accent));
+}
+
+.sk-block .sk-callout-failure,
+.sk-block .sk-callout-danger,
+.sk-block .markdown-alert-caution {
+  --sk-callout-color: var(--sk-palette-red, var(--sk-color-accent));
+}
+
+.sk-block .sk-callout-example,
+.sk-block .markdown-alert-important {
+  --sk-callout-color: var(--sk-palette-magenta, var(--sk-color-accent));
+}
+
+.sk-block .sk-callout-quote {
+  --sk-callout-color: var(--sk-color-muted);
+}
+
+/* Obsidian inline tags, as chips. */
+.sk-block .sk-tag {
+  font-size: 0.85em;
+  color: var(--sk-color-accent);
+  background: color-mix(in srgb, var(--sk-color-accent) 12%, transparent);
+  border-radius: 999px;
+  padding: 0.05em 0.55em;
+  white-space: nowrap;
+}
+
+/* Wikilinks whose note doesn't exist in the vault. */
+.sk-block .sk-link-missing {
+  color: var(--sk-color-muted);
+  text-decoration: underline dashed;
+  text-underline-offset: 0.2em;
+  cursor: help;
+}
+
+/* Note embeds (`![[Other note]]`): a card that opens the note. */
+.sk-block .sk-embed-card {
+  display: inline-block;
+  font-family: var(--sk-font-ui);
+  font-size: 0.9em;
+  border: 1px solid var(--sk-color-border);
+  border-radius: 6px;
+  padding: 0.4em 0.9em;
+  text-decoration: none;
+}
+
+.sk-block .sk-embed-card::before {
+  content: "📄 ";
+}
+
+/* Block-reference anchors (`^id`) are invisible jump targets. */
+.sk-block .sk-block-ref {
+  display: inline;
+}

@@ -251,6 +251,12 @@ Transforms operate on the comrak AST after parsing and are each independently te
 
 Where comrak lacks a construct, the pass works on text nodes or adjacent nodes. Each pass must preserve source ranges for any node it rewrites.
 
+As implemented for the Obsidian profile (`scrald-core/src/obsidian.rs`):
+
+- `%%comments%%` are removed **before** parsing by replacing them with spaces of the same byte length (line breaks kept), so every offset stays valid. A paragraph that is only a comment produces no block.
+- Wikilinks, embeds, tags, and block references run per block, before image resolution. Resolved links become `file://` URLs handled by the normal link-click path; `[[Note]]` with no alias shows `Note`, `[[Note#Heading]]` shows `Note > Heading`.
+- Callouts run **last** in each block, because a callout is rendered into a single HTML block (comrak's tree validator rejects transparent wrapper nodes). Nested callouts are processed innermost first. In the GFM profile, comrak's built-in alerts are used instead, styled with the same CSS.
+
 ---
 
 ## 6. Images and layout
@@ -260,8 +266,10 @@ Where comrak lacks a construct, the pass works on text nodes or adjacent nodes. 
 For a relative image path, Scrald tries in order:
 
 1. The document's asset directory from front matter (`assets:`), resolved relative to the document.
-2. For Obsidian profile: the vault's attachment folder if configured in `.obsidian/app.json`, then a vault-wide filename search (cached per vault).
+2. For Obsidian profile: the vault's attachment folder if configured in `.obsidian/app.json`, then a vault-wide filename search. The vault index is currently built once per parse, only when the document contains a link, embed, or image; caching it per vault is a follow-up.
 3. The document's own directory.
+
+The same resolution applies to `src` on raw HTML `<img>` tags, which become `data-asset` references like Markdown images.
 
 Absolute paths and `file://` URLs are used directly. Remote `http(s)` images are **blocked by default** with a per-document "load remote images" toggle, for privacy.
 

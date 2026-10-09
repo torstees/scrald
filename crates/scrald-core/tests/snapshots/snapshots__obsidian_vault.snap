@@ -1,0 +1,64 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: "format!(\"{}\\n{text}\", assets.join(\"\\n\"))"
+---
+asset 0: attachments/fjord.png Some(4)xSome(2)
+bom: false  line_ending: Lf  words: 65  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false, has_abc: false }
+flavor: Obsidian (Detected)
+toc: The Saga #the-saga (block 0)
+toc:   Voyages #voyages (block 10)
+section 0: heading=Some(0) level=1 blocks=0..10
+section 1: heading=Some(10) level=2 blocks=10..13
+
+--- block 0 Heading { level: 1 } @0..10 section=0
+<h1 id="user-content-the-saga">The Saga</h1>
+
+--- block 1 Paragraph @12..137 section=0
+<p>Sigrid sailed with <a href="file:///<vault>/people/Sigrid.md" rel="noopener noreferrer">her crew</a> to <a href="file:///<vault>/people/Sigrid.md#the-harbor" rel="noopener noreferrer">the harbor</a>. See also <a href="#voyages" rel="noopener noreferrer">Voyages</a> and <span class="sk-link-missing" title="No note named “Nobody Here” in this vault">Nobody Here</span>.</p>
+
+--- block 2 Paragraph @139..157 section=0
+<p><img data-asset="0" alt="fjord.png" loading="lazy" width="300" height="150"></p>
+
+--- block 3 Paragraph @159..170 section=0
+<p><a class="sk-embed-card" href="file:///<vault>/Voyage.md" title="Embedded note (opens it)" rel="noopener noreferrer">Voyage</a></p>
+
+--- block 4 Paragraph @172..188 section=0
+<p><span class="sk-image-placeholder sk-image-missing" title="Image not found: missing.png
+Tried:
+<vault>/(anywhere in the vault)/missing.png">missing.png</span></p>
+
+--- block 5 BlockQuote @190..242 section=0
+<div class="sk-callout sk-callout-warning"><div class="sk-callout-title">Storm coming</div><div class="sk-callout-body">
+<p>Reef the sails. <span class="sk-tag">#weather</span></p>
+</div></div>
+
+--- block 6 BlockQuote @244..296 section=0
+<details class="sk-callout sk-callout-question" open=""><summary class="sk-callout-title">Why sail at night?</summary><div class="sk-callout-body">
+<p>The stars.<a id="user-content-block-why-night" class="sk-block-ref" rel="noopener noreferrer"></a></p>
+</div></details>
+
+--- block 7 BlockQuote @298..354 section=0
+<div class="sk-callout sk-callout-note"><div class="sk-callout-title">Note</div><div class="sk-callout-body">
+<p>A GitHub-style alert, styled like a callout.</p>
+</div></div>
+
+--- block 8 BlockQuote @356..418 section=0
+<details class="sk-callout sk-callout-example"><summary class="sk-callout-title">Outer</summary><div class="sk-callout-body">
+<div class="sk-callout sk-callout-tip"><div class="sk-callout-title">Inner</div><div class="sk-callout-body">
+<p>Nested callouts work.</p>
+</div></div>
+</div></details>
+
+--- block 9 BlockQuote @420..450 section=0
+<blockquote>
+<p>A plain quote stays a quote.</p>
+</blockquote>
+
+--- block 10 Heading { level: 2 } @488..498 section=1
+<h2 data-number="1" id="user-content-voyages">Voyages</h2>
+
+--- block 11 Paragraph @500..569 section=1
+<p>The first voyage             left in spring. <span class="sk-tag">#saga/norse</span> #2024<a id="user-content-block-first" class="sk-block-ref" rel="noopener noreferrer"></a></p>
+
+--- block 12 Html @571..624 section=1
+<img data-asset="0" width="120" alt="A small fjord">

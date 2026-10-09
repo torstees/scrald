@@ -3,27 +3,23 @@ source: crates/scrald-core/tests/snapshots.rs
 expression: describe(&doc)
 input_file: crates/scrald-core/tests/fixtures/obsidian.md
 ---
-bom: false  line_ending: Lf  words: 29  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false, has_abc: false }
+bom: false  line_ending: Lf  words: 26  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false, has_abc: false }
 flavor: Obsidian (Detected)
 toc: Obsidian note #obsidian-note (block 0)
-section 0: heading=Some(0) level=1 blocks=0..5
+section 0: heading=Some(0) level=1 blocks=0..4
 
 --- block 0 Heading { level: 1 } @0..15 section=0
 <h1 id="user-content-obsidian-note">Obsidian note</h1>
 
 --- block 1 Paragraph @17..93 section=0
-<p>Met <a href="Sigrid" rel="noopener noreferrer">Sigrid</a> and <a href="Leif" rel="noopener noreferrer">Leif the Lucky</a> at the harbor. <mark>Remember this.</mark></p>
+<p>Met <span class="sk-link-missing" title="No note named “Sigrid” in this vault">Sigrid</span> and <span class="sk-link-missing" title="No note named “Leif” in this vault">Leif the Lucky</span> at the harbor. <mark>Remember this.</mark></p>
 
 --- block 2 BlockQuote @95..132 section=0
-<blockquote>
-<p>[!todo]- Tasks</p>
+<details class="sk-callout sk-callout-info"><summary class="sk-callout-title">Tasks</summary><div class="sk-callout-body">
 <ul>
 <li><input type="checkbox" disabled=""> Mend the net</li>
 </ul>
-</blockquote>
+</div></details>
 
---- block 3 Paragraph @134..157 section=0
-<p>%% a private comment %%</p>
-
---- block 4 Paragraph @159..221 section=0
+--- block 3 Paragraph @159..221 section=0
 <p>Strikethrough <del>gone</del> and single <del>tilde</del> both strike through.</p>
