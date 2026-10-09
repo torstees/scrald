@@ -26,6 +26,7 @@ assets/               # source artwork, e.g. icon-source.png (regenerate icons w
                       #   then delete the android/, ios/, and Square*/StoreLogo outputs)
 .github/workflows/    # CI
 package.json          # root npm workspace + Tauri CLI
+justfile              # task shortcuts (`just` lists them)
 DESIGN.md  TODO.md  AGENTS.md  CLAUDE.md
 ```
 
@@ -41,23 +42,29 @@ Logic belongs in `scrald-core` whenever it can be tested without a window. `scra
 
 ## Commands
 
-Run these from the repository root. They work in both PowerShell and Git Bash. The root `package.json` is an npm workspace containing `ui/`, so one `npm install` at the root installs everything.
+Run these from the repository root. The `justfile` wraps the common ones (run `just` to list recipes; needs [just](https://github.com/casey/just), e.g. `winget install Casey.Just`). The underlying commands work in both PowerShell and Git Bash. The root `package.json` is an npm workspace containing `ui/`, so one `npm install` at the root installs everything.
 
-| Task | Command |
-|---|---|
-| Install frontend deps | `npm install` |
-| Run app in dev mode | `npm run tauri dev` |
-| Run app with a file | `npm run tauri -- dev -- -- path/to/file.md` (use an absolute path; the app's working directory is `crates/scrald-app`) |
-| Rust format | `cargo fmt --all` |
-| Rust lint | `cargo clippy --workspace --all-targets -- -D warnings` |
-| Rust tests | `cargo test --workspace` |
-| Review snapshots | `cargo insta review` (needs `cargo install cargo-insta`); without it, `INSTA_UPDATE=always cargo test` writes snapshots directly, then review the diff in git |
-| Benchmarks | `cargo bench -p scrald-core` |
-| Write large fixtures | `cargo run -p scrald-core --example generate_fixtures` (writes `target/fixtures/large-{100k,250k,500k}.md`) |
-| Frontend typecheck | `npm run check` |
-| Frontend tests | `npm test` |
-| Release build (no installer) | `npm run tauri -- build --no-bundle` |
-| Release build + installers | `npm run tauri build` (verified in M7) |
+| Task | `just` recipe | Underlying command |
+|---|---|---|
+| Install frontend deps | `just install` | `npm install` |
+| Run app in dev mode | `just dev` | `npm run tauri dev` |
+| Run app with a file | `just open path/to/file.md` | `npm run tauri -- dev -- -- /absolute/path/to/file.md` (the app's working directory is `crates/scrald-app`, so pass an absolute path) |
+| Open a large fixture | `just large 250k` | generates fixtures if needed, then opens `target/fixtures/large-250k.md` |
+| Everything CI checks | `just check` | fmt check, clippy, Rust tests, typecheck, frontend tests |
+| All tests | `just test` | `cargo test --workspace` and `npm test` |
+| Rust format | `just fmt` | `cargo fmt --all` |
+| Rust lint | `just clippy` | `cargo clippy --workspace --all-targets -- -D warnings` |
+| Rust tests | `just test-rust` | `cargo test --workspace` |
+| Update snapshots | `just snapshots` | `INSTA_UPDATE=always cargo test -p scrald-core --test snapshots`, then review the diff in git (or use `cargo insta review` with `cargo install cargo-insta`) |
+| Benchmarks | `just bench` | `cargo bench -p scrald-core` |
+| Write large fixtures | `just fixtures` | `cargo run -p scrald-core --example generate_fixtures` (writes `target/fixtures/large-{100k,250k,500k}.md`) |
+| Frontend typecheck | `just typecheck` | `npm run check` |
+| Frontend tests | `just test-ui` | `npm test` |
+| Release build (no installer) | `just build` | `npm run tauri -- build --no-bundle` |
+| Release build + log to file | `just run-release file.md` | builds, then runs the release exe with `SCRALD_LOG_FILE=target/scrald.log` |
+| Release build + installers | `just bundle` | `npm run tauri build` (verified in M7) |
+
+When adding a common task, add a recipe to the `justfile` and a row here. Keep recipes to plain `cargo`/`npm` commands (one per line, no `&&`), so they run under both PowerShell (`windows-shell`) and sh.
 
 Before `cargo clippy` or `cargo build` on a fresh checkout, build the frontend once (`npm run build --workspace ui`, or any `tauri dev`/`build` run): Tauri's `generate_context!` needs `ui/dist` to exist.
 
