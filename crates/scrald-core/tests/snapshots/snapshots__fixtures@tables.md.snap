@@ -1,0 +1,46 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: describe(&doc)
+input_file: crates/scrald-core/tests/fixtures/tables.md
+---
+bom: false  line_ending: Lf  words: 15  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false }
+toc: Tables #tables (block 0)
+section 0: heading=Some(0) level=1 blocks=0..4
+
+--- block 0 Heading { level: 1 } @0..8 section=0
+<h1 id="tables">Tables</h1>
+
+--- block 1 Table @10..120 section=0
+<table>
+<thead>
+<tr>
+<th align="left">Left</th>
+<th align="center">Center</th>
+<th align="right">Right</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">a</td>
+<td align="center">b</td>
+<td align="right">c</td>
+</tr>
+<tr>
+<td align="left"><code>x</code></td>
+<td align="center"><strong>y</strong></td>
+<td align="right"><a href="#tables" rel="noopener noreferrer">z</a></td>
+</tr>
+</tbody>
+</table>
+
+--- block 2 Paragraph @122..142 section=0
+<p>Text between tables.</p>
+
+--- block 3 Table @144..175 section=0
+<table>
+<thead>
+<tr>
+<th>Only header</th>
+</tr>
+</thead>
+</table>

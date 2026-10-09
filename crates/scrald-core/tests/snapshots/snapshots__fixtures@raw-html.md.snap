@@ -1,0 +1,37 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: describe(&doc)
+input_file: crates/scrald-core/tests/fixtures/raw-html.md
+---
+bom: false  line_ending: Lf  words: 11  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false }
+toc: Raw HTML #raw-html (block 0)
+section 0: heading=Some(0) level=1 blocks=0..9
+
+--- block 0 Heading { level: 1 } @0..10 section=0
+<h1 id="raw-html">Raw HTML</h1>
+
+--- block 1 Html @12..75 section=0
+<div class="note">A div with a handler.</div>
+
+--- block 2 Html @77..119 section=0
+
+
+--- block 3 Html @121..164 section=0
+
+
+--- block 4 Paragraph @166..265 section=0
+<p>Inline <span>span</span> and a <a rel="noopener noreferrer">bad link</a>.</p>
+
+--- block 5 Html @267..300 section=0
+<details>
+<summary>More</summary>
+</details>
+
+--- block 6 Paragraph @302..330 section=0
+<p>Hidden <strong>markdown</strong> content.</p>
+
+--- block 7 Html @332..342 section=0
+
+
+--- block 8 Html @344..383 section=0
+<input>

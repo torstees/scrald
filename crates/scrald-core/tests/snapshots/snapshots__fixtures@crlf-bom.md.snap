@@ -1,0 +1,41 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: describe(&doc)
+input_file: crates/scrald-core/tests/fixtures/crlf-bom.md
+---
+bom: true  line_ending: Crlf  words: 15  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true }
+front_matter: {
+  "range": {
+    "start": 3,
+    "end": 27
+  },
+  "title": "Skål",
+  "authors": [],
+  "summary": null,
+  "tags": [],
+  "notes": null,
+  "source": null,
+  "assets": null,
+  "theme": null,
+  "flavor": null,
+  "extra": {},
+  "error": null
+}
+toc: Héadings with ünïcödé #héadings-with-ünïcödé (block 0)
+section 0: heading=Some(0) level=1 blocks=0..4
+
+--- block 0 Heading { level: 1 } @27..55 section=0
+<h1 id="héadings-with-ünïcödé">Héadings with ünïcödé</h1>
+
+--- block 1 Paragraph @59..124 section=0
+<p>Paragraph with multi-byte text: 日本語, emoji 🎉, and skål.</p>
+
+--- block 2 List { ordered: false } @128..151 section=0
+<ul>
+<li>Item one</li>
+<li>Item två</li>
+</ul>
+
+--- block 3 CodeBlock { language: None } @155..179 section=0
+<pre><code>code with CRLF
+</code></pre>

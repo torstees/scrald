@@ -3,7 +3,34 @@
 //! This crate must stay free of Tauri and GUI dependencies, and must build
 //! and pass its tests on Windows, macOS, and Linux (see DESIGN.md §11.1).
 
-use std::path::Path;
+pub mod document;
+pub mod frontmatter;
+pub mod generate;
+pub mod render;
+pub mod source;
+pub mod toc;
+
+use std::path::{Path, PathBuf};
+
+// Rust note: `pub use` re-exports items so callers can write
+// `scrald_core::DocumentModel` instead of `scrald_core::document::DocumentModel`.
+pub use document::{
+    Block, BlockKind, DocumentModel, FeatureFlags, Section, load_document, parse_document,
+};
+pub use frontmatter::FrontMatter;
+pub use source::{LineEnding, SourceRange};
+pub use toc::TocEntry;
+
+/// Errors from reading a document.
+// Rust note: `thiserror`'s derive writes the `Display` and `Error` impls; the
+// `#[error("...")]` text is the message, with `{field}` filled in.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DocumentError {
+    #[error("could not read {path}: {message}")]
+    Io { path: PathBuf, message: String },
+    #[error("file is not valid UTF-8 (first bad byte at offset {offset})")]
+    NotUtf8 { offset: usize },
+}
 
 /// Title to show for a document before its front matter has been read:
 /// the file name without its extension, e.g. `notes/The Long Winter.md`
@@ -26,7 +53,6 @@ pub fn title_from_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn strips_directory_and_extension() {

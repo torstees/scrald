@@ -1,0 +1,28 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: describe(&doc)
+input_file: crates/scrald-core/tests/fixtures/math-mermaid.md
+---
+bom: false  line_ending: Lf  words: 8  features: FeatureFlags { has_math: true, has_mermaid: true, has_code: true }
+toc: Math and Mermaid #math-and-mermaid (block 0)
+section 0: heading=Some(0) level=1 blocks=0..5
+
+--- block 0 Heading { level: 1 } @0..18 section=0
+<h1 id="math-and-mermaid">Math and Mermaid</h1>
+
+--- block 1 Paragraph @20..65 section=0
+<p>Inline math <span data-math-style="inline">e^{i\pi} + 1 = 0</span> in a sentence.</p>
+
+--- block 2 Paragraph @67..105 section=0
+<p><span data-math-style="display">
+\int_0^1 x^2 \, dx = \frac{1}{3}
+</span></p>
+
+--- block 3 CodeBlock { language: Some("math") } @107..134 section=0
+<pre><code class="language-math" data-math-style="display">a^2 + b^2 = c^2
+</code></pre>
+
+--- block 4 CodeBlock { language: Some("mermaid") } @136..169 section=0
+<pre><code class="language-mermaid">graph TD
+  A --&gt; B
+</code></pre>

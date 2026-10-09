@@ -51,8 +51,9 @@ Run these from the repository root. They work in both PowerShell and Git Bash. T
 | Rust format | `cargo fmt --all` |
 | Rust lint | `cargo clippy --workspace --all-targets -- -D warnings` |
 | Rust tests | `cargo test --workspace` |
-| Review snapshots | `cargo insta review` (from M1; needs `cargo install cargo-insta`) |
-| Benchmarks | `cargo bench -p scrald-core` (from M1) |
+| Review snapshots | `cargo insta review` (needs `cargo install cargo-insta`); without it, `INSTA_UPDATE=always cargo test` writes snapshots directly, then review the diff in git |
+| Benchmarks | `cargo bench -p scrald-core` |
+| Write large fixtures | `cargo run -p scrald-core --example generate_fixtures` (writes `target/fixtures/large-{100k,250k,500k}.md`) |
 | Frontend typecheck | `npm run check` |
 | Frontend tests | `npm test` |
 | Release build (no installer) | `npm run tauri -- build --no-bundle` |

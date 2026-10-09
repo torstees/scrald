@@ -33,7 +33,7 @@ This document describes the architecture and the decisions behind it. GitHub iss
 |---|---|---|
 | Shell | **Tauri 2** | Small footprint; uses WebView2 on Windows; Rust backend. |
 | Markdown parser | **comrak** | CommonMark/GFM compliant, broad extension set, full AST with source positions (needed for transforms and editing). |
-| Front matter | Maintained YAML crate (`serde_yaml` is archived; evaluate `serde_norway` or `saphyr`) | Parse front matter into typed structs. |
+| Front matter | **serde-saphyr** (into `serde_json::Value` with `preserve_order`) | Maintained, serde-based, built on the saphyr parser. `serde_yaml` is archived and `serde_norway` is unmaintained. The saphyr parser's spans can drive minimal edits later (§8.3). |
 | Theme files | **TOML** via the `toml` crate | Idiomatic in Rust, comments allowed, friendlier to hand-edit than JSON. |
 | Syntax highlighting | **syntect**, emitting CSS classes rather than inline colors | Colors then come from the theme; highlighting can run per block on demand. |
 | HTML sanitizing | **ammonia** | Raw HTML in Markdown must never run scripts. |
@@ -126,6 +126,14 @@ pub struct Block {
 ```
 
 comrak reports positions as line/column, so `scrald-core` builds a line-start table once per parse and converts to **byte offsets in the original file**. This conversion must be correct for CRLF files and multi-byte UTF-8, and it needs dedicated tests.
+
+Block range rules (as implemented):
+
+- comrak's columns are 1-based **byte** columns with inclusive ends, and CRLF lines are reported exactly like LF lines, so `source::LineIndex` is the single conversion point.
+- A block's range starts at **column 1 of its first line**, so leading indentation (an indented code block's four spaces) belongs to the block.
+- Blocks are listed in **source order**. comrak moves footnote definitions to the end of the document; Scrald re-sorts them back to where they're written, and the UI is responsible for presenting them as endnotes.
+- Between blocks there is only blank space or link reference definitions (which comrak keeps out of the AST). The round-trip test enforces this, so concatenating gaps and blocks reproduces the file exactly.
+- Word count counts whitespace-separated runs containing a letter or digit, in prose and inline code; code blocks, raw HTML, and math are excluded.
 
 ---
 
