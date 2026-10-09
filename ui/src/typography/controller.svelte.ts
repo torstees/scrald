@@ -46,6 +46,12 @@ export interface TypographyHost {
 /** Wait this long after the last change before saving (wheel zoom fires a lot). */
 const SAVE_DELAY_MS = 400;
 
+/** A wheel zoom gesture ends when the wheel has been still this long. */
+const WHEEL_SETTLE_MS = 150;
+
+/** Ease for one notch of a mouse wheel during a zoom gesture. */
+const WHEEL_EASE_MS = 80;
+
 export class TypographyController {
   /** This document's own choices; null means "not set, use the default". */
   docTextSizing = $state<TextSizing | null>(null);
@@ -69,6 +75,9 @@ export class TypographyController {
   private pendingAnchor: ScrollAnchor | null = null;
   /** Bumped by every zoom, so a superseded animation knows to stop. */
   private zoomGeneration = 0;
+  /** A Ctrl+wheel / pinch gesture in progress: where it's anchored and where it's headed. */
+  private wheelGesture: { anchor: ScrollAnchor | null; offsetY: number; target: number } | null = null;
+  private wheelTimer = 0;
 
   constructor(host: TypographyHost) {
     this.host = host;
@@ -156,15 +165,52 @@ export class TypographyController {
     void this.animateZoom(1);
   }
 
-  /** Ctrl+wheel or trackpad pinch: immediate (the gesture is already smooth), anchored at the cursor. */
+  /**
+   * Ctrl+wheel or trackpad pinch, anchored at the cursor. A burst of wheel
+   * events is one gesture: each event only updates the GPU preview scale
+   * (cheap), and the real font size is applied once the wheel has been
+   * still for a moment, keeping the text under the cursor in place.
+   */
   wheel(event: WheelEvent): void {
-    this.finishZoomNow();
-    const offsetY = Math.max(0, event.clientY - this.host.viewportTop());
-    const target = wheelZoom(this.zoom, event.deltaY, event.deltaMode);
-    void this.keepPlace(offsetY, () => {
-      this.docZoom = target;
-      this.recompute();
-    });
+    // A keyboard zoom still animating: let it land first.
+    if (this.pendingZoom !== null) {
+      this.finishZoomNow();
+      return;
+    }
+    const from = this.fontSize;
+    if (from === null || from <= 0) return;
+
+    if (this.wheelGesture === null) {
+      const offsetY = Math.max(0, event.clientY - this.host.viewportTop());
+      this.wheelGesture = { anchor: this.host.captureAnchor(offsetY), offsetY, target: this.zoom };
+    }
+    const gesture = this.wheelGesture;
+    gesture.target = wheelZoom(gesture.target, event.deltaY, event.deltaMode);
+    const goal = this.sizeAt(gesture.target);
+    if (goal === null) return;
+
+    // A notched mouse wheel jumps ~16% per click: ease it briefly. Pinch and
+    // smooth-scrolling wheels send many tiny events: follow them exactly.
+    const notched = event.deltaMode !== 0 || Math.abs(event.deltaY) >= 50;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    void this.host.previewScale(goal / from, gesture.offsetY, notched && !reduceMotion ? WHEEL_EASE_MS : 0);
+
+    window.clearTimeout(this.wheelTimer);
+    this.wheelTimer = window.setTimeout(() => void this.commitWheelGesture(), WHEEL_SETTLE_MS);
+  }
+
+  /** The wheel has stopped: apply the gesture's zoom for real, once. */
+  private async commitWheelGesture(): Promise<void> {
+    const gesture = this.wheelGesture;
+    this.wheelGesture = null;
+    if (!gesture) return;
+    this.docZoom = gesture.target;
+    this.recompute();
+    // As with keyboard zoom: new size in, transform out, scroll fixed, all
+    // before the next paint.
+    await tick();
+    this.host.clearPreview();
+    await this.restore(gesture.anchor, gesture.offsetY);
     this.saveDocument();
   }
 
@@ -189,6 +235,10 @@ export class TypographyController {
    * instead was too slow to look smooth.
    */
   private async animateZoom(target: number): Promise<void> {
+    if (this.wheelGesture !== null) {
+      window.clearTimeout(this.wheelTimer);
+      await this.commitWheelGesture();
+    }
     const generation = ++this.zoomGeneration;
     const to = clampZoom(target);
     // Chained presses keep the anchor from the first one.
