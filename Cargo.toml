@@ -30,6 +30,7 @@ fontdb = "0.24.0"
 tracing = "0.1.44"
 notify-debouncer-mini = "0.7.0"
 tauri-plugin-opener = "2.7.0"
+tauri-plugin-dialog = "2.8.1"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 # Lints shared by every crate (each crate opts in with `[lints] workspace = true`).

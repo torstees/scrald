@@ -4,6 +4,7 @@
 
 mod commands;
 mod protocol;
+mod session;
 mod state;
 mod themes;
 mod watcher;
@@ -35,7 +36,11 @@ fn main() -> anyhow::Result<()> {
         .manage(launch)
         .manage(protocol::AssetRegistry::default())
         .manage(watcher::DocumentWatchers::default())
+        .manage(session::Sessions::default())
         .plugin(tauri_plugin_opener::init())
+        // Used only from Rust (the assets folder picker); the frontend has
+        // no dialog permission.
+        .plugin(tauri_plugin_dialog::init())
         // Rust note: the closure gets a context (for app state) and the
         // request; `responder` lets us answer later, from another thread, so
         // file reads never block the webview's main thread.
@@ -72,12 +77,18 @@ fn main() -> anyhow::Result<()> {
                     .remove_window(label);
                 window.state::<watcher::DocumentWatchers>().unwatch(label);
                 window.state::<window::WindowTracker>().forget(label);
+                window.state::<session::Sessions>().forget(label);
             }
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             commands::launch_info,
             commands::open_document,
+            commands::reparse_document,
+            commands::edit_front_matter,
+            commands::save_document,
+            commands::check_disk,
+            commands::pick_assets_folder,
             commands::save_reading_position,
             commands::set_remote_images,
             commands::recent_documents,

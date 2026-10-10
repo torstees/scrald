@@ -1,7 +1,15 @@
 // What the properties panel shows (DESIGN.md §8.2): recognized properties in
 // a fixed order, then every other key in file order, each with whether the
 // minimal-edit YAML engine can change it (§8.3).
-import type { FieldInfo, FrontMatter, PropertyKeys } from "../lib/types";
+import type { FieldInfo, FrontMatter, PropertyChange, PropertyKeys, ThemeSummary } from "../lib/types";
+
+/** What the panel needs to edit; without it, the panel is read-only. */
+export interface PropertyEditor {
+  themes: ThemeSummary[];
+  edit: (key: string, change: PropertyChange) => Promise<void>;
+  /** Asks for the assets folder; null if cancelled. */
+  pickFolder: () => Promise<string | null>;
+}
 
 export type PropertyKind = "text" | "multiline" | "tags" | "list" | "link" | "value";
 
@@ -16,7 +24,33 @@ export interface PropertyRow {
   editable: boolean;
   /** Why it can't be edited in the panel, when it can't. */
   reason: string | null;
+  /** The recognized property it shows, or null for other keys. */
+  property: keyof PropertyKeys | null;
+  /** A number or boolean (other keys only): edits keep that type. */
+  typed: boolean;
 }
+
+/** A recognized property the document doesn't have yet, to add. */
+export interface NewProperty {
+  property: keyof PropertyKeys;
+  label: string;
+  /** The key written for it: the first name in DESIGN.md §8.1's table. */
+  key: string;
+  kind: PropertyKind;
+}
+
+/** Keys written for new properties (flat `scrald-*` keys, DESIGN.md §8.1). */
+const CANONICAL_KEYS: Record<keyof PropertyKeys, string> = {
+  title: "title",
+  authors: "author",
+  summary: "summary",
+  tags: "tags",
+  notes: "notes",
+  source: "source",
+  assets: "assets",
+  theme: "scrald-theme",
+  flavor: "scrald-flavor",
+};
 
 /** Recognized properties, in display order. */
 const RECOGNIZED: { property: keyof PropertyKeys; label: string; kind: PropertyKind }[] = [
@@ -61,6 +95,8 @@ export function propertyRows(fm: FrontMatter): PropertyRow[] {
       value,
       editable: field?.editable ?? false,
       reason: field?.reason ?? null,
+      property,
+      typed: false,
     });
   }
   for (const [key, raw] of Object.entries(fm.extra)) {
@@ -73,9 +109,23 @@ export function propertyRows(fm: FrontMatter): PropertyRow[] {
       value: list ?? formatValue(raw),
       editable: field?.editable ?? false,
       reason: field?.reason ?? null,
+      property: null,
+      typed: typeof raw === "number" || typeof raw === "boolean",
     });
   }
   return rows;
+}
+
+/**
+ * Recognized properties the document doesn't set, in display order. A key
+ * that exists but can't be read as the property (say, `title:` holding a
+ * map) isn't offered, so adding never duplicates a key.
+ */
+export function missingProperties(fm: FrontMatter | null): NewProperty[] {
+  const present = new Set((fm?.fields ?? []).map((f) => f.key));
+  return RECOGNIZED.filter(({ property }) => fm === null || fm.keys[property] === null)
+    .map(({ property, label, kind }) => ({ property, label, kind, key: CANONICAL_KEYS[property] }))
+    .filter((p) => !present.has(p.key));
 }
 
 /** A list of scalars as text items, or null if `value` isn't one. */

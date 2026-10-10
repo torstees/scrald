@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FrontMatter } from "../lib/types";
-import { formatValue, isWebLink, propertyRows } from "./properties";
+import { formatValue, isWebLink, missingProperties, propertyRows } from "./properties";
 
 function frontMatter(overrides: Partial<FrontMatter>): FrontMatter {
   return {
@@ -60,10 +60,42 @@ describe("propertyRows", () => {
     ]);
     expect(rows[4]).toMatchObject({ value: "theme: x", editable: false, reason: "it's a nested map" });
     expect(rows[5]?.value).toEqual(["1", "2"]);
+    expect(rows[0]?.property).toBe("title");
+    expect(rows[3]).toMatchObject({ property: null, typed: false });
   });
 
   it("is empty without properties", () => {
     expect(propertyRows(frontMatter({}))).toEqual([]);
+  });
+});
+
+describe("missingProperties", () => {
+  it("offers recognized properties that aren't set, with flat scrald keys", () => {
+    const fm = frontMatter({
+      title: "T",
+      keys: { ...frontMatter({}).keys, title: "title" },
+      fields: [{ key: "title", editable: true, reason: null }],
+    });
+    const missing = missingProperties(fm);
+    expect(missing.map((p) => p.key)).toEqual([
+      "author",
+      "summary",
+      "tags",
+      "notes",
+      "source",
+      "assets",
+      "scrald-theme",
+      "scrald-flavor",
+    ]);
+  });
+
+  it("never offers a key that already exists in another shape", () => {
+    const fm = frontMatter({ fields: [{ key: "tags", editable: false, reason: "nested" }] });
+    expect(missingProperties(fm).some((p) => p.key === "tags")).toBe(false);
+  });
+
+  it("offers everything without front matter", () => {
+    expect(missingProperties(null)).toHaveLength(9);
   });
 });
 
