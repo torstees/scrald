@@ -5,7 +5,7 @@
 //! (`|`), flow lists (`[a, b]`), and block lists (`- a`). Anything harder to
 //! edit safely (nested maps, anchors, multi-line flow) is reported read-only.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // --- Scanning -------------------------------------------------------------------
 
@@ -349,11 +349,19 @@ pub enum EditError {
     InvalidKey(String),
 }
 
-/// A new value for a key.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A new value for a key. From the frontend it arrives as
+/// `{ "kind": "text", "value": "..." }`, `{ "kind": "list", "value": [...] }`,
+/// `{ "kind": "value", "value": "5" }`, or `{ "kind": "remove" }`.
+// Rust note: `tag`/`content` make serde write each variant as an object with
+// a "kind" field and a "value" field, rather than `{"Text": "..."}`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
 pub enum Change {
     /// A text value; text with line breaks is written as a `|` block.
     Text(String),
+    /// A number or boolean typed by the user (`5`, `true`): written plain
+    /// so it keeps its type, when it reads back as one. Otherwise as text.
+    Value(String),
     List(Vec<String>),
     Remove,
 }
@@ -390,7 +398,12 @@ pub fn edit(
     }
 
     let value = match change {
-        Change::Text(text) => text_value(text, &entry.style, &entry.comment, line_ending),
+        Change::Value(text) if is_typed_scalar(text) => {
+            format!(" {}{}", text.trim(), entry.comment)
+        }
+        Change::Text(text) | Change::Value(text) => {
+            text_value(text, &entry.style, &entry.comment, line_ending)
+        }
         Change::List(items) => list_value(items, &entry.style, &entry.comment, line_ending),
         Change::Remove => unreachable!("handled above"),
     };
@@ -421,7 +434,10 @@ fn add_entry(yaml: &str, key: &str, change: &Change, line_ending: &str) -> Strin
         key.to_string()
     };
     let value = match change {
-        Change::Text(text) => text_value(text, &ValueStyle::Empty, "", line_ending),
+        Change::Value(text) if is_typed_scalar(text) => format!(" {}", text.trim()),
+        Change::Text(text) | Change::Value(text) => {
+            text_value(text, &ValueStyle::Empty, "", line_ending)
+        }
         Change::List(items) => {
             list_value(items, &ValueStyle::BlockList { indent: 2 }, "", line_ending)
         }
@@ -544,6 +560,22 @@ pub fn needs_quotes(text: &str, in_flow: bool) -> bool {
     ) || text.parse::<f64>().is_ok()
         || lower.starts_with("0x")
         || lower.starts_with("0o")
+}
+
+/// A number or boolean that YAML reads with that type when written plain.
+fn is_typed_scalar(text: &str) -> bool {
+    let text = text.trim();
+    // Digits, a sign, a decimal point, an exponent: not `inf` or `NaN`,
+    // which Rust parses as numbers but YAML reads as strings.
+    let numeric = text
+        .chars()
+        .all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | 'e' | 'E'))
+        && text
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit() || c == '-')
+        && text.parse::<f64>().is_ok();
+    matches!(text, "true" | "false") || numeric
 }
 
 fn double_quoted(text: &str) -> String {
@@ -910,6 +942,38 @@ deep:
                 );
             }
         }
+    }
+
+    #[test]
+    fn typed_values_keep_their_type() {
+        let value = |s: &str| Change::Value(s.to_string());
+        assert_eq!(
+            set("rating: 4 # stars\n", "rating", value("5")),
+            "rating: 5 # stars\n"
+        );
+        assert_eq!(set("done: false\n", "done", value("true")), "done: true\n");
+        // Not a number any more: written as text.
+        assert_eq!(
+            set("rating: 4\n", "rating", value("five: 5")),
+            "rating: \"five: 5\"\n"
+        );
+        // `inf` stays a string (quoted to be safe).
+        assert_eq!(
+            set("rating: 4\n", "rating", value("inf")),
+            "rating: \"inf\"\n"
+        );
+        let map = parse(&set("rating: 4\n", "rating", value("2.5")));
+        assert_eq!(map.get("rating"), Some(&serde_json::json!(2.5)));
+        let map = parse(&set("rating: 4\n", "rating", value("NaN")));
+        assert_eq!(map.get("rating"), Some(&serde_json::json!("NaN")));
+    }
+
+    #[test]
+    fn changes_deserialize_from_the_frontend() {
+        let change: Change = serde_json::from_str(r#"{"kind":"list","value":["a","b"]}"#).unwrap();
+        assert_eq!(change, Change::List(vec!["a".into(), "b".into()]));
+        let change: Change = serde_json::from_str(r#"{"kind":"remove"}"#).unwrap();
+        assert_eq!(change, Change::Remove);
     }
 
     #[test]

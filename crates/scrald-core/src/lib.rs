@@ -14,6 +14,7 @@ pub mod links;
 pub mod obsidian;
 pub mod pandoc;
 pub mod render;
+pub mod save;
 pub mod source;
 pub mod theme;
 pub mod toc;

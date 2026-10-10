@@ -8,12 +8,14 @@ use std::time::Instant;
 
 use anyhow::Context;
 use scrald_core::theme::{Appearance, TextSizing, ThemeSource, ThemeSummary, resolve_theme};
+use scrald_core::yaml_edit::Change;
 use scrald_core::{DocumentModel, Flavor, LinkTarget, ParseOptions};
 use serde::Serialize;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::AssetRegistry;
+use crate::session::{DiskState, Sessions};
 use crate::state::{
     DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore, TypographyDefaults,
 };
@@ -49,6 +51,8 @@ pub struct OpenedDocument {
     pub memory: DocumentMemory,
     /// The theme this document uses, and where that choice came from.
     pub theme: ResolvedTheme,
+    /// Whether the window holds edits that aren't saved yet.
+    pub dirty: bool,
 }
 
 /// A document's theme after the resolution order in DESIGN.md §7.6.
@@ -101,6 +105,7 @@ pub async fn open_document(
     store: tauri::State<'_, StateStore>,
     tracker: tauri::State<'_, WindowTracker>,
     themes: tauri::State<'_, ThemeService>,
+    sessions: tauri::State<'_, Sessions>,
     path: PathBuf,
 ) -> Result<OpenedDocument, CommandError> {
     let started = Instant::now();
@@ -114,20 +119,9 @@ pub async fn open_document(
     });
     tracker.set_document(window.label(), &path);
 
-    let load_path = path.clone();
-    let options = ParseOptions {
-        allow_remote_images: memory.remote_images,
-        flavor: memory.flavor,
-    };
-    // Rust note: `move` makes the closure take ownership of `load_path` and
-    // `options`, so it can run on another thread after this function's locals
-    // are gone. The double `??` unwraps two layers: the thread's result, then
-    // the parse's.
-    let doc = tauri::async_runtime::spawn_blocking(move || {
-        scrald_core::load_document(&load_path, &options)
-    })
-    .await
-    .context("document loading task failed")??;
+    // The window's session keeps the text (and later, unsaved edits).
+    let bytes = sessions.open(window.label(), &path)?;
+    let doc = parse_in_background(path.clone(), bytes, &memory).await?;
     tracing::info!(
         path = %path.display(),
         blocks = doc.blocks.len(),
@@ -136,30 +130,177 @@ pub async fn open_document(
         "opened document"
     );
 
-    let title = doc
-        .front_matter
-        .as_ref()
-        .and_then(|fm| fm.title.clone())
-        .unwrap_or_else(|| scrald_core::title_from_path(&path));
-    window.set_title(&format!("{title} \u{2014} Scrald"))?;
-
-    let theme = resolve_document_theme(&window, &store, &themes, &doc, &memory);
-
-    let files = doc.images.iter().map(|image| image.path.clone()).collect();
-    let asset_token = registry.register(window.label(), files);
-
     // Live reload is a convenience: if watching fails (say, on a network
     // share), the document still opens.
     if let Err(error) = watchers.watch(window.app_handle(), window.label(), &path) {
         tracing::warn!(error = format!("{error:#}"), "live reload unavailable");
     }
 
+    finish_open(&window, &registry, &store, &themes, doc, memory, false)
+}
+
+/// Parses document bytes on a background thread so the window stays
+/// responsive, with the options remembered for the document.
+async fn parse_in_background(
+    path: PathBuf,
+    bytes: Vec<u8>,
+    memory: &DocumentMemory,
+) -> anyhow::Result<DocumentModel> {
+    let options = ParseOptions {
+        allow_remote_images: memory.remote_images,
+        flavor: memory.flavor,
+    };
+    // Rust note: `move` makes the closure take ownership of `path`, `bytes`,
+    // and `options`, so it can run on another thread after this function's
+    // locals are gone. The double `?` unwraps two layers: the thread's
+    // result, then the parse's.
+    let doc = tauri::async_runtime::spawn_blocking(move || {
+        scrald_core::parse_document_with(path, &bytes, &options)
+    })
+    .await
+    .context("document parsing task failed")??;
+    Ok(doc)
+}
+
+/// The steps shared by opening, re-parsing, and editing: window title,
+/// theme, and the files the asset protocol may serve.
+fn finish_open(
+    window: &tauri::WebviewWindow,
+    registry: &AssetRegistry,
+    store: &StateStore,
+    themes: &ThemeService,
+    doc: DocumentModel,
+    memory: DocumentMemory,
+    dirty: bool,
+) -> Result<OpenedDocument, CommandError> {
+    set_window_title(window, &doc, dirty)?;
+    let theme = resolve_document_theme(window, store, themes, &doc, &memory);
+    let files = doc.images.iter().map(|image| image.path.clone()).collect();
+    let asset_token = registry.register(window.label(), files);
     Ok(OpenedDocument {
         asset_token,
         document: doc,
         memory,
         theme,
+        dirty,
     })
+}
+
+/// "Title — Scrald", with a leading "• " while there are unsaved changes.
+fn set_window_title(
+    window: &tauri::WebviewWindow,
+    doc: &DocumentModel,
+    dirty: bool,
+) -> tauri::Result<()> {
+    let title = doc
+        .front_matter
+        .as_ref()
+        .and_then(|fm| fm.title.clone())
+        .unwrap_or_else(|| scrald_core::title_from_path(&doc.path));
+    let marker = if dirty { "\u{2022} " } else { "" };
+    window.set_title(&format!("{marker}{title} \u{2014} Scrald"))
+}
+
+/// Parses the window's document again from its text in memory (keeping
+/// unsaved edits), after its flavor or remote-image setting changed.
+#[tauri::command]
+pub async fn reparse_document(
+    window: tauri::WebviewWindow,
+    registry: tauri::State<'_, AssetRegistry>,
+    store: tauri::State<'_, StateStore>,
+    themes: tauri::State<'_, ThemeService>,
+    sessions: tauri::State<'_, Sessions>,
+) -> Result<OpenedDocument, CommandError> {
+    let (path, bytes) = sessions
+        .current(window.label())
+        .context("no document is open in this window")?;
+    let memory = store.record_open(&path).unwrap_or_default();
+    let doc = parse_in_background(path, bytes, &memory).await?;
+    let dirty = sessions.is_dirty(window.label());
+    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+}
+
+/// Changes one front matter key in the window's document (in memory; the
+/// file changes on save) and returns the re-parsed document. Only that key's
+/// text changes (DESIGN.md §8.3). Setting `scrald-theme` or `scrald-flavor`
+/// also clears the document's stored theme or flavor choice, so the value
+/// written to the document is the one in effect.
+#[tauri::command]
+pub async fn edit_front_matter(
+    window: tauri::WebviewWindow,
+    registry: tauri::State<'_, AssetRegistry>,
+    store: tauri::State<'_, StateStore>,
+    themes: tauri::State<'_, ThemeService>,
+    sessions: tauri::State<'_, Sessions>,
+    key: String,
+    change: Change,
+) -> Result<OpenedDocument, CommandError> {
+    let (path, bytes) = sessions.edit(window.label(), |text| {
+        scrald_core::yaml_edit::edit_document(text, &key, &change)
+    })?;
+    match key.as_str() {
+        "scrald-theme" => store.set_document_theme(&path, None)?,
+        "scrald-flavor" => store.set_document_flavor(&path, None)?,
+        _ => {}
+    }
+    let memory = store.record_open(&path).unwrap_or_default();
+    let doc = parse_in_background(path, bytes, &memory).await?;
+    let dirty = sessions.is_dirty(window.label());
+    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+}
+
+/// Saves the window's document to disk (atomically, keeping its BOM and
+/// line endings) and clears the unsaved marker.
+#[tauri::command]
+pub fn save_document(
+    window: tauri::WebviewWindow,
+    sessions: tauri::State<'_, Sessions>,
+) -> Result<(), CommandError> {
+    sessions.save(window.label())?;
+    if let Some((path, bytes)) = sessions.current(window.label()) {
+        // Only the title changes; a parse failure here can't lose anything.
+        if let Ok(doc) = scrald_core::parse_document(path, &bytes) {
+            set_window_title(&window, &doc, false)?;
+        }
+    }
+    Ok(())
+}
+
+/// How the file on disk compares with what this window last read or saved,
+/// so a change notification caused by Scrald's own save can be ignored.
+#[tauri::command]
+pub fn check_disk(window: tauri::WebviewWindow, sessions: tauri::State<'_, Sessions>) -> DiskState {
+    sessions.disk_state(window.label())
+}
+
+/// Asks for a folder for the `assets` property and returns it relative to
+/// the document (`../images`), or absolute if it's on another drive. `None`
+/// if the user cancelled. Runs in Rust so the frontend needs no file dialog
+/// permission.
+#[tauri::command]
+pub async fn pick_assets_folder(
+    app: tauri::AppHandle,
+    document: PathBuf,
+) -> Result<Option<String>, CommandError> {
+    use tauri_plugin_dialog::DialogExt;
+    let doc_dir = document.parent().map(PathBuf::from).unwrap_or_default();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_directory(&doc_dir)
+            .set_title("Folder for this document's images")
+            .blocking_pick_folder()
+    })
+    .await
+    .context("folder picker failed")?;
+    let Some(folder) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    let doc_dir = document.parent().map(PathBuf::from).unwrap_or_default();
+    Ok(Some(
+        scrald_core::assets::relative_path(&doc_dir, &folder)
+            .unwrap_or_else(|| folder.display().to_string()),
+    ))
 }
 
 /// Applies DESIGN.md §7.6: the per-document choice, then front matter, then

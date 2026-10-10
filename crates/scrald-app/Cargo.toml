@@ -26,6 +26,7 @@ notify-debouncer-mini.workspace = true
 rusqlite.workspace = true
 fontdb.workspace = true
 tauri-plugin-opener.workspace = true
+tauri-plugin-dialog.workspace = true
 
 [lints]
 workspace = true
