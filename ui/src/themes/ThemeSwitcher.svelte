@@ -18,12 +18,24 @@
     /** Clear the per-document choice. */
     onreset: () => void;
     onduplicate: (id: string) => void;
+    /** Write `id` into the document's front matter (`scrald-theme`). */
+    onsavetodocument: (id: string) => void;
     /** Close without choosing (the caller reverts the preview). */
     oncancel: () => void;
   }
 
-  let { themes, current, folder, onpreview, onchoose, onmakedefault, onreset, onduplicate, oncancel }: Props =
-    $props();
+  let {
+    themes,
+    current,
+    folder,
+    onpreview,
+    onchoose,
+    onmakedefault,
+    onreset,
+    onduplicate,
+    onsavetodocument,
+    oncancel,
+  }: Props = $props();
 
   const usable = $derived(themes.filter((t) => t.error === null));
   const broken = $derived(themes.filter((t) => t.error !== null));
@@ -118,6 +130,9 @@
     <footer>
       <div class="actions">
         <button class="primary" onclick={() => act(onchoose)}>Use for this document</button>
+        <button onclick={() => act(onsavetodocument)} title="Writes scrald-theme into the front matter (save with Ctrl+S)"
+          >Save to document</button
+        >
         <button onclick={() => act(onmakedefault)}>Make default</button>
         <button onclick={() => act(onduplicate)}>Duplicate to customize</button>
         {#if current.source === "document"}

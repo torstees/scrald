@@ -261,4 +261,17 @@ export interface OpenedDocument {
   memory: DocumentMemory;
   /** The theme this document uses, and where that choice came from. */
   theme: ResolvedTheme;
+  /** Whether the window holds edits that aren't saved yet. */
+  dirty: boolean;
 }
+
+/** Mirrors `Change` (crates/scrald-core/src/yaml_edit.rs): a new value for a front matter key. */
+export type PropertyChange =
+  | { kind: "text"; value: string }
+  /** A number or boolean typed by the user, kept as that type when it is one. */
+  | { kind: "value"; value: string }
+  | { kind: "list"; value: string[] }
+  | { kind: "remove" };
+
+/** Mirrors `DiskState` (crates/scrald-app/src/session.rs). */
+export type DiskState = "unchanged" | "changed" | "missing";
