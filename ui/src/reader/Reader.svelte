@@ -267,6 +267,7 @@
   }
 
   function onScroll(): void {
+    popover = null;
     window.clearTimeout(settleTimer);
     settleTimer = window.setTimeout(() => onscrollsettled?.(), SETTLE_MS);
     if (scrollFrame) return;
@@ -292,8 +293,17 @@
     return { update: apply };
   }
 
+  let endnotes: HTMLElement | undefined = $state();
+
   /** Scrolls to the element with HTML id `id` (a heading slug or footnote). */
   export async function scrollToId(id: string): Promise<void> {
+    // Footnotes are shown in the endnotes section, outside the blocks.
+    const endnote = endnotes?.querySelector(`[id="${CSS.escape(contentId(id))}"]`);
+    if (endnote) {
+      endnote.scrollIntoView({ block: "start" });
+      noteScrolled();
+      return;
+    }
     const blockId = blockWithId(id);
     if (blockId === null) return;
     await scrollToBlock(blockId);
@@ -309,7 +319,65 @@
     return block ? block.id : null;
   }
 
+  // Footnote popovers: hovering or focusing a reference shows its note.
+  let popover = $state<{ html: string; x: number; y: number; below: boolean } | null>(null);
+  let popoverEl: HTMLElement | undefined = $state();
+  let hideTimer = 0;
+  /** How long the pointer may be away from reference and popover before it hides. */
+  const POPOVER_HIDE_MS = 250;
+
+  /** The footnote a reference link points at (`href="#fn-<name>"`). */
+  function footnoteFor(link: Element): { html: string } | null {
+    const href = link.getAttribute("href") ?? "";
+    if (!href.startsWith("#fn-")) return null;
+    const name = decodeURIComponent(href.slice("#fn-".length));
+    return doc.footnotes.find((f) => f.name === name) ?? null;
+  }
+
+  async function showPopover(link: Element): Promise<void> {
+    const note = footnoteFor(link);
+    if (!note) return;
+    window.clearTimeout(hideTimer);
+    const r = link.getBoundingClientRect();
+    // Measure at the left edge, where the viewport doesn't squeeze it.
+    popover = { html: note.html, x: 0, y: r.bottom + 6, below: true };
+    await tick();
+    if (!popoverEl || !popover) return;
+    // Center it on the reference, kept on screen; flip above if there's no room below.
+    const width = popoverEl.offsetWidth;
+    const height = popoverEl.offsetHeight;
+    const x = Math.min(Math.max(8, r.left + r.width / 2 - width / 2), window.innerWidth - width - 8);
+    const below = r.bottom + 6 + height <= window.innerHeight - 8;
+    popover = { ...popover, x, y: below ? r.bottom + 6 : Math.max(8, r.top - 6 - height), below };
+  }
+
+  function scheduleHide(): void {
+    window.clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => (popover = null), POPOVER_HIDE_MS);
+  }
+
+  function onPointerOver(event: PointerEvent): void {
+    const target = event.target as Element | null;
+    if (target?.closest(".sk-footnote-popover")) {
+      window.clearTimeout(hideTimer);
+      return;
+    }
+    const ref = target?.closest("a[data-footnote-ref]");
+    if (ref) void showPopover(ref);
+  }
+
+  function onPointerOut(event: PointerEvent): void {
+    const target = event.target as Element | null;
+    if (target?.closest("a[data-footnote-ref], .sk-footnote-popover")) scheduleHide();
+  }
+
+  function onFocusIn(event: FocusEvent): void {
+    const ref = (event.target as Element | null)?.closest("a[data-footnote-ref]");
+    if (ref) void showPopover(ref);
+  }
+
   async function onClick(event: MouseEvent): Promise<void> {
+    popover = null;
     const link = (event.target as Element | null)?.closest("a");
     const href = link?.getAttribute("href");
     if (!link || href === null || href === undefined) return;
@@ -326,7 +394,17 @@
 <!-- The click handler only intercepts clicks on links (delegation), and links are
      keyboard-activatable themselves, so the container needs no key handler. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<div class="sk-scroller" bind:this={scroller} onscroll={onScroll} onclick={onClick} role="document">
+<div
+  class="sk-scroller"
+  bind:this={scroller}
+  onscroll={onScroll}
+  onclick={onClick}
+  onpointerover={onPointerOver}
+  onpointerout={onPointerOut}
+  onfocusin={onFocusIn}
+  onfocusout={scheduleHide}
+  role="document"
+>
   <article bind:this={column} class="sk-column" class:fill={fillWindow} style:font-size={fontSize === null ? null : `${fontSize}px`}>
     {#each doc.sections as section, i (section.id)}
       {#if mounted[i]}
@@ -336,21 +414,60 @@
           style:contain-intrinsic-size={`auto ${heights[i] ?? 0}px`}
         >
           {#each sectionBlocks(doc, section) as block (block.id)}
-            <!-- Block.html is sanitized by core (ammonia); it's the only HTML we insert. -->
-            <div class="sk-block" data-block={block.id} use:assetImages={{ token: assetToken, html: block.html }} use:richContent={block.html}
-              >{@html block.html}</div
-            >
+            {#if block.kind.type === "footnoteDefinition"}
+              <!-- Shown in the endnotes instead; the empty block keeps its place for
+                   scroll anchoring and, later, editing. -->
+              <div class="sk-block sk-footnote-def" data-block={block.id}></div>
+            {:else}
+              <!-- Block.html is sanitized by core (ammonia); it's the only HTML we insert. -->
+              <div class="sk-block" data-block={block.id} use:assetImages={{ token: assetToken, html: block.html }} use:richContent={block.html}
+                >{@html block.html}</div
+              >
+            {/if}
           {/each}
         </section>
       {:else}
         <section class="sk-section sk-placeholder" data-section={section.id} style:height={`${heights[i] ?? 0}px`}></section>
       {/if}
     {/each}
+    {#if doc.footnotes.length > 0}
+      <section class="sk-block sk-endnotes" bind:this={endnotes} aria-label="Notes">
+        <h2>Notes</h2>
+        <ol>
+          {#each doc.footnotes as note (note.name)}
+            <!-- Footnote html is sanitized by core, like Block.html. -->
+            <li
+              id={contentId(`fn-${note.name}`)}
+              value={note.number}
+              use:assetImages={{ token: assetToken, html: note.html }}
+              use:richContent={note.html}
+            >
+              {@html note.html}<a class="sk-backref" href={`#fnref-${note.name}`} aria-label={`Back to reference ${note.number}`}>↩</a>
+            </li>
+          {/each}
+        </ol>
+      </section>
+    {/if}
+    {#if popover}
+      <div
+        class="sk-block sk-footnote-popover"
+        bind:this={popoverEl}
+        role="tooltip"
+        style:left={`${popover.x}px`}
+        style:top={`${popover.y}px`}
+        use:assetImages={{ token: assetToken, html: popover.html }}
+        use:richContent={popover.html}
+      >
+        {@html popover.html}
+      </div>
+    {/if}
   </article>
 </div>
 
 <style>
   .sk-scroller {
+    /* Lets layout classes size things to the reading area (`100cqw`). */
+    container-type: inline-size;
     height: 100%;
     overflow-y: auto;
     /* The zoom preview briefly scales the column wider than the view. */

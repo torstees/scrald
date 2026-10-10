@@ -257,6 +257,15 @@ As implemented for the Obsidian profile (`scrald-core/src/obsidian.rs`):
 - Wikilinks, embeds, tags, and block references run per block, before image resolution. Resolved links become `file://` URLs handled by the normal link-click path; `[[Note]]` with no alias shows `Note`, `[[Note#Heading]]` shows `Note > Heading`.
 - Callouts run **last** in each block, because a callout is rendered into a single HTML block (comrak's tree validator rejects transparent wrapper nodes). Nested callouts are processed innermost first. In the GFM profile, comrak's built-in alerts are used instead, styled with the same CSS.
 
+As implemented for the Pandoc profile (`scrald-core/src/pandoc.rs`):
+
+- **Attributes** (`{#id .class key=val}`) on headings, fenced code, links, images, and inline code are parsed by comrak (its `attributes` feature) but not written to HTML, so Scrald adds them: `id` and classes everywhere, `width`/`height` on images only (pixels or a percentage). Other keys are dropped, so no inline styles reach the page. A heading's `{#id}` replaces its generated slug; `{-}` or `{.unnumbered}` skips its outline number.
+- **Fenced divs** are found by Scrald, not comrak: comrak's `:::` directives close every open directive at the first closing fence, so same-length nesting (valid Pandoc) breaks and an extra fence swallows the rest of the document. A pre-pass matches fences with a stack (an opener has attributes, a line of colons closes the innermost div), blanks the fence lines to spaces of the same length, and the outermost div becomes **one block** whose range includes its fences, rendered with `<div class="sk-div …">` wrappers around its contents. Unclosed openers stay as text. Headings inside a div get no TOC entry, as with raw HTML containers.
+- **Bracketed spans** (`[text]{.smallcaps}`) are found in text nodes: the `]{…}` and its matching `[` can sit in different text nodes with formatting between them.
+- **Figures:** an image alone in a paragraph with alt text (Pandoc's implicit figures) or marked `.figure` becomes `<figure>` with the alt text as `<figcaption>`. Layout classes and the id move to the figure; a percentage width becomes the figure's width (`style="width: N%"`, the one style the sanitizer allows, §13), since on the image it would be a percentage of the shrink-wrapped figure.
+- **Table captions:** a `Table: Caption {#id .class}` (or `: Caption`) paragraph right after a table is joined with it into one block; the caption goes into `<caption>`, the id onto `<table>`, and the classes onto the scrolling `.sk-table` box.
+- **Footnotes** (all flavors): the model carries every footnote, inline ones included, in a `footnotes` list (name, number, sanitized HTML without comrak's back-link, defining block). The reader leaves definition blocks empty where they're written (so they still anchor and tile) and shows the notes as hover/focus popovers and in an endnotes section after the last block.
+
 ---
 
 ## 6. Images and layout
@@ -283,7 +292,7 @@ As implemented:
 
 - Core replaces each Markdown image with its own markup: `<img data-asset="id" width height loading="lazy">` for a resolved local file (dimensions read from the file header so layout space is reserved), a placeholder `<span>` for missing or blocked images, or `<img src>` only for `data:image/...` and allowed remote images. Local images never carry a file path in `src`.
 - `open_document` registers the document's resolved files with an **asset token**. URLs carry only `<token>-<id>`, never a path, and opening another document in the window revokes the previous token. The frontend builds URLs in one place (`assetUrl`, via Tauri's `convertFileSrc`), because the URL format differs per platform.
-- The sanitizer drops `src` from any `<img>` in raw HTML unless it is a `data:image` URL or an allowed remote image, so raw HTML can't reference local files at all. Resolving raw-HTML images through the asset pipeline is a follow-up.
+- Raw HTML `<img src>` is resolved like a Markdown image and rewritten to `data-asset` (§6.1); the sanitizer still drops any remaining `src` unless it is a `data:image` URL or an allowed remote image, so raw HTML can't point the webview at local files.
 - The remote-image toggle re-parses the document with remote images allowed and restores the scroll anchor. It is remembered per session until the state database exists (M3).
 
 ### 6.3 Layout
@@ -305,6 +314,8 @@ Layout uses classes and attributes, with the theme defining what they look like:
 | `.inline` | Inline with text (icons, small glyphs) |
 
 An image with a title or alt text and the `.figure` class (or alone in a paragraph, configurable) renders as `<figure>` with a caption. Tables accept the same `.center` and `.full-bleed` classes, and wide tables scroll horizontally inside their own container.
+
+As implemented: classes come from Pandoc attributes (Pandoc profile). Figures follow Pandoc: alone in a paragraph with alt text, or `.figure`; not yet configurable. Floats collapse to centered blocks when the reading area is narrower than 30rem (a container query on the reader). `.full-bleed` spans the reading area's width (`100cqw`), which only differs from the column when the column is narrower than the window. Tables take classes from their caption line: `Table: Ships {.center}`.
 
 ---
 
@@ -526,7 +537,7 @@ Ctrl+E toggles between the reading view and a full-document CodeMirror 6 editor 
 
 - **Table of contents:** a sidebar built from headings, with collapsible levels, the current section highlighted while scrolling, and click-to-jump. Toggle with `Ctrl+\` or the ☰ button in the status bar. For novels, a setting to show only H1/H2 keeps the list manageable.
 - **Search in document:** Ctrl+F searches the source text in Rust and maps hits back to blocks; the UI highlights matches in rendered blocks and scrolls to each.
-- **Footnotes:** hover popovers in reading view, plus the endnotes section.
+- **Footnotes:** hover popovers in reading view, plus the endnotes section. As implemented: a popover appears on hovering or keyboard-focusing a reference and stays while the pointer is over it; clicking a reference jumps to its endnote, and each endnote's ↩ jumps back to the first reference (§5.4).
 - **Status bar:** word count, estimated reading time, current section, flavor, theme, zoom.
 - **Links:** external links open in the default browser. Links to other Markdown files open in Scrald (same window, with back and forward navigation). As implemented: core's `resolve_link` classifies each link; only `http`, `https`, and `mailto` are handed to the system (via the opener plugin, from a Rust command that re-checks the scheme, so the frontend has no opener permission). Links to other local files are **not opened**, since a link to an executable must never run it; a status-bar notice explains instead. Back/Forward: Alt+Left/Right, mouse side buttons, or the status-bar arrows; each history entry keeps its scroll anchor.
 - **Post-v1:** print/export to PDF using the active theme, and a reading-progress indicator.
@@ -577,6 +588,7 @@ The database stores only metadata, never document contents. The one place Scrald
 
 - All rendered HTML passes through `ammonia`, with an allowlist that covers what Markdown and the transforms produce (including KaTeX and Mermaid output containers). `<script>`, event handler attributes, `javascript:` URLs, and `<iframe>` are always stripped.
 - **Trusted renderers.** KaTeX, Mermaid, and abcjs build their own markup (HTML or SVG) in the frontend from the *text* of a math, diagram, or music block, after core's sanitized HTML is in place. They are the only code allowed to insert markup other than core's `Block.html`, each configured defensively: KaTeX with `trust: false` (no `\href`, `\url`, or HTML extensions), Mermaid with `securityLevel: "strict"` (labels are sanitized, no click handlers), and abcjs with an allowlist of options read from the block's JSON header.
+- No `style` attributes, with one exception: `style="width: N%"` (N from 1 to 100, nothing else) on `<figure>`, which core writes for Pandoc figures with a percentage width (§5.4). The sanitizer's attribute filter checks the exact form.
 - Every HTML `id` from document content (heading slugs, footnote ids, raw HTML) gets the prefix `user-content-`, so a heading named "App" or raw `id="app"` can't clobber the app's own elements. Links keep the bare form (`#intro`, `#fn-1`) and the reader adds the prefix when resolving them.
 - A strict Tauri content security policy: no remote scripts; images only from `scrald-asset:`, `scrald-theme:`, and `data:` (plus remote origins when the user enables remote images for a document). Tauri's CSP is fixed at build time, so `img-src` permits `http:`/`https:` globally and the per-document gate is enforced by core and the sanitizer: no remote `src` reaches the page unless the user allowed remote images for that document.
 - The asset protocol only serves files resolved for the currently open documents and theme assets.

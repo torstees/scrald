@@ -3,7 +3,7 @@ source: crates/scrald-core/tests/snapshots.rs
 expression: describe(&doc)
 input_file: crates/scrald-core/tests/fixtures/pandoc.md
 ---
-bom: false  line_ending: Lf  words: 20  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false, has_abc: false }
+bom: false  line_ending: Lf  words: 67  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true, has_abc: false }
 flavor: Pandoc (Detected)
 front_matter: {
   "range": {
@@ -25,12 +25,13 @@ front_matter: {
   "error": null
 }
 toc: Chemistry #chemistry (block 0)
+toc:   Attributes #attrs (block 4)
+toc:   Divs #divs (block 11)
 section 0: heading=Some(0) level=1 blocks=0..4
-inline footnote __inline_1: <ol>
-<li id="user-content-fn-__inline_1">
-<p>Einstein, 1905. <a href="#fnref-__inline_1" class="footnote-backref" data-footnote-backref="" data-footnote-backref-idx="1" aria-label="Back to reference 1" rel="noopener noreferrer">↩</a></p>
-</li>
-</ol>
+section 1: heading=Some(4) level=2 blocks=4..11
+section 2: heading=Some(11) level=2 blocks=11..18
+footnote 1 __inline_1 (block None): <p>Einstein, 1905.</p>
+footnote 2 long (block Some(17)): <p>A long footnote with a <a href="https://example.com" rel="noopener noreferrer">link</a>.</p>
 
 --- block 0 Heading { level: 1 } @52..63 section=0
 <h1 id="user-content-chemistry">Chemistry</h1>
@@ -46,3 +47,90 @@ inline footnote __inline_1: <ol>
 
 --- block 3 Paragraph @144..187 section=0
 <p>“Smart quotes” – and dashes — like this.</p>
+
+--- block 4 Heading { level: 2 } @189..217 section=1
+<h2 data-number="1" class="lead" id="user-content-attrs">Attributes</h2>
+
+--- block 5 Paragraph @219..346 section=1
+<p>A <a href="https://example.com" class="button" rel="noopener noreferrer">styled link</a> and <code class="rust">code</code>, plus <span class="smallcaps">small caps</span>
+and <span id="user-content-n" class="note">a <em>nested</em> span</span>.</p>
+
+--- block 6 CodeBlock { language: Some("rust") } @348..396 section=1
+<pre id="user-content-listing" class="numberLines"><code class="language-rust sk-highlighted"><span class="sk-hl-source sk-hl-rust"><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-storage sk-hl-type sk-hl-function sk-hl-rust">fn</span> </span><span class="sk-hl-entity sk-hl-name sk-hl-function sk-hl-rust">main</span></span><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-meta sk-hl-function sk-hl-parameters sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-parameters sk-hl-begin sk-hl-rust">(</span></span><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-meta sk-hl-function sk-hl-parameters sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-parameters sk-hl-end sk-hl-rust">)</span></span></span></span><span class="sk-hl-meta sk-hl-function sk-hl-rust"> </span><span class="sk-hl-meta sk-hl-function sk-hl-rust"><span class="sk-hl-meta sk-hl-block sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-block sk-hl-begin sk-hl-rust">{</span></span><span class="sk-hl-meta sk-hl-block sk-hl-rust"><span class="sk-hl-punctuation sk-hl-section sk-hl-block sk-hl-end sk-hl-rust">}</span></span></span>
+</span></code></pre>
+
+--- block 7 CodeBlock { language: None } @398..425 section=1
+<pre class="plain"><code>no language
+</code></pre>
+
+--- block 8 Paragraph @427..474 section=1
+<figure class="sk-figure right" style="width: 40%"><span class="sk-image-placeholder sk-image-missing" title="Image not found: fjord.png
+Tried:
+fjord.png">A fjord at dawn</span><figcaption>A fjord at dawn</figcaption></figure>
+
+--- block 9 Paragraph @476..498 section=1
+<p><span class="inline" title="Image not found: icon.png
+Tried:
+icon.png">icon.png</span></p>
+
+--- block 10 Paragraph @500..553 section=1
+<p>Inline image <span class="inline" title="Image not found: pic.png
+Tried:
+pic.png">x</span> in text.</p>
+
+--- block 11 Heading { level: 2 } @555..566 section=2
+<h2 class="unnumbered" id="user-content-divs">Divs</h2>
+
+--- block 12 Other @568..598 section=2
+<div class="sk-div warning">
+<p>A warning div.</p>
+</div>
+
+--- block 13 Other @600..661 section=2
+<div id="user-content-outer" class="sk-div sidebar">
+<p>Outer.</p>
+<div class="sk-div inner">
+<p>Inner.</p>
+</div>
+</div>
+
+--- block 14 Table @663..767 section=2
+<div class="sk-table center"><table id="user-content-isotopes"><caption>Hydrogen <em>isotopes</em></caption>
+<thead>
+<tr>
+<th>Isotope</th>
+<th>Mass</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>H-1</td>
+<td>1</td>
+</tr>
+</tbody>
+</table></div>
+
+--- block 15 Table @769..803 section=2
+<div class="sk-table"><table><caption>Short caption</caption>
+<thead>
+<tr>
+<th>A</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+</tr>
+</tbody>
+</table></div>
+
+--- block 16 Paragraph @805..825 section=2
+<p>Closing note.<sup class="footnote-ref"><a href="#fn-long" id="user-content-fnref-long" data-footnote-ref="" rel="noopener noreferrer">2</a></sup></p>
+
+--- block 17 FootnoteDefinition @827..887 section=2
+
+<ol>
+<li id="user-content-fn-long">
+<p>A long footnote with a <a href="https://example.com" rel="noopener noreferrer">link</a>. <a href="#fnref-long" class="footnote-backref" data-footnote-backref="" data-footnote-backref-idx="1" aria-label="Back to reference 1" rel="noopener noreferrer">↩</a></p>
+</li>
+</ol>

@@ -91,6 +91,13 @@ pub fn comrak_options(flavor: Flavor) -> comrak::Options<'static> {
             ext.superscript = true;
             ext.inline_footnotes = true;
             ext.description_lists = true;
+            // `{#id .class key=val}` after headings, fenced code, links,
+            // images, and inline code; comrak parses them, `pandoc.rs`
+            // renders them. `:::` fenced divs are found by `pandoc.rs` too.
+            ext.header_attributes = true;
+            ext.fenced_code_attributes = true;
+            ext.link_attributes = true;
+            ext.inline_code_attributes = true;
             options.parse.smart = true;
         }
     }

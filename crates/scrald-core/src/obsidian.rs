@@ -4,10 +4,10 @@
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
-use comrak::nodes::{Node, NodeHtmlBlock, NodeLink, NodeValue};
+use comrak::nodes::{Node, NodeLink, NodeValue};
 
 use crate::assets::{self, ImageCollector};
-use crate::render::escape_text;
+use crate::render::{self, escape_text};
 use crate::toc::slugify;
 
 // --- %%comments%% ---------------------------------------------------------
@@ -190,19 +190,7 @@ pub fn transform_callouts(node: Node<'_>, options: &comrak::Options) {
                 "</div></div>\n".to_string(),
             ),
         };
-        let mut literal = open;
-        let children: Vec<Node<'_>> = quote.children().collect();
-        for child in children {
-            // Writing into a String can't fail; on the off chance comrak
-            // reports an error, the child is left out.
-            let _ = comrak::format_html(child, options, &mut literal);
-            child.detach();
-        }
-        literal.push_str(&close);
-        quote.data_mut().value = NodeValue::HtmlBlock(NodeHtmlBlock {
-            block_type: 0,
-            literal,
-        });
+        render::wrap_children_as_html(quote, &open, &close, options);
     }
 }
 

@@ -7,6 +7,9 @@ bom: false  line_ending: Lf  words: 22  features: FeatureFlags { has_math: false
 flavor: Gfm (Default)
 toc: Footnotes #footnotes (block 0)
 section 0: heading=Some(0) level=1 blocks=0..5
+footnote 1 source (block Some(2)): <p>The supporting source, with <em>emphasis</em>.</p>
+footnote 2 2 (block Some(3)): <p>A second note.
+With a continuation line.</p>
 
 --- block 0 Heading { level: 1 } @0..11 section=0
 <h1 id="user-content-footnotes">Footnotes</h1>

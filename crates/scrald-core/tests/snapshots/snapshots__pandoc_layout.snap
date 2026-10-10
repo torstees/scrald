@@ -1,0 +1,155 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: "format!(\"{}\\n{}\", assets.join(\"\\n\"), describe(&doc))"
+---
+asset 0: images/fjord.png Some(480)xSome(300)
+asset 1: images/icon.png Some(32)xSome(32)
+asset 2: images/wide.png Some(1200)xSome(240)
+bom: false  line_ending: Lf  words: 232  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true, has_abc: false }
+flavor: Pandoc (FrontMatter)
+front_matter: {
+  "range": {
+    "start": 0,
+    "end": 51
+  },
+  "title": "Pandoc layout",
+  "authors": [],
+  "summary": null,
+  "tags": [],
+  "notes": null,
+  "source": null,
+  "assets": null,
+  "theme": null,
+  "flavor": "pandoc",
+  "extra": {},
+  "error": null
+}
+toc: Pandoc layout #top (block 0)
+toc:   Images #images (block 4)
+toc:   Divs and spans #divs-and-spans (block 10)
+toc:   Tables #tables (block 14)
+section 0: heading=Some(0) level=1 blocks=0..4
+section 1: heading=Some(4) level=2 blocks=4..10
+section 2: heading=Some(10) level=2 blocks=10..14
+section 3: heading=Some(14) level=2 blocks=14..18
+footnote 1 __inline_1 (block None): <p>An inline footnote: hover the number to see
+it, or find it in the notes at the end.</p>
+footnote 2 saga (block Some(17)): <p>A regular footnote with <em>emphasis</em> and a second sentence, shown in
+a popover and in the endnotes.</p>
+
+--- block 0 Heading { level: 1 } @51..73 section=0
+<h1 id="user-content-top">Pandoc layout</h1>
+
+--- block 1 Paragraph @75..131 section=0
+<figure class="sk-figure right" style="width: 40%"><img data-asset="0" alt="The fjord at dawn" loading="lazy" width="480" height="300"><figcaption>The fjord at dawn</figcaption></figure>
+
+--- block 2 Paragraph @133..503 section=0
+<p>The boats left before first light, and the fjord lay still as glass beneath
+them. This paragraph wraps around the floated figure on the right, whose
+caption comes from its alt text. Keep reading: the text should flow beside
+the image until it runs past the bottom of it, and then continue at full
+width below. Narrow the window and the figure stops floating and centers.</p>
+
+--- block 3 Paragraph @505..731 section=0
+<p>Sigrid counted the oars twice.<sup class="footnote-ref"><a href="#fn-__inline_1" id="user-content-fnref-__inline_1" data-footnote-ref="" rel="noopener noreferrer">1</a></sup> The tide was turning, and the wind
+had not yet decided which way it would blow. A longer note is
+here.<sup class="footnote-ref"><a href="#fn-saga" id="user-content-fnref-saga" data-footnote-ref="" rel="noopener noreferrer">2</a></sup></p>
+
+--- block 4 Heading { level: 2 } @733..756 section=1
+<h2 class="unnumbered" id="user-content-images">Images</h2>
+
+--- block 5 Paragraph @758..796 section=1
+<p><img class="left" width="200" data-asset="0" alt="" loading="lazy"></p>
+
+--- block 6 Paragraph @798..932 section=1
+<p>A small image floats left, with no caption because it has no alt text. The
+text wraps around it on the right side and continues below.</p>
+
+--- block 7 Paragraph @934..1009 section=1
+<p>An inline icon <img class="inline" data-asset="1" alt="icon" loading="lazy" width="32" height="32"> sits within this sentence.</p>
+
+--- block 8 Paragraph @1011..1071 section=1
+<figure class="sk-figure full-bleed"><img data-asset="2" alt="A wide panorama, full bleed" loading="lazy" width="1200" height="240"><figcaption>A wide panorama, full bleed</figcaption></figure>
+
+--- block 9 Paragraph @1073..1133 section=1
+<figure class="sk-figure center" style="width: 50%"><img data-asset="0" alt="Centered, half width" loading="lazy" width="480" height="300"><figcaption>Centered, half width</figcaption></figure>
+
+--- block 10 Heading { level: 2 } @1135..1152 section=2
+<h2 data-number="1" id="user-content-divs-and-spans">Divs and spans</h2>
+
+--- block 11 Other @1154..1293 section=2
+<div id="user-content-aside" class="sk-div sidebar">
+<p><strong>Sidebar.</strong> A fenced div with an id and a class. Nested:</p>
+<div class="sk-div warning">
+<p>An inner div with the class <code>warning</code>.</p>
+</div>
+</div>
+
+--- block 12 Paragraph @1295..1429 section=2
+<p>Some <span class="smallcaps">small caps text</span> and an <span class="underline">underlined phrase</span>,
+plus a <a href="https://example.com" class="external" rel="noopener noreferrer">link with a class</a>.</p>
+
+--- block 13 CodeBlock { language: Some("python") } @1431..1504 section=2
+<pre id="user-content-example" class="numberLines"><code class="language-python sk-highlighted"><span class="sk-hl-source sk-hl-python"><span class="sk-hl-meta sk-hl-function-call sk-hl-python"><span class="sk-hl-meta sk-hl-qualified-name sk-hl-python"><span class="sk-hl-support sk-hl-function sk-hl-builtin sk-hl-python">print</span></span><span class="sk-hl-punctuation sk-hl-section sk-hl-arguments sk-hl-begin sk-hl-python">(</span><span class="sk-hl-meta sk-hl-function-call sk-hl-arguments sk-hl-python"><span class="sk-hl-meta sk-hl-string sk-hl-python"><span class="sk-hl-string sk-hl-quoted sk-hl-double sk-hl-python"><span class="sk-hl-punctuation sk-hl-definition sk-hl-string sk-hl-begin sk-hl-python">"</span></span></span><span class="sk-hl-meta sk-hl-string sk-hl-python"><span class="sk-hl-string sk-hl-quoted sk-hl-double sk-hl-python">attributes on a code block<span class="sk-hl-punctuation sk-hl-definition sk-hl-string sk-hl-end sk-hl-python">"</span></span></span></span><span class="sk-hl-punctuation sk-hl-section sk-hl-arguments sk-hl-end sk-hl-python">)</span></span>
+</span></code></pre>
+
+--- block 14 Heading { level: 2 } @1506..1515 section=3
+<h2 data-number="2" id="user-content-tables">Tables</h2>
+
+--- block 15 Table @1517..1680 section=3
+<div class="sk-table center"><table id="user-content-ships"><caption>Ships of the fleet</caption>
+<thead>
+<tr>
+<th>Ship</th>
+<th align="right">Oars</th>
+<th align="right">Crew</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sea Stallion</td>
+<td align="right">60</td>
+<td align="right">70</td>
+</tr>
+<tr>
+<td>Wave Rider</td>
+<td align="right">32</td>
+<td align="right">40</td>
+</tr>
+</tbody>
+</table></div>
+
+--- block 16 Table @1682..1883 section=3
+<div class="sk-table full-bleed"><table><caption>Full bleed</caption>
+<thead>
+<tr>
+<th>A very wide table with many columns</th>
+<th>Second</th>
+<th>Third</th>
+<th>Fourth</th>
+<th>Fifth</th>
+<th>Sixth</th>
+<th>Seventh</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cells</td>
+<td>that</td>
+<td>go</td>
+<td>on</td>
+<td>and</td>
+<td>on</td>
+<td>and on</td>
+</tr>
+</tbody>
+</table></div>
+
+--- block 17 FootnoteDefinition @1885..1995 section=3
+
+<ol>
+<li id="user-content-fn-saga">
+<p>A regular footnote with <em>emphasis</em> and a second sentence, shown in
+a popover and in the endnotes. <a href="#fnref-saga" class="footnote-backref" data-footnote-backref="" data-footnote-backref-idx="1" aria-label="Back to reference 1" rel="noopener noreferrer">↩</a></p>
+</li>
+</ol>
