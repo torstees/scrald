@@ -1,6 +1,6 @@
 //! Per-block HTML rendering and sanitizing (DESIGN.md §3, §13).
 
-use comrak::nodes::Node;
+use comrak::nodes::{Node, NodeHtmlBlock, NodeValue};
 
 /// Prefix for every HTML `id` that comes from document content, so a heading
 /// called "App" (or raw HTML with `id="app"`) can't clash with the app's own
@@ -56,8 +56,12 @@ impl Renderer {
             .add_url_schemes(["data", "file"])
             // Foldable callouts.
             .add_tag_attributes("details", ["open"])
-            // `language-rust` on code blocks, `footnotes` sections, and so on.
-            .add_generic_attributes(["class"])
+            // A figure's percentage width (Pandoc `width=40%`); the filter
+            // below allows nothing else in it.
+            .add_tag_attributes("figure", ["style"])
+            // `language-rust` on code blocks, `footnotes` sections, Pandoc
+            // `{#id .class}` attributes, and so on. Ids get `ID_PREFIX`.
+            .add_generic_attributes(["class", "id"])
             .id_prefix(Some(ID_PREFIX))
             .attribute_filter(move |element, attribute, value| {
                 filter_attribute(element, attribute, value, allow_remote_images).map(Into::into)
@@ -80,6 +84,25 @@ impl Renderer {
         self.sanitize(&html)
     }
 
+    /// Like `render_group`, with HTML written before and after each node
+    /// (`wraps[i]` for `nodes[i]`), all sanitized together: how fenced divs
+    /// wrap the blocks inside them.
+    pub fn render_group_wrapped(
+        &self,
+        nodes: &[Node<'_>],
+        options: &comrak::Options,
+        wraps: &[(String, String)],
+    ) -> String {
+        let mut html = String::new();
+        for (i, &node) in nodes.iter().enumerate() {
+            let (before, after) = wraps.get(i).cloned().unwrap_or_default();
+            html.push_str(&before);
+            self.format_into(node, options, &mut html);
+            html.push_str(&after);
+        }
+        self.sanitize(&html)
+    }
+
     fn format_into(&self, node: Node<'_>, options: &comrak::Options, html: &mut String) {
         // Rust note: writing into a `String` can't fail, but `format_html`
         // writes to any `fmt::Write` and so returns a Result. If it ever does
@@ -97,6 +120,28 @@ impl Renderer {
     pub fn sanitize(&self, html: &str) -> String {
         self.sanitizer.clean(html).to_string()
     }
+}
+
+/// Replaces a container node (a callout's blockquote, a fenced div) with one
+/// HTML block: `open`, its children rendered to HTML, then `close`. comrak's
+/// tree validator rejects transparent wrapper nodes, so this is how a
+/// container gets custom markup. Run it after every other pass on the
+/// children, since they're rendered here; the result is sanitized later with
+/// the rest of the block.
+pub fn wrap_children_as_html(node: Node<'_>, open: &str, close: &str, options: &comrak::Options) {
+    let mut literal = open.to_string();
+    let children: Vec<Node<'_>> = node.children().collect();
+    for child in children {
+        // Writing into a String can't fail; on the off chance comrak
+        // reports an error, the child is left out.
+        let _ = comrak::format_html(child, options, &mut literal);
+        child.detach();
+    }
+    literal.push_str(close);
+    node.data_mut().value = NodeValue::HtmlBlock(NodeHtmlBlock {
+        block_type: 0,
+        literal,
+    });
 }
 
 /// Extra attribute rules on top of ammonia's allowlist. Returns `None` to
@@ -121,6 +166,11 @@ fn filter_attribute<'v>(
             let data_image = lower.starts_with("data:image/");
             (data_image || (remote && allow_remote_images)).then_some(value)
         }
+        // `style` only as `width: N%` on a figure, as core writes it.
+        ("figure", "style") => {
+            let width = value.trim().strip_prefix("width:").map(str::trim);
+            width.and_then(crate::pandoc::percentage).map(|_| value)
+        }
         // `data:` URLs nowhere else (a `data:text/html` link could run script).
         _ if lower.starts_with("data:") => None,
         _ => Some(value),
@@ -138,14 +188,11 @@ pub fn add_heading_id(html: &str, level: u8, slug: &str) -> String {
 }
 
 /// Adds `data-number="2.1"` to a heading that already has its id (see
-/// `add_heading_id`). Themes that number headings show it with CSS.
+/// `add_heading_id`) and any classes. Themes that number headings show it with CSS.
 pub fn add_heading_number(html: &str, level: u8, number: &str) -> String {
-    let open = format!("<h{level} id=");
+    let open = format!("<h{level} ");
     match html.strip_prefix(&open) {
-        Some(rest) => format!(
-            "<h{level} data-number=\"{}\" id={rest}",
-            escape_text(number)
-        ),
+        Some(rest) => format!("<h{level} data-number=\"{}\" {rest}", escape_text(number)),
         None => html.to_string(),
     }
 }
@@ -175,6 +222,23 @@ mod tests {
         let r = Renderer::default();
         let out = r.sanitize("<p onclick=\"x()\">hi<script>alert(1)</script></p>");
         assert_eq!(out, "<p>hi</p>");
+    }
+
+    #[test]
+    fn style_only_as_a_figure_percentage() {
+        let r = Renderer::default();
+        assert_eq!(
+            r.sanitize("<figure style=\"width: 40%\"></figure>"),
+            "<figure style=\"width: 40%\"></figure>"
+        );
+        for html in [
+            "<figure style=\"width: 40%; background: url(x)\"></figure>",
+            "<figure style=\"width: 400%\"></figure>",
+            "<figure style=\"color: red\"></figure>",
+        ] {
+            assert_eq!(r.sanitize(html), "<figure></figure>", "{html}");
+        }
+        assert_eq!(r.sanitize("<p style=\"width: 40%\">x</p>"), "<p>x</p>");
     }
 
     #[test]

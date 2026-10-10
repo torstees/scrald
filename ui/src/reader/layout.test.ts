@@ -26,7 +26,7 @@ function doc(blocks: Block[], sections: Section[]): DocumentModel {
     remoteImagesAllowed: false,
     flavor: "gfm",
     flavorSource: "default",
-    inlineFootnotes: [],
+    footnotes: [],
   };
 }
 

@@ -407,3 +407,157 @@ body {
 .sk-block .sk-block-ref {
   display: inline;
 }
+
+/*
+ * Image layout classes (DESIGN.md §6.3), from Pandoc attributes such as
+ * `![Map](map.png){.right width=40%}`. Figures carry the class themselves.
+ * `100cqw` is the reading area's width: the scroller is a size container.
+ */
+.sk-block img.left,
+.sk-block .sk-figure.left {
+  float: left;
+  max-width: 50%;
+  margin: 0.25em 1.25em 0.75em 0;
+}
+
+.sk-block img.right,
+.sk-block .sk-figure.right {
+  float: right;
+  max-width: 50%;
+  margin: 0.25em 0 0.75em 1.25em;
+}
+
+.sk-block img.center,
+.sk-block .sk-figure.center {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.sk-block img.full-bleed,
+.sk-block .sk-figure.full-bleed,
+.sk-block .sk-table.full-bleed {
+  display: block;
+  width: 100cqw;
+  max-width: none;
+  margin-left: calc((100% - 100cqw) / 2);
+}
+
+.sk-block img.inline {
+  display: inline;
+  vertical-align: -0.15em;
+}
+
+/* Floats collapse to centered blocks when the reading area is narrow. */
+@container (max-width: 30rem) {
+  .sk-block img.left,
+  .sk-block img.right,
+  .sk-block .sk-figure.left,
+  .sk-block .sk-figure.right {
+    float: none;
+    display: block;
+    max-width: 100%;
+    margin: 0 auto var(--sk-paragraph-spacing);
+  }
+}
+
+/* Paragraphs after a floated image wrap around it, not the next heading. */
+.sk-block h1,
+.sk-block h2,
+.sk-block h3 {
+  clear: both;
+}
+
+.sk-block .sk-figure {
+  margin: 0 0 var(--sk-paragraph-spacing);
+  text-align: center;
+}
+
+.sk-block .sk-figure img {
+  display: block;
+  margin: 0 auto;
+}
+
+.sk-block .sk-figure.left,
+.sk-block .sk-figure.right {
+  width: fit-content;
+}
+
+/* A figure given a percentage width: its image fills it. */
+.sk-block .sk-figure[style] img {
+  width: 100%;
+}
+
+.sk-block figcaption,
+.sk-block caption {
+  font-size: 0.9em;
+  color: var(--sk-color-muted);
+  margin-top: 0.4em;
+}
+
+.sk-block caption {
+  margin: 0 0 0.4em;
+  text-align: center;
+}
+
+/* Table layout classes (`Table: Caption {.center}`). */
+.sk-block .sk-table.center > table {
+  margin: 0 auto;
+}
+
+/* Common Pandoc span classes. */
+.sk-block .smallcaps {
+  font-variant: small-caps;
+}
+
+.sk-block .underline {
+  text-decoration: underline;
+}
+
+/* Footnote definitions stay in source order but show only as endnotes. */
+.sk-block.sk-footnote-def {
+  margin: 0;
+}
+
+/* Endnotes section at the end of the document (DESIGN.md §10). */
+.sk-endnotes {
+  margin-top: 3em;
+  padding-top: 1em;
+  border-top: 1px solid var(--sk-color-border);
+  font-size: 0.9em;
+}
+
+.sk-endnotes h2 {
+  font-family: var(--sk-font-heading);
+  font-size: 1.1em;
+  margin: 0 0 0.8em;
+}
+
+.sk-endnotes li {
+  margin-bottom: 0.6em;
+}
+
+.sk-endnotes li > :first-child {
+  display: inline;
+}
+
+.sk-endnotes .sk-backref {
+  margin-left: 0.3em;
+  text-decoration: none;
+}
+
+/* Footnote popover, shown on hovering or focusing a reference. */
+.sk-footnote-popover {
+  position: fixed;
+  z-index: 20;
+  max-width: min(28rem, calc(100vw - 2rem));
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 0.6em 0.9em;
+  font-size: 0.9em;
+  background: var(--sk-color-background);
+  color: var(--sk-color-foreground);
+  border: 1px solid var(--sk-color-border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--sk-color-foreground) 18%, transparent);
+}

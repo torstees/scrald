@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use comrak::nodes::{ListType, Node, NodeHtmlBlock, NodeValue};
+use comrak::nodes::{Attributes, ListType, Node, NodeHtmlBlock, NodeValue};
 use serde::Serialize;
 
 use crate::DocumentError;
@@ -15,6 +15,7 @@ use crate::flavor::{self, Flavor, FlavorSource};
 use crate::frontmatter::{self, FrontMatter};
 use crate::highlight;
 use crate::obsidian::{self, VaultIndex};
+use crate::pandoc;
 use crate::render::{self, Renderer};
 use crate::source::{self, LineEnding, LineIndex, SourceRange};
 use crate::toc::{self, Slugger, TocEntry};
@@ -43,19 +44,26 @@ pub struct DocumentModel {
     pub flavor: Flavor,
     /// Why that flavor was chosen.
     pub flavor_source: FlavorSource,
-    /// Footnotes written inline (`^[...]`, Pandoc), which have no block of
-    /// their own. Shown as popovers and endnotes by the reader.
-    pub inline_footnotes: Vec<InlineFootnote>,
+    /// Every footnote, in numbered order, for popovers and the endnotes
+    /// section. Includes inline footnotes (`^[...]`, Pandoc), which have no
+    /// block of their own.
+    pub footnotes: Vec<Footnote>,
 }
 
-/// A footnote written inline, rendered for display.
+/// A footnote, rendered for display.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InlineFootnote {
-    /// comrak's generated name, e.g. `__inline_1` (references link to `#fn-<name>`).
+pub struct Footnote {
+    /// The footnote's name: `source` for `[^source]`, or comrak's generated
+    /// `__inline_1`. References link to `#fn-<name>`, and the first
+    /// reference has the id `fnref-<name>`.
     pub name: String,
-    /// Sanitized HTML of the footnote definition.
+    /// The number shown at its references (1, 2, ...).
+    pub number: u32,
+    /// Sanitized HTML of the footnote's contents, without back-links.
     pub html: String,
+    /// The block that defines it, or `None` for an inline footnote.
+    pub block_id: Option<u32>,
 }
 
 /// Choices that change how a document is parsed and rendered.
@@ -187,10 +195,25 @@ pub fn parse_document_with(
 
     let options = flavor::comrak_options(flavor);
     let obsidian = flavor == Flavor::Obsidian;
+    let pandoc = flavor == Flavor::Pandoc;
     // Obsidian comments are blanked to spaces of the same byte length, so the
     // parser never sees them but every offset stays the same.
+    // Pandoc `:::` div fences are blanked the same way, and the divs kept
+    // aside (with file offsets) to wrap the blocks inside them.
+    let mut divs = Vec::new();
     let parse_text = if obsidian {
         obsidian::blank_comments(body)
+    } else if pandoc {
+        let (blanked, spans) = pandoc::extract_divs(body);
+        let base = bom_len + body_start;
+        // Rust note: `extend` with a `map` appends each converted span; the
+        // closure takes each `DivSpan` by value (`into_iter` moves them).
+        divs.extend(spans.into_iter().map(|mut span| {
+            span.start += base;
+            span.end += base;
+            span
+        }));
+        blanked
     } else {
         body.to_string()
     };
@@ -214,6 +237,8 @@ pub fn parse_document_with(
     let mut toc = Vec::new();
     let mut word_count = 0;
     let mut features = FeatureFlags::default();
+    // Headings marked `{-}` or `{.unnumbered}` (Pandoc) get no outline number.
+    let mut unnumbered: Vec<u32> = Vec::new();
 
     // comrak moves footnote definitions to the end of the document. Put
     // blocks back in source order so ranges tile the file and edits splice
@@ -229,30 +254,42 @@ pub fn parse_document_with(
     // test, like two list comprehensions in one pass.
     let (generated, mut nodes): (Vec<Node<'_>>, Vec<Node<'_>>) =
         root.children().partition(|n| is_generated_footnote(n));
-    let inline_footnotes = generated
-        .into_iter()
-        .map(|node| {
-            let name = match &node.data().value {
-                NodeValue::FootnoteDefinition(def) => def.name.clone(),
-                _ => String::new(),
-            };
-            InlineFootnote {
-                html: renderer.render(node, &options),
-                name,
-            }
-        })
-        .collect();
+    let footnote_numbers = footnote_numbers(root);
+    let mut footnotes: Vec<Footnote> = Vec::new();
     nodes.sort_by_key(|n| {
         let start = n.data().sourcepos.start;
         (start.line, start.column)
     });
 
-    for group in group_html_runs(&nodes) {
+    for group in group_blocks(&nodes, pandoc, &divs, &index) {
         let id = blocks.len() as u32;
         // Rust note: slice patterns: `[only]` matches a one-element slice and
-        // binds its element; `_` takes every other length.
+        // binds its element; `[table, caption]` binds both of a pair; `_`
+        // takes every other length.
+        let mut table_attrs = None;
+        let first_start = block_range(group[0], &index).start;
+        let outer_div = divs
+            .iter()
+            .find(|d| d.start <= first_start && first_start <= d.end);
         let (kind, source) = match group {
+            // A fenced div (and everything in it) is one block, fences included.
+            _ if outer_div.is_some() => {
+                let last_end = block_range(group[group.len() - 1], &index).end;
+                let div_range = outer_div.map_or((first_start, last_end), |d| (d.start, d.end));
+                (
+                    BlockKind::Other,
+                    SourceRange::new(div_range.0.min(first_start), div_range.1.max(last_end)),
+                )
+            }
             [only] => (block_kind(only), block_range(only, &index)),
+            [table, caption] if pandoc && pandoc::is_table_caption(caption) => {
+                table_attrs = Some(pandoc::take_table_caption(caption));
+                let range = SourceRange::new(
+                    block_range(table, &index).start,
+                    block_range(caption, &index).end,
+                );
+                (BlockKind::Table, range)
+            }
             _ => {
                 let first = block_range(group[0], &index);
                 let last = block_range(group[group.len() - 1], &index);
@@ -263,10 +300,20 @@ pub fn parse_document_with(
         // Original-file offsets include the BOM; subtract it to slice `text`.
         let source_text = &text[source.start - bom_len..source.end - bom_len];
 
+        if pandoc
+            && let [only] = group
+            && matches!(only.data().value, NodeValue::Heading(_))
+        {
+            pandoc::take_heading_attributes(only);
+        }
         // Read the heading text first: rewriting images replaces their alt
         // text nodes with HTML.
         let heading_text = match group {
             [only] if matches!(kind, BlockKind::Heading { .. }) => Some(plain_text(only)),
+            _ => None,
+        };
+        let heading_attrs = match group {
+            [only] if pandoc && heading_text.is_some() => pandoc::attributes_of(only),
             _ => None,
         };
         for &node in group {
@@ -279,23 +326,64 @@ pub fn parse_document_with(
                 };
                 obsidian::transform_links(&arena, node, &link_ctx, &mut images);
             }
+            let figures = if pandoc {
+                pandoc::transform_inlines(&arena, node);
+                pandoc::plan_figures(node)
+            } else {
+                Vec::new()
+            };
             images.rewrite(node, &asset_ctx);
+            pandoc::finish_figures(figures, &options);
             highlight_code_blocks(node);
             if obsidian {
                 obsidian::transform_callouts(node, &options);
             }
         }
-        let mut html = renderer.render_group(group, &options);
+        let mut html = if outer_div.is_some() {
+            let wraps = div_wraps(group, &divs, &index);
+            renderer.render_group_wrapped(group, &options, &wraps)
+        } else {
+            renderer.render_group(group, &options)
+        };
         if kind == BlockKind::Table {
+            // A Pandoc caption (`Table: ... {.center}`) goes inside the
+            // table; its id goes on the table and its classes on the box.
+            let attrs = table_attrs.unwrap_or_default();
+            html = pandoc::move_caption_into_table(&html);
+            let id_only = Attributes {
+                id: attrs.id.clone(),
+                ..Attributes::default()
+            };
+            html = pandoc::add_to_first_tag(&html, &id_only);
+            let classes = Attributes {
+                classes: attrs.classes,
+                ..Attributes::default()
+            };
             // Wide tables scroll sideways in their own box instead of
             // widening the page (DESIGN.md §6.3).
-            html = format!("<div class=\"sk-table\">{html}</div>");
+            html = format!(
+                "<div{}>{html}</div>",
+                pandoc::attribute_html(&classes, Some("sk-table"), "")
+            );
         }
 
         if let (BlockKind::Heading { level }, Some(heading)) = (&kind, heading_text) {
             let level = *level;
-            let slug = slugger.slug(&heading);
+            // A Pandoc `{#id}` replaces the generated slug.
+            let attrs = heading_attrs.unwrap_or_default();
+            let slug = match &attrs.id {
+                Some(id) => id.clone(),
+                None => slugger.slug(&heading),
+            };
             html = render::add_heading_id(&html, level, &slug);
+            let classes = Attributes {
+                classes: attrs.classes,
+                ..Attributes::default()
+            };
+            if classes.classes.iter().any(|c| c == "unnumbered") {
+                unnumbered.push(id);
+            }
+            html = pandoc::add_to_first_tag(&html, &classes);
             toc.push(TocEntry {
                 level,
                 text: heading,
@@ -331,6 +419,17 @@ pub fn parse_document_with(
             None => 0,
         };
 
+        if let [only] = group
+            && let NodeValue::FootnoteDefinition(def) = &only.data().value
+        {
+            footnotes.push(Footnote {
+                name: def.name.clone(),
+                number: footnote_numbers.get(&def.name).copied().unwrap_or(0),
+                html: footnote_html(&renderer, only, &options),
+                block_id: Some(id),
+            });
+        }
+
         blocks.push(Block {
             id,
             kind,
@@ -342,13 +441,37 @@ pub fn parse_document_with(
     }
 
     // Outline numbers need every heading, so they're added afterwards.
-    let levels: Vec<u8> = toc.iter().map(|entry| entry.level).collect();
-    for (entry, number) in toc.iter_mut().zip(toc::number_headings(&levels)) {
+    // Rust note: `filter` on `iter_mut()` yields `&mut TocEntry` items, so the
+    // loop below can update the entries it numbers.
+    let levels: Vec<u8> = toc
+        .iter()
+        .filter(|entry| !unnumbered.contains(&entry.block_id))
+        .map(|entry| entry.level)
+        .collect();
+    let numbered = toc
+        .iter_mut()
+        .filter(|entry| !unnumbered.contains(&entry.block_id));
+    for (entry, number) in numbered.zip(toc::number_headings(&levels)) {
         if let (Some(n), Some(block)) = (&number, blocks.get_mut(entry.block_id as usize)) {
             block.html = render::add_heading_number(&block.html, entry.level, n);
         }
         entry.number = number;
     }
+
+    // Inline footnotes have no block; their definitions still get the
+    // image pass, so a local image inside one resolves like any other.
+    for node in generated {
+        images.rewrite(node, &asset_ctx);
+        if let NodeValue::FootnoteDefinition(def) = &node.data().value {
+            footnotes.push(Footnote {
+                name: def.name.clone(),
+                number: footnote_numbers.get(&def.name).copied().unwrap_or(0),
+                html: footnote_html(&renderer, node, &options),
+                block_id: None,
+            });
+        }
+    }
+    footnotes.sort_by_key(|f| f.number);
 
     Ok(DocumentModel {
         path,
@@ -365,7 +488,7 @@ pub fn parse_document_with(
         remote_images_allowed: parse_options.allow_remote_images,
         flavor,
         flavor_source,
-        inline_footnotes,
+        footnotes,
     })
 }
 
@@ -463,23 +586,167 @@ fn highlight_code_blocks(node: Node<'_>) {
         .filter(|n| matches!(n.data().value, NodeValue::CodeBlock(_)))
         .collect();
     for code_node in code_nodes {
+        // Pandoc attributes (```` ```rust {#id .class} ````) go on `<pre>`.
+        let extra = crate::pandoc::attributes_of(code_node)
+            .map(|attrs| crate::pandoc::attribute_html(&attrs, None, ""))
+            .unwrap_or_default();
         let highlighted = match &code_node.data().value {
             NodeValue::CodeBlock(code) => code_language(&code.info).and_then(|language| {
                 highlight::highlight(&code.literal, &language).map(|spans| (language, spans))
             }),
             _ => None,
         };
-        if let Some((language, spans)) = highlighted {
-            let literal = format!(
-                "<pre><code class=\"language-{} sk-highlighted\">{spans}</code></pre>\n",
+        let literal = match (highlighted, &code_node.data().value) {
+            (Some((language, spans)), _) => Some(format!(
+                "<pre{extra}><code class=\"language-{} sk-highlighted\">{spans}</code></pre>\n",
                 render::escape_text(&language)
-            );
+            )),
+            // Not highlighted, but it has attributes to show.
+            (None, NodeValue::CodeBlock(code)) if !extra.is_empty() => {
+                let class = code_language(&code.info)
+                    .map(|l| format!(" class=\"language-{}\"", render::escape_text(&l)))
+                    .unwrap_or_default();
+                Some(format!(
+                    "<pre{extra}><code{class}>{}</code></pre>\n",
+                    render::escape_text(&code.literal)
+                ))
+            }
+            _ => None,
+        };
+        if let Some(literal) = literal {
             code_node.data_mut().value = NodeValue::HtmlBlock(NodeHtmlBlock {
                 block_type: 0,
                 literal,
             });
         }
     }
+}
+
+/// Groups top-level nodes into blocks: raw HTML containers with their
+/// contents (`group_html_runs`), and, in Pandoc documents, a table with the
+/// `Table: caption` paragraph that follows it.
+fn group_blocks<'n, 'a>(
+    nodes: &'n [Node<'a>],
+    pandoc: bool,
+    divs: &[pandoc::DivSpan],
+    index: &LineIndex,
+) -> Vec<&'n [Node<'a>]> {
+    let html_groups = group_html_runs(nodes);
+    if !pandoc {
+        return html_groups;
+    }
+    let html_groups = join_div_contents(nodes, html_groups, divs, index);
+    // The groups tile `nodes` in order, so `start` tracks where each begins.
+    let mut groups = Vec::new();
+    let mut start = 0;
+    let mut i = 0;
+    while i < html_groups.len() {
+        let len = html_groups[i].len();
+        let joins = len == 1
+            && matches!(nodes[start].data().value, NodeValue::Table(_))
+            && html_groups.get(i + 1).is_some_and(|next| next.len() == 1)
+            && pandoc::is_table_caption(nodes[start + 1]);
+        if joins {
+            groups.push(&nodes[start..start + 2]);
+            start += 2;
+            i += 2;
+        } else {
+            groups.push(html_groups[i]);
+            start += len;
+            i += 1;
+        }
+    }
+    groups
+}
+
+/// A footnote definition's contents as HTML. comrak leaves a space where
+/// its back-link would go; the reader adds its own back-link.
+fn footnote_html(renderer: &Renderer, definition: Node<'_>, options: &comrak::Options) -> String {
+    let children: Vec<Node<'_>> = definition.children().collect();
+    renderer
+        .render_group(&children, options)
+        .replace(" </p>", "</p>")
+}
+
+/// Joins consecutive groups that start inside the same outermost fenced div
+/// into one group, so the whole div becomes one block.
+fn join_div_contents<'n, 'a>(
+    nodes: &'n [Node<'a>],
+    groups: Vec<&'n [Node<'a>]>,
+    divs: &[pandoc::DivSpan],
+    index: &LineIndex,
+) -> Vec<&'n [Node<'a>]> {
+    // The outermost div (if any) each group starts in.
+    let outer = |group: &[Node<'_>]| {
+        let start = block_range(group[0], index).start;
+        divs.iter().position(|d| d.start <= start && start <= d.end)
+    };
+    let mut joined: Vec<&'n [Node<'a>]> = Vec::new();
+    let mut start = 0;
+    let mut i = 0;
+    while i < groups.len() {
+        let div = outer(groups[i]);
+        let mut len = groups[i].len();
+        let mut j = i + 1;
+        while div.is_some() && j < groups.len() && outer(groups[j]) == div {
+            len += groups[j].len();
+            j += 1;
+        }
+        joined.push(&nodes[start..start + len]);
+        start += len;
+        i = j;
+    }
+    joined
+}
+
+/// For each node of a div block, the `<div>` tags to write before it and
+/// the `</div>` tags after it, so nested divs wrap exactly their contents.
+fn div_wraps(
+    group: &[Node<'_>],
+    divs: &[pandoc::DivSpan],
+    index: &LineIndex,
+) -> Vec<(String, String)> {
+    let starts: Vec<usize> = group.iter().map(|n| block_range(n, index).start).collect();
+    let first = starts.first().copied().unwrap_or(0);
+    let last = group.last().map_or(0, |n| block_range(n, index).end);
+    // The divs in this block, outermost first (`divs` is sorted by start).
+    let mut pending = divs
+        .iter()
+        .filter(|d| d.end >= first && d.start <= last)
+        .peekable();
+    let mut open: Vec<&pandoc::DivSpan> = Vec::new();
+    let mut wraps = Vec::with_capacity(group.len());
+    for (i, &start) in starts.iter().enumerate() {
+        let mut before = String::new();
+        // Rust note: `peekable()` lets an iterator look one item ahead;
+        // `next_if` takes the next item only when the test passes.
+        while let Some(div) = pending.next_if(|d| d.start <= start) {
+            // A div that ended before this node is empty; skip it.
+            if div.end >= start {
+                before.push_str(&pandoc::div_open_tag(div));
+                open.push(div);
+            }
+        }
+        let next_start = starts.get(i + 1).copied().unwrap_or(usize::MAX);
+        let mut after = String::new();
+        while open.last().is_some_and(|d| d.end <= next_start) {
+            open.pop();
+            after.push_str("</div>\n");
+        }
+        wraps.push((before, after));
+    }
+    wraps
+}
+
+/// Each footnote's number, from its references (`[^name]` or `^[...]`).
+fn footnote_numbers(root: Node<'_>) -> std::collections::HashMap<String, u32> {
+    let mut numbers = std::collections::HashMap::new();
+    for node in root.descendants() {
+        if let NodeValue::FootnoteReference(r) = &node.data().value {
+            numbers.entry(r.name.clone()).or_insert(r.ix);
+        }
+    }
+    numbers
 }
 
 /// A footnote definition comrak generated for an inline footnote (`^[...]`).

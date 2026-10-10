@@ -105,10 +105,16 @@ export type Flavor = "gfm" | "obsidian" | "pandoc";
 /** Mirrors `FlavorSource`: why a document has its flavor. */
 export type FlavorSource = "document" | "frontMatter" | "folder" | "detected" | "default";
 
-/** Mirrors `InlineFootnote`: a `^[...]` footnote, rendered. */
-export interface InlineFootnote {
+/** Mirrors `Footnote`: one footnote, rendered, for popovers and endnotes. */
+export interface Footnote {
+  /** References link to `#fn-<name>`; the first reference has id `fnref-<name>`. */
   name: string;
+  /** The number shown at its references. */
+  number: number;
+  /** Sanitized HTML of the footnote's contents (no back-links). */
   html: string;
+  /** The defining block, or null for an inline (`^[...]`) footnote. */
+  blockId: number | null;
 }
 
 /** Mirrors `LineEnding` (serde `rename_all = "lowercase"`). */
@@ -133,8 +139,8 @@ export interface DocumentModel {
   remoteImagesAllowed: boolean;
   flavor: Flavor;
   flavorSource: FlavorSource;
-  /** Inline (`^[...]`) footnotes, which have no block of their own. */
-  inlineFootnotes: InlineFootnote[];
+  /** Every footnote in numbered order, including inline (`^[...]`) ones. */
+  footnotes: Footnote[];
 }
 
 /** Mirrors `LinkTarget` (crates/scrald-core/src/links.rs, serde `tag = "kind"`). */

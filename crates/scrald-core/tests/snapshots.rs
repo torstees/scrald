@@ -43,8 +43,15 @@ fn describe(doc: &DocumentModel) -> String {
             s.first_block + s.block_count
         );
     }
-    for note in &doc.inline_footnotes {
-        let _ = writeln!(out, "inline footnote {}: {}", note.name, note.html.trim());
+    for note in &doc.footnotes {
+        let _ = writeln!(
+            out,
+            "footnote {} {} (block {:?}): {}",
+            note.number,
+            note.name,
+            note.block_id,
+            note.html.trim()
+        );
     }
     for b in &doc.blocks {
         let _ = writeln!(
@@ -102,4 +109,32 @@ fn obsidian_vault() {
         })
         .collect();
     insta::assert_snapshot!(format!("{}\n{text}", assets.join("\n")));
+}
+
+/// Pandoc layout: attributes, figures, divs, spans, and table captions with
+/// real images, so asset ids and sizes are covered too.
+#[test]
+fn pandoc_layout() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("pandoc-layout");
+    let path = root.join("layout.md");
+    let bytes = std::fs::read(&path).expect("layout note should be readable");
+    let doc = parse_document(path, &bytes).expect("layout note should parse");
+    let assets: Vec<String> = doc
+        .images
+        .iter()
+        .map(|a| {
+            let rel = a.path.strip_prefix(&root).unwrap_or(&a.path);
+            format!(
+                "asset {}: {} {:?}x{:?}",
+                a.id,
+                rel.display(),
+                a.width,
+                a.height
+            )
+            .replace('\\', "/")
+        })
+        .collect();
+    insta::assert_snapshot!(format!("{}\n{}", assets.join("\n"), describe(&doc)));
 }

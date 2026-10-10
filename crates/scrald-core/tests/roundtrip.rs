@@ -19,6 +19,7 @@ fn fixture_paths() -> Vec<PathBuf> {
     paths.sort();
     // The Obsidian vault note, parsed in its vault.
     paths.push(dir.with_file_name("vault").join("Saga.md"));
+    paths.push(dir.with_file_name("pandoc-layout").join("layout.md"));
     paths
 }
 

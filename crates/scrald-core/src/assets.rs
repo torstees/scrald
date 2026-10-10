@@ -338,7 +338,10 @@ impl ImageCollector {
             };
             if let Some((url, title)) = image {
                 let alt = crate::document::plain_text(target);
-                let html = self.image_html(&url, &alt, Some(title.as_str()), ctx);
+                let mut html = self.image_html(&url, &alt, Some(title.as_str()), ctx);
+                if let Some(attrs) = crate::pandoc::attributes_of(target) {
+                    html = apply_image_attributes(&html, &attrs);
+                }
                 // The alt text now lives in the HTML; drop the child nodes.
                 let children: Vec<Node<'_>> = target.children().collect();
                 for child in children {
@@ -465,6 +468,48 @@ impl ImageCollector {
     }
 }
 
+/// Applies Pandoc attributes (`{#id .right width=40%}`) to an image's
+/// markup: the id and classes, and `width`/`height` as pixels (`300`,
+/// `300px`) or a percentage, which replace the size read from the file.
+/// Other units and other keys are ignored: no inline styles reach the page.
+pub fn apply_image_attributes(html: &str, attrs: &comrak::nodes::Attributes) -> String {
+    let size = |key: &str| {
+        attrs
+            .pairs
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| {
+                let v = v.trim().trim_end_matches("px");
+                let digits = v.strip_suffix('%').unwrap_or(v);
+                (!digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
+                    .then(|| v.to_string())
+            })
+    };
+    let (width, height) = (size("width"), size("height"));
+    let mut html = html.to_string();
+    if width.is_some() || height.is_some() {
+        // The file's natural size no longer applies.
+        for name in ["width", "height"] {
+            if let Some((start, end, _)) = find_attribute(&html, name) {
+                html.replace_range(start - 1..end, "");
+            }
+        }
+    }
+    let mut extra = crate::pandoc::attribute_html(attrs, None, "");
+    if let Some(w) = width {
+        extra.push_str(&format!(" width=\"{w}\""));
+    }
+    if let Some(h) = height {
+        extra.push_str(&format!(" height=\"{h}\""));
+    }
+    // After the tag name: `<img` or `<span`.
+    let name_end = html[1..]
+        .find(|c: char| c.is_whitespace() || c == '>')
+        .map_or(html.len(), |e| e + 1);
+    html.insert_str(name_end, &extra);
+    html
+}
+
 fn contains_img(html: &str) -> bool {
     html.to_ascii_lowercase().contains("<img")
 }
@@ -526,6 +571,23 @@ fn find_attribute(tag: &str, name: &str) -> Option<(usize, usize, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_attributes_replace_the_natural_size() {
+        let (attrs, _) =
+            crate::pandoc::parse_attributes("{#map .right width=40% height=2em}").unwrap();
+        let html =
+            "<img data-asset=\"0\" alt=\"Map\" loading=\"lazy\" width=\"800\" height=\"600\">";
+        assert_eq!(
+            apply_image_attributes(html, &attrs),
+            "<img id=\"map\" class=\"right\" width=\"40%\" data-asset=\"0\" alt=\"Map\" loading=\"lazy\">"
+        );
+        let (classes_only, _) = crate::pandoc::parse_attributes("{.center}").unwrap();
+        assert_eq!(
+            apply_image_attributes(html, &classes_only),
+            html.replacen("<img", "<img class=\"center\"", 1)
+        );
+    }
 
     /// A fresh, empty temp directory for one test.
     fn temp_dir(name: &str) -> PathBuf {
