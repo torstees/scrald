@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Block, BlockKind, DocumentModel, Section } from "../lib/types";
-import { batchByBlocks, estimateBlockHeight, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
+import {
+  batchByBlocks,
+  blockKeys,
+  estimateBlockHeight,
+  estimateSectionHeights,
+  mountOrder,
+  sectionBlocks,
+} from "./layout";
 
 function block(id: number, section: number, length: number, kind: BlockKind = { type: "paragraph" }): Block {
   return { id, kind, html: "", source: { start: id * 1000, end: id * 1000 + length }, hash: 0, section };
@@ -29,6 +36,17 @@ function doc(blocks: Block[], sections: Section[]): DocumentModel {
     footnotes: [],
   };
 }
+
+describe("blockKeys", () => {
+  it("keeps keys for unchanged blocks when ids shift, and stays unique", () => {
+    const withHash = (id: number, hash: number) => ({ ...block(id, 0, 10), hash });
+    const before = doc([withHash(0, 7), withHash(1, 9), withHash(2, 7)], [section(0, 0, 3)]);
+    // A block inserted at the front: the others' ids shift by one.
+    const after = doc([withHash(0, 5), withHash(1, 7), withHash(2, 9), withHash(3, 7)], [section(0, 0, 4)]);
+    expect(blockKeys(before)).toEqual(["7:0", "9:0", "7:1"]);
+    expect(blockKeys(after)).toEqual(["5:0", "7:0", "9:0", "7:1"]);
+  });
+});
 
 describe("mountOrder", () => {
   it("fans out from the start, forward first", () => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     launchInfo,
     onDocumentChanged,
@@ -24,6 +24,9 @@
     saveDocument,
     checkDisk,
     pickAssetsFolder,
+    blockSource,
+    editBlock,
+    stepHistory,
   } from "./lib/commands";
   import { afterPaint } from "./lib/idle";
   import { launchMessage } from "./lib/launch";
@@ -38,6 +41,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import UnsavedDialog, { type UnsavedChoice } from "./editor/UnsavedDialog.svelte";
   import type { PropertyEditor } from "./frontmatter/properties";
+  import type { BlockEditing } from "./editor/blocks";
   import { applyTheme } from "./themes/apply";
   import { refreshRichForTheme } from "./render/renderers";
   import ThemeSwitcher from "./themes/ThemeSwitcher.svelte";
@@ -150,9 +154,61 @@
     return true;
   }
 
+  // Edits in flight, in order: each waits for the one before, and saving
+  // waits for all of them, so an edit committed by Ctrl+S itself is saved.
+  let pendingEdits: Promise<unknown> = Promise.resolve();
+
+  function queueEdit(run: () => Promise<void>): Promise<void> {
+    const next = pendingEdits.then(run, run);
+    pendingEdits = next.catch(() => {});
+    return next;
+  }
+
+  // True while an edit's result is being shown: the reader updates in place.
+  let keepPosition = $state(false);
+
+  /** Shows the result of an edit, undo, or redo without moving the reader. */
+  async function applyEdit(opened: OpenedDocument): Promise<void> {
+    keepPosition = true;
+    try {
+      await applyOpened(opened, reader?.captureAnchor() ?? TOP_ANCHOR);
+    } finally {
+      keepPosition = false;
+    }
+  }
+
+  const blockEditing: BlockEditing = {
+    load: (block) => blockSource(block.source.start, block.source.end),
+    commit: (block, original, text) =>
+      queueEdit(async () => {
+        try {
+          const started = performance.now();
+          await applyEdit(await editBlock(block.source.start, block.source.end, original, text));
+          // DESIGN.md §4 budget: re-render after a single-block edit < 100 ms.
+          void afterPaint().then(() => reportTiming("block_edit", performance.now() - started));
+        } catch (e) {
+          showNotice(`Could not apply the edit: ${String(e)}`);
+        }
+      }),
+  };
+
+  /** Undo (or redo) one edit to the document. */
+  function stepEdits(redo: boolean): Promise<void> {
+    return queueEdit(async () => {
+      try {
+        const opened = await stepHistory(redo);
+        if (opened) await applyEdit(opened);
+        else showNotice(redo ? "Nothing to redo" : "Nothing to undo");
+      } catch (e) {
+        showNotice(`Could not ${redo ? "redo" : "undo"}: ${String(e)}`);
+      }
+    });
+  }
+
   /** Saves the document; false (with a notice) if that failed. */
   async function save(): Promise<boolean> {
     if (!doc) return false;
+    await pendingEdits;
     try {
       await saveDocument();
       dirty = false;
@@ -165,13 +221,14 @@
   }
 
   /** Changes a front matter property (in memory) and shows the result. */
-  async function editProperty(key: string, change: PropertyChange): Promise<void> {
-    try {
-      const opened = await editFrontMatter(key, change);
-      await applyOpened(opened, reader?.captureAnchor() ?? TOP_ANCHOR);
-    } catch (e) {
-      showNotice(`Could not change ${key}: ${String(e)}`);
-    }
+  function editProperty(key: string, change: PropertyChange): Promise<void> {
+    return queueEdit(async () => {
+      try {
+        await applyEdit(await editFrontMatter(key, change));
+      } catch (e) {
+        showNotice(`Could not change ${key}: ${String(e)}`);
+      }
+    });
   }
 
   const propertyEditor = $derived<PropertyEditor | null>(
@@ -517,10 +574,30 @@
     if (switcherOpen || unsavedPrompt) return;
     if (event.ctrlKey && (event.key === "s" || event.key === "S")) {
       event.preventDefault();
-      // Commit a property being typed first: its input commits on blur.
+      // Commit a property or block being edited first: both commit on blur,
+      // and `save` waits for the edit to land.
       (document.activeElement as HTMLElement | null)?.blur();
-      if (dirty) void save();
+      void tick()
+        .then(() => pendingEdits)
+        .then(() => (dirty ? save() : undefined));
       return;
+    }
+    // Document undo/redo, except in text fields and editors, which have
+    // their own undo for what's being typed.
+    const target = event.target as HTMLElement | null;
+    const inEditor = target?.closest("input, textarea, [contenteditable='true'], .cm-editor") != null;
+    if (event.ctrlKey && doc && !inEditor) {
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        void stepEdits(false);
+        return;
+      }
+      if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        void stepEdits(true);
+        return;
+      }
     }
     if (event.ctrlKey && doc && (event.key === "=" || event.key === "+")) {
       event.preventDefault();
@@ -586,6 +663,8 @@
         fillWindow={typography.fillWindow}
         {propertiesOpen}
         {propertyEditor}
+        {blockEditing}
+        {keepPosition}
         onpropertiestoggle={togglePropertiesPanel}
       />
     </main>

@@ -40,6 +40,21 @@ export function editFrontMatter(key: string, change: PropertyChange): Promise<Op
   return invoke<OpenedDocument>("edit_front_matter", { key, change });
 }
 
+/** A block's Markdown source (its `source` range), for the block editor. */
+export function blockSource(start: number, end: number): Promise<string> {
+  return invoke<string>("block_source", { start, end });
+}
+
+/** Replaces a block's source in memory; refused if the document changed since `original` was read. */
+export function editBlock(start: number, end: number, original: string, text: string): Promise<OpenedDocument> {
+  return invoke<OpenedDocument>("edit_block", { start, end, original, text });
+}
+
+/** Undoes (or with `redo`, redoes) one edit; null if there's nothing to do. */
+export function stepHistory(redo: boolean): Promise<OpenedDocument | null> {
+  return invoke<OpenedDocument | null>("step_history", { redo });
+}
+
 /** Saves the window's document atomically. */
 export function saveDocument(): Promise<void> {
   return invoke("save_document");
