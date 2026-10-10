@@ -164,6 +164,7 @@ impl Sessions {
         let Some(text) = stepped else {
             session.undo.clear();
             session.redo.clear();
+            // Rust note: `bail!` returns early with an error, like `raise`.
             anyhow::bail!("the edit history no longer matches the document");
         };
         session.text = text;

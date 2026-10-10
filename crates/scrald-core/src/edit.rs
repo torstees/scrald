@@ -35,6 +35,10 @@ pub fn splice_block(
     original: &str,
     replacement: &str,
 ) -> Result<String, EditError> {
+    // Rust note: `checked_sub` returns `None` instead of wrapping around
+    // below zero, and `ok_or` turns that `None` into an error for `?`.
+    // `text.get(a..b)` is slicing that returns `None` (rather than panicking)
+    // when the range is out of bounds or splits a UTF-8 character.
     let start = range
         .start
         .checked_sub(bom_len)
