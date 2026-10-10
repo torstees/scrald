@@ -15,7 +15,7 @@ use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::AssetRegistry;
-use crate::session::{DiskState, Sessions};
+use crate::session::{DiskState, Sessions, Step};
 use crate::state::{
     DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore, TypographyDefaults,
 };
@@ -260,6 +260,73 @@ pub async fn edit_front_matter(
     let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
     finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+}
+
+/// The Markdown source of a block, for the block editor (DESIGN.md §9.1).
+/// `start` and `end` are the block's `source` range.
+#[tauri::command]
+pub fn block_source(
+    window: tauri::WebviewWindow,
+    sessions: tauri::State<'_, Sessions>,
+    start: usize,
+    end: usize,
+) -> Result<String, CommandError> {
+    Ok(sessions
+        .source(window.label(), start, end)
+        .context("the block's range is outside the document")?)
+}
+
+/// Replaces a block's source (in memory; the file changes on save) and
+/// returns the re-parsed document. `original` is the source the editor
+/// started from: if the document changed meanwhile, nothing is changed.
+// Most arguments are app state that Tauri injects; the frontend passes four.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn edit_block(
+    window: tauri::WebviewWindow,
+    registry: tauri::State<'_, AssetRegistry>,
+    store: tauri::State<'_, StateStore>,
+    themes: tauri::State<'_, ThemeService>,
+    sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
+    start: usize,
+    end: usize,
+    original: String,
+    text: String,
+) -> Result<OpenedDocument, CommandError> {
+    let bom_len = sessions.bom_len(window.label());
+    let range = scrald_core::SourceRange::new(start, end);
+    let (path, bytes) = sessions.edit(window.label(), |current| {
+        scrald_core::edit::splice_block(current, range, bom_len, &original, &text)
+    })?;
+    let memory = store.record_open(&path).unwrap_or_default();
+    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let dirty = sessions.is_dirty(window.label());
+    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+}
+
+/// Undoes the last edit (block, properties) in the window's document, or
+/// with `redo` redoes the last undone one. `null` if there's nothing to do.
+#[tauri::command]
+pub async fn step_history(
+    window: tauri::WebviewWindow,
+    registry: tauri::State<'_, AssetRegistry>,
+    store: tauri::State<'_, StateStore>,
+    themes: tauri::State<'_, ThemeService>,
+    sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
+    redo: bool,
+) -> Result<Option<OpenedDocument>, CommandError> {
+    let step = if redo { Step::Redo } else { Step::Undo };
+    let Some((path, bytes)) = sessions.step(window.label(), step)? else {
+        return Ok(None);
+    };
+    let memory = store.record_open(&path).unwrap_or_default();
+    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let dirty = sessions.is_dirty(window.label());
+    Ok(Some(finish_open(
+        &window, &registry, &store, &themes, doc, memory, dirty,
+    )?))
 }
 
 /// Saves the window's document to disk (atomically, keeping its BOM and

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::Context;
+use scrald_core::edit::TextDiff;
 use serde::Serialize;
 
 /// One window's document.
@@ -23,6 +24,32 @@ struct Session {
     /// Hash of the file's bytes as last read or written, to tell our own
     /// saves (and touches that change nothing) from real external edits.
     disk_hash: u64,
+    /// Changes that can be undone, most recent last, and changes undone
+    /// that can be redone. Each is a small diff, not a copy of the text.
+    undo: Vec<TextDiff>,
+    redo: Vec<TextDiff>,
+}
+
+/// How many changes undo remembers.
+const UNDO_LIMIT: usize = 500;
+
+impl Session {
+    fn bytes(&self) -> Vec<u8> {
+        scrald_core::save::encode(&self.text, self.has_bom)
+    }
+
+    /// Unsaved means different from the file as last read or saved, so
+    /// undoing back to the saved text clears it.
+    fn update_dirty(&mut self) {
+        self.dirty = hash_bytes(&self.bytes()) != self.disk_hash;
+    }
+}
+
+/// Which way to step through the edit history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    Undo,
+    Redo,
 }
 
 /// How the file on disk compares with what Scrald last read or saved.
@@ -69,6 +96,8 @@ impl Sessions {
                 has_bom: decoded.has_bom,
                 dirty: false,
                 disk_hash: hash_bytes(&bytes),
+                undo: Vec::new(),
+                redo: Vec::new(),
             },
         );
         Ok(bytes)
@@ -103,13 +132,65 @@ impl Sessions {
             .context("no document is open in this window")?;
         let edited = edit(&session.text)?;
         if edited != session.text {
+            session.undo.push(TextDiff::between(&session.text, &edited));
+            if session.undo.len() > UNDO_LIMIT {
+                session.undo.remove(0);
+            }
+            session.redo.clear();
             session.text = edited;
-            session.dirty = true;
+            session.update_dirty();
         }
-        Ok((
-            session.path.clone(),
-            scrald_core::save::encode(&session.text, session.has_bom),
-        ))
+        Ok((session.path.clone(), session.bytes()))
+    }
+
+    /// Undoes or redoes one change. `None` if there's nothing to step to.
+    pub fn step(&self, window: &str, step: Step) -> anyhow::Result<Option<(PathBuf, Vec<u8>)>> {
+        let mut sessions = self.lock();
+        let session = sessions
+            .get_mut(window)
+            .context("no document is open in this window")?;
+        let popped = match step {
+            Step::Undo => session.undo.pop(),
+            Step::Redo => session.redo.pop(),
+        };
+        let Some(diff) = popped else {
+            return Ok(None);
+        };
+        let stepped = match step {
+            Step::Undo => diff.revert(&session.text),
+            Step::Redo => diff.apply(&session.text),
+        };
+        // Diffs always fit: every change to the text goes through `edit`.
+        let Some(text) = stepped else {
+            session.undo.clear();
+            session.redo.clear();
+            anyhow::bail!("the edit history no longer matches the document");
+        };
+        session.text = text;
+        match step {
+            Step::Undo => session.redo.push(diff),
+            Step::Redo => session.undo.push(diff),
+        }
+        session.update_dirty();
+        Ok(Some((session.path.clone(), session.bytes())))
+    }
+
+    /// The text in a block's range (original-file offsets, BOM counted).
+    pub fn source(&self, window: &str, start: usize, end: usize) -> Option<String> {
+        let sessions = self.lock();
+        let session = sessions.get(window)?;
+        let bom = usize::from(session.has_bom) * 3;
+        session
+            .text
+            .get(start.checked_sub(bom)?..end.checked_sub(bom)?)
+            .map(str::to_string)
+    }
+
+    /// 3 if the document has a BOM, else 0: block ranges count it.
+    pub fn bom_len(&self, window: &str) -> usize {
+        self.lock()
+            .get(window)
+            .map_or(0, |s| usize::from(s.has_bom) * 3)
     }
 
     /// Writes the document to disk atomically and marks it saved.
@@ -118,7 +199,7 @@ impl Sessions {
         let session = sessions
             .get_mut(window)
             .context("no document is open in this window")?;
-        let bytes = scrald_core::save::encode(&session.text, session.has_bom);
+        let bytes = session.bytes();
         scrald_core::save::write_atomic(&session.path, &bytes)
             .with_context(|| format!("could not save {}", session.path.display()))?;
         session.disk_hash = hash_bytes(&bytes);
@@ -188,6 +269,42 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"\xEF\xBB\xBFHELLO\r\n");
         // Our own save doesn't count as an external change.
         assert_eq!(sessions.disk_state("main"), DiskState::Unchanged);
+    }
+
+    #[test]
+    fn undo_and_redo_step_through_changes() {
+        let path = temp_file("undo.md", b"one");
+        let sessions = Sessions::default();
+        sessions.open("w", &path).unwrap();
+        let append = |s: &str| -> Result<String, std::io::Error> { Ok(format!("{s} two")) };
+        sessions.edit("w", append).unwrap();
+        sessions.edit("w", upper).unwrap();
+        assert_eq!(sessions.current("w").unwrap().1, b"ONE TWO");
+
+        let (_, bytes) = sessions.step("w", Step::Undo).unwrap().unwrap();
+        assert_eq!(bytes, b"one two");
+        let (_, bytes) = sessions.step("w", Step::Undo).unwrap().unwrap();
+        assert_eq!(bytes, b"one");
+        // Back at the text on disk: not unsaved any more.
+        assert!(!sessions.is_dirty("w"));
+        assert!(sessions.step("w", Step::Undo).unwrap().is_none());
+
+        let (_, bytes) = sessions.step("w", Step::Redo).unwrap().unwrap();
+        assert_eq!(bytes, b"one two");
+        assert!(sessions.is_dirty("w"));
+        // A new edit clears what could be redone.
+        sessions.edit("w", upper).unwrap();
+        assert!(sessions.step("w", Step::Redo).unwrap().is_none());
+    }
+
+    #[test]
+    fn block_source_counts_the_bom() {
+        let path = temp_file("source.md", b"\xEF\xBB\xBF# Hi\n\nText.\n");
+        let sessions = Sessions::default();
+        sessions.open("w", &path).unwrap();
+        // "Text." starts at byte 9 of the file (3 BOM + 6).
+        assert_eq!(sessions.source("w", 9, 14).as_deref(), Some("Text."));
+        assert_eq!(sessions.bom_len("w"), 3);
     }
 
     #[test]

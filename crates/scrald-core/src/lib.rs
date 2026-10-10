@@ -6,6 +6,7 @@
 pub mod assets;
 pub mod config;
 pub mod document;
+pub mod edit;
 pub mod flavor;
 pub mod frontmatter;
 pub mod generate;

@@ -103,6 +103,32 @@ fn check_blocks_reparse(name: &str, bytes: &[u8], doc: &DocumentModel) {
     }
 }
 
+/// A no-op edit of any block (its own source spliced back in, as a block
+/// editor would after opening and closing it unchanged) must reproduce the
+/// document byte for byte (DESIGN.md §14).
+fn check_no_op_edits(name: &str, bytes: &[u8], doc: &DocumentModel) {
+    let decoded = scrald_core::source::decode(bytes).expect("fixture is UTF-8");
+    let bom_len = usize::from(decoded.has_bom) * 3;
+    for block in &doc.blocks {
+        let original =
+            std::str::from_utf8(&bytes[block.source.as_range()]).expect("block is UTF-8");
+        let edited = scrald_core::edit::splice_block(
+            &decoded.text,
+            block.source,
+            bom_len,
+            original,
+            original,
+        )
+        .expect("no-op edit applies");
+        let rebuilt = scrald_core::save::encode(&edited, decoded.has_bom);
+        assert_eq!(
+            rebuilt, bytes,
+            "{name}: no-op edit of block {} changed the file",
+            block.id
+        );
+    }
+}
+
 #[test]
 fn fixtures_tile_and_round_trip() {
     for path in fixture_paths() {
@@ -112,6 +138,7 @@ fn fixtures_tile_and_round_trip() {
         let rebuilt = check_tiling(&name, &bytes, &doc);
         assert_eq!(rebuilt, bytes, "{name}: reconstruction differs");
         check_blocks_reparse(&name, &bytes, &doc);
+        check_no_op_edits(&name, &bytes, &doc);
     }
 }
 
@@ -133,4 +160,5 @@ fn generated_document_tiles_with_crlf_and_bom() {
     let rebuilt = check_tiling("generated-crlf", &bytes, &doc);
     assert_eq!(rebuilt, bytes);
     check_blocks_reparse("generated-crlf", &bytes, &doc);
+    check_no_op_edits("generated-crlf", &bytes, &doc);
 }
