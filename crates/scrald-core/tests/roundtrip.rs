@@ -17,6 +17,8 @@ fn fixture_paths() -> Vec<PathBuf> {
         .filter(|p| p.extension().is_some_and(|e| e == "md"))
         .collect();
     paths.sort();
+    // The Obsidian vault note, parsed in its vault.
+    paths.push(dir.with_file_name("vault").join("Saga.md"));
     paths
 }
 
@@ -24,6 +26,9 @@ fn fixture_paths() -> Vec<PathBuf> {
 /// blank lines, or link reference definitions, which comrak keeps out of the
 /// AST.
 fn is_invisible_gap(gap: &str) -> bool {
+    // Obsidian `%%comments%%` are hidden, so a comment-only paragraph leaves
+    // a gap with no block.
+    let gap = scrald_core::obsidian::blank_comments(gap);
     gap.lines().all(|line| {
         let t = line.trim();
         t.is_empty() || (t.starts_with('[') && t.contains("]:") && !t.starts_with("[^"))

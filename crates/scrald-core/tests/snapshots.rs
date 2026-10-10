@@ -69,3 +69,37 @@ fn fixtures() {
         insta::assert_snapshot!(describe(&doc));
     });
 }
+
+/// A small Obsidian vault: wikilinks, embeds, callouts, tags, and block
+/// references resolved against real files. Absolute paths are replaced with
+/// `<vault>` so the snapshot is the same on every machine.
+#[test]
+fn obsidian_vault() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("vault");
+    let path = root.join("Saga.md");
+    let bytes = std::fs::read(&path).expect("vault note should be readable");
+    let doc = parse_document(path, &bytes).expect("vault note should parse");
+    let url_root = scrald_core::obsidian::file_url(&root, None);
+    let text = describe(&doc)
+        .replace(&url_root, "file:///<vault>")
+        .replace(&root.display().to_string(), "<vault>")
+        .replace('\\', "/");
+    let assets: Vec<String> = doc
+        .images
+        .iter()
+        .map(|a| {
+            let rel = a.path.strip_prefix(&root).unwrap_or(&a.path);
+            format!(
+                "asset {}: {} {:?}x{:?}",
+                a.id,
+                rel.display(),
+                a.width,
+                a.height
+            )
+            .replace('\\', "/")
+        })
+        .collect();
+    insta::assert_snapshot!(format!("{}\n{text}", assets.join("\n")));
+}

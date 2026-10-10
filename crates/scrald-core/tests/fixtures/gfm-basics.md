@@ -34,3 +34,6 @@ Hard line break here\
 and after.
 
 ![Alt text](images/fjord.png "The fjord")
+
+> [!WARNING]
+> A GitHub alert.

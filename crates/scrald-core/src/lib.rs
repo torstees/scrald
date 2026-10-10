@@ -11,6 +11,7 @@ pub mod frontmatter;
 pub mod generate;
 pub mod highlight;
 pub mod links;
+pub mod obsidian;
 pub mod render;
 pub mod source;
 pub mod theme;

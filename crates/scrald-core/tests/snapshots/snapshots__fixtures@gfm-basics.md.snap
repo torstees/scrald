@@ -3,12 +3,12 @@ source: crates/scrald-core/tests/snapshots.rs
 expression: describe(&doc)
 input_file: crates/scrald-core/tests/fixtures/gfm-basics.md
 ---
-bom: false  line_ending: Lf  words: 50  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true, has_abc: false }
+bom: false  line_ending: Lf  words: 53  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true, has_abc: false }
 flavor: Gfm (Default)
 toc: GFM Basics #gfm-basics (block 0)
 toc:   Setext Heading #setext-heading (block 2)
 section 0: heading=Some(0) level=1 blocks=0..2
-section 1: heading=Some(2) level=2 blocks=2..12
+section 1: heading=Some(2) level=2 blocks=2..13
 
 --- block 0 Heading { level: 1 } @0..12 section=0
 <h1 id="user-content-gfm-basics">GFM Basics</h1>
@@ -70,3 +70,9 @@ and after.</p>
 <p><span class="sk-image-placeholder sk-image-missing" title="Image not found: images/fjord.png
 Tried:
 images/fjord.png">Alt text</span></p>
+
+--- block 12 Other @539..569 section=1
+<div class="markdown-alert markdown-alert-warning">
+<p class="markdown-alert-title">Warning</p>
+<p>A GitHub alert.</p>
+</div>

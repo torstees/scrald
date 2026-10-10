@@ -61,8 +61,8 @@ pub enum FlavorSource {
 /// - `[[wikilinks]]` and `==highlight==` are Obsidian syntax.
 /// - `^[inline footnotes]`, `^superscript^`, definition lists, and smart
 ///   punctuation are Pandoc defaults.
-/// - `> [!NOTE]` alerts are GFM and Obsidian (Obsidian callout extras are
-///   a transform, M4).
+/// - `> [!NOTE]` alerts: comrak's in GFM; in Obsidian, Scrald's callout
+///   transform (`obsidian.rs`), which adds Obsidian's types, folding, titles.
 pub fn comrak_options(flavor: Flavor) -> comrak::Options<'static> {
     let mut options = comrak::Options::default();
     let ext = &mut options.extension;
@@ -79,7 +79,8 @@ pub fn comrak_options(flavor: Flavor) -> comrak::Options<'static> {
         }
         Flavor::Obsidian => {
             ext.autolink = true;
-            ext.alerts = true;
+            // No comrak alerts: Scrald's callout transform handles `[!NOTE]`
+            // and every Obsidian type, with folding and custom titles.
             // [[Note|shown text]]: Obsidian puts the target before the pipe.
             ext.wikilinks_title_after_pipe = true;
             ext.highlight = true;

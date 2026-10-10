@@ -10,4 +10,4 @@ A data image: ![dot](data:image/gif;base64,R0lGODlhAQABAAAAACw=)
 
 An unsupported scheme: ![x](javascript:alert(1))
 
-Raw HTML images never load files: <img src="secret.png"> <img src="https://example.com/t.png">
+Raw HTML images resolve like Markdown images: <img src="secret.png"> <img src="https://example.com/t.png">
