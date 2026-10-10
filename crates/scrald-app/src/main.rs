@@ -7,6 +7,7 @@ mod protocol;
 mod session;
 mod state;
 mod themes;
+mod vaults;
 mod watcher;
 mod window;
 
@@ -37,6 +38,7 @@ fn main() -> anyhow::Result<()> {
         .manage(protocol::AssetRegistry::default())
         .manage(watcher::DocumentWatchers::default())
         .manage(session::Sessions::default())
+        .manage(vaults::VaultCache::default())
         .plugin(tauri_plugin_opener::init())
         // Used only from Rust (the assets folder picker); the frontend has
         // no dialog permission.

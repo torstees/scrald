@@ -74,6 +74,9 @@ pub struct ParseOptions {
     /// The flavor the user chose for this document, overriding front
     /// matter, folder config, and detection (DESIGN.md §5.2).
     pub flavor: Option<Flavor>,
+    /// A prebuilt vault index (the app caches one per vault), used when it
+    /// covers this document; otherwise one is built during the parse.
+    pub vault: Option<Arc<VaultIndex>>,
 }
 
 /// One top-level Markdown block, rendered on its own.
@@ -226,7 +229,10 @@ pub fn parse_document_with(
         AssetContext::for_document(&path, assets_dir, parse_options.allow_remote_images);
     // The vault index is only built when something could use it.
     let vault = (obsidian && (body.contains("[[") || body.contains("![") || body.contains("<img")))
-        .then(|| Arc::new(VaultIndex::for_document(&path)));
+        .then(|| match &parse_options.vault {
+            Some(cached) if cached.serves(&path) => Arc::clone(cached),
+            _ => Arc::new(VaultIndex::for_document(&path)),
+        });
     asset_ctx.vault = vault.clone();
     let mut images = ImageCollector::default();
 
