@@ -97,6 +97,8 @@ pub struct ThemeLayout {
 // Rust note: an `async fn` command runs on Tauri's async runtime instead of
 // the main thread. `spawn_blocking` then moves the CPU-bound parse onto a
 // thread pool, and `.await` waits for it without blocking anything.
+// Most arguments are app state that Tauri injects; the frontend passes one.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn open_document(
     window: tauri::WebviewWindow,
