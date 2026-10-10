@@ -86,6 +86,15 @@ export function setDocumentFlavor(path: string, flavor: Flavor | null): Promise<
   return invoke("set_document_flavor", { path, flavor });
 }
 
+/** Whether the properties panel starts open (global preference). */
+export function propertiesOpen(): Promise<boolean> {
+  return invoke<boolean>("properties_open");
+}
+
+export function setPropertiesOpen(open: boolean): Promise<void> {
+  return invoke("set_properties_open", { open });
+}
+
 export function typographyDefaults(): Promise<TypographyDefaults> {
   return invoke<TypographyDefaults>("typography_defaults");
 }

@@ -17,6 +17,7 @@ pub mod render;
 pub mod source;
 pub mod theme;
 pub mod toc;
+pub mod yaml_edit;
 
 use std::path::{Path, PathBuf};
 

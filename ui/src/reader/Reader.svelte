@@ -8,6 +8,7 @@
   import { assetUrl } from "../lib/commands";
   import { contentId } from "../lib/ids";
   import { richContent } from "../render/renderers";
+  import PropertiesPanel from "../frontmatter/PropertiesPanel.svelte";
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
   import { batchByBlocks, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
   import { blockIndexAtOffset, firstBoxBelow, fractionInto, TOP_ANCHOR, type ScrollAnchor } from "./anchor";
@@ -31,6 +32,9 @@
     fontSize?: number | null;
     /** Ignore the measure and let text run the full width. */
     fillWindow?: boolean;
+    /** Whether the properties panel is open. */
+    propertiesOpen?: boolean;
+    onpropertiestoggle?: (open: boolean) => void;
   }
 
   let {
@@ -44,6 +48,8 @@
     onscrollsettled,
     fontSize = null,
     fillWindow = false,
+    propertiesOpen = true,
+    onpropertiestoggle,
   }: Props = $props();
 
   /** How long scrolling must pause before the position counts as settled. */
@@ -406,6 +412,14 @@
   role="document"
 >
   <article bind:this={column} class="sk-column" class:fill={fillWindow} style:font-size={fontSize === null ? null : `${fontSize}px`}>
+    {#if doc.frontMatter}
+      <PropertiesPanel
+        frontMatter={doc.frontMatter}
+        open={propertiesOpen}
+        ontoggle={(open) => onpropertiestoggle?.(open)}
+        onlink={(href) => onlink?.(href)}
+      />
+    {/if}
     {#each doc.sections as section, i (section.id)}
       {#if mounted[i]}
         <section

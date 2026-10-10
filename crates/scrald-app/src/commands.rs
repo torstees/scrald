@@ -252,6 +252,20 @@ pub fn set_document_flavor(
 }
 
 /// Global typography settings ("Make this the default" and "fill window").
+/// Whether the properties panel starts open (a global preference).
+#[tauri::command]
+pub fn properties_open(store: tauri::State<'_, StateStore>) -> Result<bool, CommandError> {
+    Ok(store.properties_open()?)
+}
+
+#[tauri::command]
+pub fn set_properties_open(
+    store: tauri::State<'_, StateStore>,
+    open: bool,
+) -> Result<(), CommandError> {
+    Ok(store.set_properties_open(open)?)
+}
+
 #[tauri::command]
 pub fn typography_defaults(
     store: tauri::State<'_, StateStore>,

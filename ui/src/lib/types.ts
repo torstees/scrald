@@ -88,7 +88,32 @@ export interface FrontMatter {
   flavor: string | null;
   /** Unrecognized keys, in file order. Values are arbitrary YAML data. */
   extra: Record<string, unknown>;
+  /** The key each property was read from (`author` or `authors`, ...). */
+  keys: PropertyKeys;
+  /** Every top-level key in file order, and whether it can be edited. */
+  fields: FieldInfo[];
   error: string | null;
+}
+
+/** Mirrors `PropertyKeys`. */
+export interface PropertyKeys {
+  title: string | null;
+  authors: string | null;
+  summary: string | null;
+  tags: string | null;
+  notes: string | null;
+  source: string | null;
+  assets: string | null;
+  theme: string | null;
+  flavor: string | null;
+}
+
+/** Mirrors `FieldInfo` (crates/scrald-core/src/yaml_edit.rs). */
+export interface FieldInfo {
+  key: string;
+  editable: boolean;
+  /** Why it can't be edited in the panel, when it can't. */
+  reason: string | null;
 }
 
 /** Mirrors `ImageAsset`: a local image file the document uses. */

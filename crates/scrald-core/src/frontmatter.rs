@@ -1,10 +1,11 @@
 //! YAML front matter: finding it, and reading it into typed properties
-//! (DESIGN.md §8.1). Editing it comes later (§8.3) and never re-serializes.
+//! (DESIGN.md §8.1). Editing is in `yaml_edit.rs` (§8.3) and never re-serializes.
 
 use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::source::SourceRange;
+use crate::yaml_edit::{FieldInfo, field_info};
 
 /// Where the front matter block sits in a document's text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,8 +73,29 @@ pub struct FrontMatter {
     pub flavor: Option<String>,
     /// Every key not consumed above, in file order, so nothing is hidden.
     pub extra: Map<String, Value>,
+    /// The key each property above was read from (`author` or `authors`,
+    /// say), so an edit changes that key rather than adding another.
+    pub keys: PropertyKeys,
+    /// Every top-level key, in file order, and whether the properties panel
+    /// can edit it (DESIGN.md §8.3).
+    pub fields: Vec<FieldInfo>,
     /// Set when the YAML couldn't be read. The document still opens.
     pub error: Option<String>,
+}
+
+/// For each recognized property, the key it was read from.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyKeys {
+    pub title: Option<String>,
+    pub authors: Option<String>,
+    pub summary: Option<String>,
+    pub tags: Option<String>,
+    pub notes: Option<String>,
+    pub source: Option<String>,
+    pub assets: Option<String>,
+    pub theme: Option<String>,
+    pub flavor: Option<String>,
 }
 
 /// Recognized keys and their aliases, in priority order. When several
@@ -93,6 +115,7 @@ const FLAVOR: &[&str] = &["scrald-flavor"];
 pub fn parse(yaml: &str, range: SourceRange) -> FrontMatter {
     let mut fm = FrontMatter {
         range,
+        fields: field_info(yaml),
         ..FrontMatter::default()
     };
 
@@ -110,23 +133,35 @@ pub fn parse(yaml: &str, range: SourceRange) -> FrontMatter {
         }
         Err(e) => {
             fm.error = Some(e.to_string());
+            // YAML that doesn't parse can't be edited safely anywhere.
+            for field in &mut fm.fields {
+                field.editable = false;
+                field.reason = Some("the front matter has a YAML error".to_string());
+            }
             return fm;
         }
     };
 
-    fm.title = take_string(&mut map, TITLE);
-    fm.authors = take_list(&mut map, AUTHORS);
-    fm.summary = take_string(&mut map, SUMMARY);
-    fm.tags = take_list(&mut map, TAGS)
+    // Rust note: `.unzip()` splits an iterator of pairs into two values:
+    // here each `Option<(value, key)>` becomes the value and the key's name.
+    (fm.title, fm.keys.title) = take_string(&mut map, TITLE).unzip();
+    let (authors, authors_key) = take_list(&mut map, AUTHORS).unzip();
+    fm.authors = authors.unwrap_or_default();
+    fm.keys.authors = authors_key;
+    (fm.summary, fm.keys.summary) = take_string(&mut map, SUMMARY).unzip();
+    let (tags, tags_key) = take_list(&mut map, TAGS).unzip();
+    fm.tags = tags
+        .unwrap_or_default()
         .into_iter()
         .map(|t| t.trim_start_matches('#').to_string())
         .filter(|t| !t.is_empty())
         .collect();
-    fm.notes = take_string(&mut map, NOTES);
-    fm.source = take_string(&mut map, SOURCE);
-    fm.assets = take_string(&mut map, ASSETS);
-    fm.theme = take_string(&mut map, THEME);
-    fm.flavor = take_string(&mut map, FLAVOR);
+    fm.keys.tags = tags_key;
+    (fm.notes, fm.keys.notes) = take_string(&mut map, NOTES).unzip();
+    (fm.source, fm.keys.source) = take_string(&mut map, SOURCE).unzip();
+    (fm.assets, fm.keys.assets) = take_string(&mut map, ASSETS).unzip();
+    (fm.theme, fm.keys.theme) = take_string(&mut map, THEME).unzip();
+    (fm.flavor, fm.keys.flavor) = take_string(&mut map, FLAVOR).unzip();
 
     // Lenient read of the nested form `scrald: { theme, flavor }`. The flat
     // keys win, and the `scrald` map itself stays in `extra` untouched.
@@ -143,15 +178,16 @@ pub fn parse(yaml: &str, range: SourceRange) -> FrontMatter {
     fm
 }
 
-/// Removes and returns the first alias holding a scalar. A value of the wrong
-/// shape (say, a map under `title`) is left in place so it shows in `extra`.
+/// Removes and returns the first alias holding a scalar, and that alias. A
+/// value of the wrong shape (say, a map under `title`) is left in place so
+/// it shows in `extra`.
 // Rust note: `&mut Map` is an exclusive (mutable) borrow: we can change the
 // caller's map, and nothing else can touch it while we hold the borrow.
-fn take_string(map: &mut Map<String, Value>, keys: &[&str]) -> Option<String> {
+fn take_string(map: &mut Map<String, Value>, keys: &[&str]) -> Option<(String, String)> {
     for key in keys {
         if let Some(text) = map.get(*key).and_then(scalar_to_string) {
             map.shift_remove(*key);
-            return Some(text);
+            return Some((text, key.to_string()));
         }
     }
     None
@@ -159,7 +195,7 @@ fn take_string(map: &mut Map<String, Value>, keys: &[&str]) -> Option<String> {
 
 /// Like `take_string`, but accepts a list of scalars or a single scalar. A
 /// single string is split on commas, so `tags: a, b` gives two tags.
-fn take_list(map: &mut Map<String, Value>, keys: &[&str]) -> Vec<String> {
+fn take_list(map: &mut Map<String, Value>, keys: &[&str]) -> Option<(Vec<String>, String)> {
     for key in keys {
         let items = match map.get(*key) {
             Some(Value::Array(values)) if values.iter().all(is_scalar) => values
@@ -177,9 +213,9 @@ fn take_list(map: &mut Map<String, Value>, keys: &[&str]) -> Vec<String> {
             None => continue,
         };
         map.shift_remove(*key);
-        return items;
+        return Some((items, key.to_string()));
     }
-    Vec::new()
+    None
 }
 
 fn is_scalar(value: &Value) -> bool {

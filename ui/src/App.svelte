@@ -17,6 +17,8 @@
     duplicateTheme,
     userThemeFolder,
     onThemesChanged,
+    propertiesOpen as propertiesOpenSetting,
+    setPropertiesOpen,
   } from "./lib/commands";
   import { afterPaint } from "./lib/idle";
   import { launchMessage } from "./lib/launch";
@@ -90,7 +92,18 @@
   });
   const sectionTitle = $derived(currentEntry === null ? null : (doc?.toc[currentEntry]?.text ?? null));
 
+  // Whether the properties panel is open: a global preference (DESIGN.md §8.2).
+  let propertiesOpen = $state(true);
+
+  function togglePropertiesPanel(open: boolean): void {
+    propertiesOpen = open;
+    void setPropertiesOpen(open).catch(() => {});
+  }
+
   onMount(() => {
+    void propertiesOpenSetting()
+      .then((open) => (propertiesOpen = open))
+      .catch(() => {});
     void typography.loadDefaults().then(start);
     // Live reload (DESIGN.md §9.3). There is no editing yet, so a change on
     // disk always reloads; M6 adds the "unsaved changes" banner.
@@ -419,6 +432,8 @@
         onscrollsettled={rememberPosition}
         fontSize={typography.fontSize}
         fillWindow={typography.fillWindow}
+        {propertiesOpen}
+        onpropertiestoggle={togglePropertiesPanel}
       />
     </main>
     <StatusBar
