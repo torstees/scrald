@@ -20,6 +20,7 @@ use crate::state::{
     DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore, TypographyDefaults,
 };
 use crate::themes::ThemeService;
+use crate::vaults::VaultCache;
 use crate::watcher::DocumentWatchers;
 use crate::window::WindowTracker;
 
@@ -108,6 +109,7 @@ pub async fn open_document(
     tracker: tauri::State<'_, WindowTracker>,
     themes: tauri::State<'_, ThemeService>,
     sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
     path: PathBuf,
 ) -> Result<OpenedDocument, CommandError> {
     let started = Instant::now();
@@ -123,7 +125,7 @@ pub async fn open_document(
 
     // The window's session keeps the text (and later, unsaved edits).
     let bytes = sessions.open(window.label(), &path)?;
-    let doc = parse_in_background(path.clone(), bytes, &memory).await?;
+    let doc = parse_in_background(path.clone(), bytes, &memory, &vaults).await?;
     tracing::info!(
         path = %path.display(),
         blocks = doc.blocks.len(),
@@ -147,16 +149,21 @@ async fn parse_in_background(
     path: PathBuf,
     bytes: Vec<u8>,
     memory: &DocumentMemory,
+    vaults: &VaultCache,
 ) -> anyhow::Result<DocumentModel> {
-    let options = ParseOptions {
-        allow_remote_images: memory.remote_images,
-        flavor: memory.flavor,
-    };
+    let allow_remote_images = memory.remote_images;
+    let flavor = memory.flavor;
+    let vaults = vaults.clone();
     // Rust note: `move` makes the closure take ownership of `path`, `bytes`,
-    // and `options`, so it can run on another thread after this function's
-    // locals are gone. The double `?` unwraps two layers: the thread's
+    // and the cache handle, so it can run on another thread after this
+    // function's locals are gone. The double `?` unwraps two layers: the thread's
     // result, then the parse's.
     let doc = tauri::async_runtime::spawn_blocking(move || {
+        let options = ParseOptions {
+            allow_remote_images,
+            flavor,
+            vault: vaults.for_document(&path),
+        };
         scrald_core::parse_document_with(path, &bytes, &options)
     })
     .await
@@ -212,12 +219,13 @@ pub async fn reparse_document(
     store: tauri::State<'_, StateStore>,
     themes: tauri::State<'_, ThemeService>,
     sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
 ) -> Result<OpenedDocument, CommandError> {
     let (path, bytes) = sessions
         .current(window.label())
         .context("no document is open in this window")?;
     let memory = store.record_open(&path).unwrap_or_default();
-    let doc = parse_in_background(path, bytes, &memory).await?;
+    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
     finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
 }
@@ -236,6 +244,7 @@ pub async fn edit_front_matter(
     store: tauri::State<'_, StateStore>,
     themes: tauri::State<'_, ThemeService>,
     sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
     key: String,
     change: Change,
 ) -> Result<OpenedDocument, CommandError> {
@@ -248,7 +257,7 @@ pub async fn edit_front_matter(
         _ => {}
     }
     let memory = store.record_open(&path).unwrap_or_default();
-    let doc = parse_in_background(path, bytes, &memory).await?;
+    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
     finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
 }

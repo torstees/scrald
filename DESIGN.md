@@ -275,7 +275,7 @@ As implemented for the Pandoc profile (`scrald-core/src/pandoc.rs`):
 For a relative image path, Scrald tries in order:
 
 1. The document's asset directory from front matter (`assets:`), resolved relative to the document.
-2. For Obsidian profile: the vault's attachment folder if configured in `.obsidian/app.json`, then a vault-wide filename search. The vault index is currently built once per parse, only when the document contains a link, embed, or image; caching it per vault is a follow-up.
+2. For Obsidian profile: the vault's attachment folder if configured in `.obsidian/app.json`, then a vault-wide filename search. The vault index is built only when the document contains a link, embed, or image. The app caches one index per vault (`crates/scrald-app/src/vaults.rs`) and reuses it for 30 seconds, so opening, editing, and re-parsing notes don't rescan the vault each time, and files added to the vault are picked up within half a minute without watching every folder. (A warm scan of a 10,000-file vault takes about 9 ms; the cache matters most for cold or network drives and on every property edit.)
 3. The document's own directory.
 
 The same resolution applies to `src` on raw HTML `<img>` tags, which become `data-asset` references like Markdown images.

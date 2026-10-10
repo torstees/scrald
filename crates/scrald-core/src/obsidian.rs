@@ -224,6 +224,8 @@ pub struct VaultIndex {
     by_name: HashMap<String, Vec<usize>>,
     /// The vault's configured attachment folder, relative to `root`.
     attachments: Option<PathBuf>,
+    /// Whether subfolders were scanned (a vault) or only `root` itself.
+    recursive: bool,
 }
 
 /// More than this many files and the index stops growing: enough for large
@@ -234,17 +236,31 @@ impl VaultIndex {
     /// The index for a document: its vault (nearest folder with `.obsidian`,
     /// scanned recursively), or just its own folder if it isn't in a vault.
     pub fn for_document(doc_path: &Path) -> VaultIndex {
+        let (root, recursive) = Self::scope_for(doc_path);
+        VaultIndex::build(&root, recursive)
+    }
+
+    /// The folder a document's index covers, and whether it's a vault
+    /// (scanned recursively) rather than just the document's folder.
+    pub fn scope_for(doc_path: &Path) -> (PathBuf, bool) {
         let doc_dir = doc_path.parent().unwrap_or(Path::new("")).to_path_buf();
         match doc_dir.ancestors().find(|a| a.join(".obsidian").is_dir()) {
-            Some(root) => VaultIndex::build(root, true),
-            None => VaultIndex::build(&doc_dir, false),
+            Some(root) => (root.to_path_buf(), true),
+            None => (doc_dir, false),
         }
+    }
+
+    /// Whether this index is the one `for_document(doc_path)` would build,
+    /// so a cached copy can stand in for it.
+    pub fn serves(&self, doc_path: &Path) -> bool {
+        Self::scope_for(doc_path) == (self.root.clone(), self.recursive)
     }
 
     pub fn build(root: &Path, recursive: bool) -> VaultIndex {
         let mut index = VaultIndex {
             root: root.to_path_buf(),
             attachments: read_attachment_folder(root),
+            recursive,
             ..VaultIndex::default()
         };
         let mut pending = vec![PathBuf::new()];
@@ -871,6 +887,15 @@ mod tests {
             vault.resolve_attachment("fjord.png", &from_root),
             Some(root.join("attachments/fjord.png"))
         );
+    }
+
+    #[test]
+    fn an_index_serves_documents_in_its_vault_only() {
+        let root = temp_vault("serves");
+        let vault = VaultIndex::for_document(&root.join("Index.md"));
+        assert!(vault.serves(&root.join("people").join("Sigrid.md")));
+        let outside = std::env::temp_dir().join("scrald-not-a-vault").join("x.md");
+        assert!(!vault.serves(&outside));
     }
 
     #[test]
