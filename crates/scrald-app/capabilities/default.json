@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permissions for the main window. Keep this minimal; add permissions only as features need them.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-destroy"]
 }

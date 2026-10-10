@@ -53,6 +53,9 @@ pub const DEFAULT_THEME: &str = "theme.default";
 /// Setting key for the global typography defaults (DESIGN.md §7.4).
 const TYPOGRAPHY: &str = "typography";
 
+/// Settings key: whether the properties panel starts open (DESIGN.md §8.2).
+const PROPERTIES_OPEN: &str = "properties.open";
+
 /// Zoom is a multiplier on the base font size; outside this range the
 /// reader stops being useful.
 pub const MIN_ZOOM: f64 = 0.5;
@@ -269,6 +272,15 @@ impl StateStore {
             params![document_key(path), flavor.map(Flavor::name)],
         )?;
         Ok(())
+    }
+
+    /// Whether the properties panel starts open. Open unless the user closed it.
+    pub fn properties_open(&self) -> anyhow::Result<bool> {
+        Ok(self.get_setting(PROPERTIES_OPEN)?.unwrap_or(true))
+    }
+
+    pub fn set_properties_open(&self, open: bool) -> anyhow::Result<()> {
+        self.set_setting(PROPERTIES_OPEN, &open)
     }
 
     pub fn typography_defaults(&self) -> anyhow::Result<TypographyDefaults> {
@@ -569,6 +581,14 @@ mod tests {
         );
         store.set_document_flavor(&path, None).unwrap();
         assert_eq!(store.record_open(&path).unwrap().flavor, None);
+    }
+
+    #[test]
+    fn properties_panel_preference() {
+        let store = StateStore::in_memory().unwrap();
+        assert!(store.properties_open().unwrap());
+        store.set_properties_open(false).unwrap();
+        assert!(!store.properties_open().unwrap());
     }
 
     #[test]

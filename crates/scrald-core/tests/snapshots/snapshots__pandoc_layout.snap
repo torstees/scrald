@@ -22,6 +22,29 @@ front_matter: {
   "theme": null,
   "flavor": "pandoc",
   "extra": {},
+  "keys": {
+    "title": "title",
+    "authors": null,
+    "summary": null,
+    "tags": null,
+    "notes": null,
+    "source": null,
+    "assets": null,
+    "theme": null,
+    "flavor": "scrald-flavor"
+  },
+  "fields": [
+    {
+      "key": "title",
+      "editable": true,
+      "reason": null
+    },
+    {
+      "key": "scrald-flavor",
+      "editable": true,
+      "reason": null
+    }
+  ],
   "error": null
 }
 toc: Pandoc layout #top (block 0)

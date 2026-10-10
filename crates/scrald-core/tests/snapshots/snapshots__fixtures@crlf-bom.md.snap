@@ -20,6 +20,24 @@ front_matter: {
   "theme": null,
   "flavor": null,
   "extra": {},
+  "keys": {
+    "title": "title",
+    "authors": null,
+    "summary": null,
+    "tags": null,
+    "notes": null,
+    "source": null,
+    "assets": null,
+    "theme": null,
+    "flavor": null
+  },
+  "fields": [
+    {
+      "key": "title",
+      "editable": true,
+      "reason": null
+    }
+  ],
   "error": null
 }
 toc: Héadings with ünïcödé #héadings-with-ünïcödé (block 0)

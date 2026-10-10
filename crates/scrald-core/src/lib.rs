@@ -14,9 +14,11 @@ pub mod links;
 pub mod obsidian;
 pub mod pandoc;
 pub mod render;
+pub mod save;
 pub mod source;
 pub mod theme;
 pub mod toc;
+pub mod yaml_edit;
 
 use std::path::{Path, PathBuf};
 

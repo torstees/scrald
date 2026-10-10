@@ -8,6 +8,8 @@
   import { assetUrl } from "../lib/commands";
   import { contentId } from "../lib/ids";
   import { richContent } from "../render/renderers";
+  import PropertiesPanel from "../frontmatter/PropertiesPanel.svelte";
+  import type { PropertyEditor } from "../frontmatter/properties";
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
   import { batchByBlocks, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
   import { blockIndexAtOffset, firstBoxBelow, fractionInto, TOP_ANCHOR, type ScrollAnchor } from "./anchor";
@@ -31,6 +33,11 @@
     fontSize?: number | null;
     /** Ignore the measure and let text run the full width. */
     fillWindow?: boolean;
+    /** Whether the properties panel is open. */
+    propertiesOpen?: boolean;
+    /** Makes the properties panel editable. */
+    propertyEditor?: PropertyEditor | null;
+    onpropertiestoggle?: (open: boolean) => void;
   }
 
   let {
@@ -44,6 +51,9 @@
     onscrollsettled,
     fontSize = null,
     fillWindow = false,
+    propertiesOpen = true,
+    propertyEditor = null,
+    onpropertiestoggle,
   }: Props = $props();
 
   /** How long scrolling must pause before the position counts as settled. */
@@ -180,6 +190,14 @@
     if (!mounted[block.section]) {
       mounted[block.section] = true;
       await tick();
+    }
+    // The very top of the first block is the top of the document, with the
+    // properties panel above it in view. (A position inside the panel is
+    // captured as exactly this, since the panel isn't a block.)
+    if (block.id === doc.blocks[0]?.id && anchor.fraction === 0 && offsetY === 0) {
+      scroller.scrollTop = 0;
+      noteScrolled();
+      return;
     }
     const el = scroller.querySelector<HTMLElement>(`[data-block="${block.id}"]`);
     if (!el) return;
@@ -406,6 +424,15 @@
   role="document"
 >
   <article bind:this={column} class="sk-column" class:fill={fillWindow} style:font-size={fontSize === null ? null : `${fontSize}px`}>
+    {#if doc.frontMatter}
+      <PropertiesPanel
+        frontMatter={doc.frontMatter}
+        open={propertiesOpen}
+        ontoggle={(open) => onpropertiestoggle?.(open)}
+        onlink={(href) => onlink?.(href)}
+        editor={propertyEditor}
+      />
+    {/if}
     {#each doc.sections as section, i (section.id)}
       {#if mounted[i]}
         <section

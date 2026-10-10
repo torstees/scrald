@@ -303,6 +303,38 @@ fn push_title(html: &mut String, title: Option<&str>) {
     }
 }
 
+/// `target` relative to the folder `from`, with `/` separators so the front
+/// matter reads the same on every platform: `../images`, `assets`. Returns
+/// `None` when they share no root (another drive on Windows); then the
+/// absolute path is the only option. Both paths should be absolute.
+pub fn relative_path(from: &Path, target: &Path) -> Option<String> {
+    use std::path::Component;
+    let from: Vec<Component<'_>> = from.components().collect();
+    let to: Vec<Component<'_>> = target.components().collect();
+    // Rust note: `zip` pairs up two iterators; `take_while` stops at the
+    // first pair that differs, so this counts the shared leading parts.
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    if common == 0
+        || !matches!(
+            from.first(),
+            Some(Component::Prefix(_) | Component::RootDir)
+        )
+    {
+        return None;
+    }
+    let mut parts: Vec<String> = vec!["..".to_string(); from.len() - common];
+    parts.extend(
+        to[common..]
+            .iter()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned()),
+    );
+    Some(if parts.is_empty() {
+        ".".to_string()
+    } else {
+        parts.join("/")
+    })
+}
+
 /// Replaces images in a document with Scrald's own markup (DESIGN.md §6),
 /// and collects the local files they resolve to: Markdown images, raw HTML
 /// `<img>` tags, and Obsidian image embeds.
@@ -571,6 +603,25 @@ fn find_attribute(tag: &str, name: &str) -> Option<(usize, usize, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relative_paths_use_forward_slashes() {
+        let root = std::env::temp_dir();
+        let doc_dir = root.join("notes").join("novel");
+        assert_eq!(
+            relative_path(&doc_dir, &doc_dir.join("images")),
+            Some("images".to_string())
+        );
+        assert_eq!(
+            relative_path(&doc_dir, &root.join("notes").join("shared").join("pics")),
+            Some("../shared/pics".to_string())
+        );
+        assert_eq!(relative_path(&doc_dir, &doc_dir), Some(".".to_string()));
+        assert_eq!(
+            relative_path(Path::new("relative"), Path::new("relative/x")),
+            None
+        );
+    }
 
     #[test]
     fn image_attributes_replace_the_natural_size() {

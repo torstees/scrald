@@ -34,6 +34,59 @@ front_matter: {
     "custom-key": "kept as-is",
     "created": "2024-01-02"
   },
+  "keys": {
+    "title": "title",
+    "authors": "authors",
+    "summary": "synopsis",
+    "tags": "tags",
+    "notes": null,
+    "source": null,
+    "assets": null,
+    "theme": "scrald-theme",
+    "flavor": null
+  },
+  "fields": [
+    {
+      "key": "title",
+      "editable": true,
+      "reason": null
+    },
+    {
+      "key": "authors",
+      "editable": true,
+      "reason": null
+    },
+    {
+      "key": "synopsis",
+      "editable": true,
+      "reason": null
+    },
+    {
+      "key": "tags",
+      "editable": true,
+      "reason": null
+    },
+    {
+      "key": "scrald",
+      "editable": false,
+      "reason": "it's a nested map"
+    },
+    {
+      "key": "scrald-theme",
+      "editable": true,
+      "reason": null
+    },
+    {
+      "key": "custom-key",
+      "editable": true,
+      "reason": null
+    },
+    {
+      "key": "created",
+      "editable": true,
+      "reason": null
+    }
+  ],
   "error": null
 }
 toc: The Long Winter #the-long-winter (block 0)

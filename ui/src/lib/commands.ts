@@ -8,6 +8,8 @@ import type {
   LaunchInfo,
   LinkTarget,
   OpenedDocument,
+  PropertyChange,
+  DiskState,
   RecentDocument,
   ThemeStyle,
   ThemeSummary,
@@ -26,6 +28,31 @@ export function launchInfo(): Promise<LaunchInfo> {
  */
 export function openDocument(path: string): Promise<OpenedDocument> {
   return invoke<OpenedDocument>("open_document", { path });
+}
+
+/** Parses the window's document again from memory, keeping unsaved edits. */
+export function reparseDocument(): Promise<OpenedDocument> {
+  return invoke<OpenedDocument>("reparse_document");
+}
+
+/** Changes one front matter key in memory; the file changes on save. */
+export function editFrontMatter(key: string, change: PropertyChange): Promise<OpenedDocument> {
+  return invoke<OpenedDocument>("edit_front_matter", { key, change });
+}
+
+/** Saves the window's document atomically. */
+export function saveDocument(): Promise<void> {
+  return invoke("save_document");
+}
+
+/** How the file on disk compares with what this window last read or saved. */
+export function checkDisk(): Promise<DiskState> {
+  return invoke<DiskState>("check_disk");
+}
+
+/** Asks for the assets folder; returns it relative to the document, or null if cancelled. */
+export function pickAssetsFolder(document: string): Promise<string | null> {
+  return invoke<string | null>("pick_assets_folder", { document });
 }
 
 /** Remembers the reading position in a document. Never throws. */
@@ -84,6 +111,15 @@ export function setDocumentTypography(path: string, textSizing: TextSizing | nul
 /** Sets a document's flavor; `null` returns to front matter, folder config, or detection. */
 export function setDocumentFlavor(path: string, flavor: Flavor | null): Promise<void> {
   return invoke("set_document_flavor", { path, flavor });
+}
+
+/** Whether the properties panel starts open (global preference). */
+export function propertiesOpen(): Promise<boolean> {
+  return invoke<boolean>("properties_open");
+}
+
+export function setPropertiesOpen(open: boolean): Promise<void> {
+  return invoke("set_properties_open", { open });
 }
 
 export function typographyDefaults(): Promise<TypographyDefaults> {

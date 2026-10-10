@@ -88,7 +88,32 @@ export interface FrontMatter {
   flavor: string | null;
   /** Unrecognized keys, in file order. Values are arbitrary YAML data. */
   extra: Record<string, unknown>;
+  /** The key each property was read from (`author` or `authors`, ...). */
+  keys: PropertyKeys;
+  /** Every top-level key in file order, and whether it can be edited. */
+  fields: FieldInfo[];
   error: string | null;
+}
+
+/** Mirrors `PropertyKeys`. */
+export interface PropertyKeys {
+  title: string | null;
+  authors: string | null;
+  summary: string | null;
+  tags: string | null;
+  notes: string | null;
+  source: string | null;
+  assets: string | null;
+  theme: string | null;
+  flavor: string | null;
+}
+
+/** Mirrors `FieldInfo` (crates/scrald-core/src/yaml_edit.rs). */
+export interface FieldInfo {
+  key: string;
+  editable: boolean;
+  /** Why it can't be edited in the panel, when it can't. */
+  reason: string | null;
 }
 
 /** Mirrors `ImageAsset`: a local image file the document uses. */
@@ -236,4 +261,17 @@ export interface OpenedDocument {
   memory: DocumentMemory;
   /** The theme this document uses, and where that choice came from. */
   theme: ResolvedTheme;
+  /** Whether the window holds edits that aren't saved yet. */
+  dirty: boolean;
 }
+
+/** Mirrors `Change` (crates/scrald-core/src/yaml_edit.rs): a new value for a front matter key. */
+export type PropertyChange =
+  | { kind: "text"; value: string }
+  /** A number or boolean typed by the user, kept as that type when it is one. */
+  | { kind: "value"; value: string }
+  | { kind: "list"; value: string[] }
+  | { kind: "remove" };
+
+/** Mirrors `DiskState` (crates/scrald-app/src/session.rs). */
+export type DiskState = "unchanged" | "changed" | "missing";

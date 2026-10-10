@@ -17,10 +17,27 @@
     duplicateTheme,
     userThemeFolder,
     onThemesChanged,
+    propertiesOpen as propertiesOpenSetting,
+    setPropertiesOpen,
+    reparseDocument,
+    editFrontMatter,
+    saveDocument,
+    checkDisk,
+    pickAssetsFolder,
   } from "./lib/commands";
   import { afterPaint } from "./lib/idle";
   import { launchMessage } from "./lib/launch";
-  import type { DocumentModel, Flavor, ResolvedTheme, ThemeSummary } from "./lib/types";
+  import type {
+    DocumentModel,
+    Flavor,
+    OpenedDocument,
+    PropertyChange,
+    ResolvedTheme,
+    ThemeSummary,
+  } from "./lib/types";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import UnsavedDialog, { type UnsavedChoice } from "./editor/UnsavedDialog.svelte";
+  import type { PropertyEditor } from "./frontmatter/properties";
   import { applyTheme } from "./themes/apply";
   import { refreshRichForTheme } from "./render/renderers";
   import ThemeSwitcher from "./themes/ThemeSwitcher.svelte";
@@ -90,12 +107,126 @@
   });
   const sectionTitle = $derived(currentEntry === null ? null : (doc?.toc[currentEntry]?.text ?? null));
 
+  // Whether the properties panel is open: a global preference (DESIGN.md §8.2).
+  let propertiesOpen = $state(true);
+
+  // Unsaved edits (DESIGN.md §9.3): the backend keeps the edited text; the
+  // file changes only on Ctrl+S.
+  let dirty = $state(false);
+  // The open "save changes?" question, answered through `resolve`.
+  let unsavedPrompt = $state<{ title: string; action: string; resolve: (choice: UnsavedChoice) => void } | null>(
+    null,
+  );
+
+  function documentTitle(d: DocumentModel): string {
+    return d.frontMatter?.title ?? d.path.split(/[\\/]/).pop() ?? d.path;
+  }
+
+  /** Asks the user what to do with unsaved changes. */
+  function askUnsaved(action: string): Promise<UnsavedChoice> {
+    if (!doc) return Promise.resolve("discard");
+    const title = documentTitle(doc);
+    return new Promise((resolve) => {
+      unsavedPrompt = {
+        title,
+        action,
+        resolve: (choice) => {
+          unsavedPrompt = null;
+          resolve(choice);
+        },
+      };
+    });
+  }
+
+  /**
+   * Before leaving the document (opening another, going back, closing):
+   * true to go ahead. With unsaved changes, asks first, saving if chosen.
+   */
+  async function confirmLeave(action: string): Promise<boolean> {
+    if (!dirty) return true;
+    const choice = await askUnsaved(action);
+    if (choice === "cancel") return false;
+    if (choice === "save") return save();
+    return true;
+  }
+
+  /** Saves the document; false (with a notice) if that failed. */
+  async function save(): Promise<boolean> {
+    if (!doc) return false;
+    try {
+      await saveDocument();
+      dirty = false;
+      showNotice("Saved");
+      return true;
+    } catch (e) {
+      showNotice(`Could not save: ${String(e)}`);
+      return false;
+    }
+  }
+
+  /** Changes a front matter property (in memory) and shows the result. */
+  async function editProperty(key: string, change: PropertyChange): Promise<void> {
+    try {
+      const opened = await editFrontMatter(key, change);
+      await applyOpened(opened, reader?.captureAnchor() ?? TOP_ANCHOR);
+    } catch (e) {
+      showNotice(`Could not change ${key}: ${String(e)}`);
+    }
+  }
+
+  const propertyEditor = $derived<PropertyEditor | null>(
+    doc === null
+      ? null
+      : {
+          themes: themeList,
+          edit: editProperty,
+          pickFolder: () => (doc ? pickAssetsFolder(doc.path) : Promise.resolve(null)),
+        },
+  );
+
+  /**
+   * The document changed on disk. Scrald's own saves (and touches that
+   * change nothing) are ignored; with unsaved edits the file isn't reloaded,
+   * so nothing is lost (the full conflict banner comes with M6).
+   */
+  async function onDiskChanged(): Promise<void> {
+    const state = await checkDisk().catch(() => "changed" as const);
+    if (state === "unchanged") return;
+    if (dirty) {
+      showNotice(
+        state === "missing"
+          ? "The file was moved or deleted. Your unsaved changes are kept; saving writes it again."
+          : "The file changed on disk. Your unsaved changes are kept; saving will replace the disk version.",
+      );
+      return;
+    }
+    if (state === "changed") await reload();
+  }
+
+  function togglePropertiesPanel(open: boolean): void {
+    propertiesOpen = open;
+    void setPropertiesOpen(open).catch(() => {});
+  }
+
   onMount(() => {
+    void refreshThemeList().catch(() => {});
+    // Closing with unsaved changes asks first (DESIGN.md §9.3).
+    const unlistenClose = getCurrentWindow().onCloseRequested(async (event) => {
+      if (!dirty) return;
+      event.preventDefault();
+      if (await confirmLeave("closing")) {
+        dirty = false;
+        await getCurrentWindow().destroy();
+      }
+    });
+    void propertiesOpenSetting()
+      .then((open) => (propertiesOpen = open))
+      .catch(() => {});
     void typography.loadDefaults().then(start);
-    // Live reload (DESIGN.md §9.3). There is no editing yet, so a change on
-    // disk always reloads; M6 adds the "unsaved changes" banner.
+    // Live reload (DESIGN.md §9.3), unless it's our own save or there are
+    // unsaved edits.
     const unlisten = onDocumentChanged((path) => {
-      if (doc && path === doc.path) void reload();
+      if (doc && path === doc.path) void onDiskChanged();
     });
     // Theme hot reload (DESIGN.md §7.1): re-apply when a user theme changes.
     const unlistenThemes = onThemesChanged(() => {
@@ -111,6 +242,7 @@
     window.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       void unlisten.then((stop) => stop());
+      void unlistenClose.then((stop) => stop());
       void unlistenThemes.then((stop) => stop());
       window.removeEventListener("wheel", onWheel);
     };
@@ -139,14 +271,7 @@
     try {
       const opened = await openDocument(path);
       reportTiming("ipc_open_document", performance.now() - openStarted);
-      // Apply the theme before the document renders, so it never flashes
-      // in the previous document's theme.
-      theme = opened.theme;
-      typography.setDocument(opened.memory);
-      await showTheme(opened.theme.id, false);
-      initialAnchor = anchor === "remembered" ? (opened.memory.anchor ?? TOP_ANCHOR) : anchor;
-      assetToken = opened.assetToken;
-      doc = opened.document;
+      await applyOpened(opened, anchor);
       message = null;
       return true;
     } catch (e) {
@@ -156,11 +281,32 @@
     }
   }
 
+  /** Shows an opened (or re-parsed, or edited) document. */
+  async function applyOpened(opened: OpenedDocument, anchor: ScrollAnchor | "remembered"): Promise<void> {
+    // Apply the theme before the document renders, so it never flashes in
+    // the previous document's theme.
+    theme = opened.theme;
+    typography.setDocument(opened.memory);
+    await showTheme(opened.theme.id, false);
+    initialAnchor = anchor === "remembered" ? (opened.memory.anchor ?? TOP_ANCHOR) : anchor;
+    assetToken = opened.assetToken;
+    doc = opened.document;
+    dirty = opened.dirty;
+  }
+
+  /** Re-parses the document from memory (keeping unsaved edits) in place. */
+  async function reparse(): Promise<void> {
+    if (!doc) return;
+    const opened = await reparseDocument();
+    await applyOpened(opened, reader?.captureAnchor() ?? TOP_ANCHOR);
+  }
+
   /**
    * Opens a document as a new history entry: at `fragment` if given,
    * otherwise where the reader left off last time.
    */
   async function navigate(path: string, fragment: string | null = null): Promise<void> {
+    if (!(await confirmLeave("opening another document"))) return;
     rememberPosition();
     pendingFragment = fragment;
     if (await load(path, fragment === null ? "remembered" : TOP_ANCHOR)) {
@@ -170,6 +316,7 @@
   }
 
   async function goBack(): Promise<void> {
+    if (!history.canGoBack || !(await confirmLeave("going back"))) return;
     rememberPosition();
     const entry = history.back();
     if (entry) await load(entry.path, entry.anchor);
@@ -177,6 +324,7 @@
   }
 
   async function goForward(): Promise<void> {
+    if (!history.canGoForward || !(await confirmLeave("going forward"))) return;
     rememberPosition();
     const entry = history.forward();
     if (entry) await load(entry.path, entry.anchor);
@@ -207,7 +355,7 @@
     if (!doc) return;
     try {
       await setDocumentFlavor(doc.path, flavor);
-      await reload();
+      await reparse();
     } catch (e) {
       showNotice(`Could not change flavor: ${String(e)}`);
     }
@@ -217,7 +365,7 @@
     if (!doc) return;
     try {
       await setRemoteImages(doc.path, true);
-      await reload();
+      await reparse();
     } catch (e) {
       showNotice(`Could not load remote images: ${String(e)}`);
     }
@@ -331,7 +479,17 @@
     if (!doc) return;
     closeSwitcher();
     await setDocumentTheme(doc.path, null);
-    await reload();
+    await reparse();
+  }
+
+  /**
+   * "Save to document": writes `scrald-theme` into the front matter (an
+   * unsaved edit, like any other) and clears the per-document choice, so the
+   * document's own setting is the one in effect (DESIGN.md §7.6).
+   */
+  async function saveThemeToDocument(id: string): Promise<void> {
+    closeSwitcher();
+    await editProperty("scrald-theme", { kind: "text", value: id });
   }
 
   async function duplicate(id: string): Promise<void> {
@@ -356,7 +514,14 @@
   }
 
   function onKeydown(event: KeyboardEvent): void {
-    if (switcherOpen) return;
+    if (switcherOpen || unsavedPrompt) return;
+    if (event.ctrlKey && (event.key === "s" || event.key === "S")) {
+      event.preventDefault();
+      // Commit a property being typed first: its input commits on blur.
+      (document.activeElement as HTMLElement | null)?.blur();
+      if (dirty) void save();
+      return;
+    }
     if (event.ctrlKey && doc && (event.key === "=" || event.key === "+")) {
       event.preventDefault();
       typography.zoomIn();
@@ -419,6 +584,9 @@
         onscrollsettled={rememberPosition}
         fontSize={typography.fontSize}
         fillWindow={typography.fillWindow}
+        {propertiesOpen}
+        {propertyEditor}
+        onpropertiestoggle={togglePropertiesPanel}
       />
     </main>
     <StatusBar
@@ -469,8 +637,12 @@
         onmakedefault={makeDefaultTheme}
         onreset={resetTheme}
         onduplicate={duplicate}
+        onsavetodocument={saveThemeToDocument}
         oncancel={cancelSwitcher}
       />
+    {/if}
+    {#if unsavedPrompt}
+      <UnsavedDialog title={unsavedPrompt.title} action={unsavedPrompt.action} onchoose={unsavedPrompt.resolve} />
     {/if}
   {:else}
     <main class="sk-main sk-message">
