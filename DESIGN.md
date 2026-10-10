@@ -530,6 +530,14 @@ Double-clicking a block in the reading view replaces it with a small CodeMirror 
 - On commit, the new text is spliced into the source at the block's byte range (`scrald-core::edit`). The whole document is then reparsed, which is cheap and avoids bugs from Markdown's non-local constructs such as reference links and footnotes. Only blocks whose hashes changed are re-rendered in the DOM.
 - Undo and redo operate on the whole document's edit history, so Ctrl+Z works predictably across blocks.
 
+As implemented:
+
+- Double-clicking a block (not in the properties panel, endnotes, links, or controls) opens a CodeMirror 6 editor in its place with the block's source, fetched from the document text in memory. CodeMirror is loaded with dynamic `import()` on the first edit. Ctrl+Enter, Escape, or leaving the editor commits; unchanged text changes nothing. CodeMirror's Markdown mode continues lists on Enter.
+- `scrald-core::edit::splice_block` replaces exactly the block's byte range. It's given the source the editor started from and refuses the edit if the range no longer holds it (say, after a reload), so an edit can't land in the wrong place. New text gets the document's line endings; trailing line breaks are dropped, except those that were already part of the range (comrak includes the line break for a few block kinds, such as description lists). Emptying a block removes it together with the blank line after it. The round-trip test applies a no-op edit to every block of every fixture and checks the file is byte-for-byte unchanged.
+- Every change to the text (block edits, property edits) is recorded as a small diff (offset, removed text, inserted text), up to 500 of them; Ctrl+Z and Ctrl+Y (or Ctrl+Shift+Z) step through them outside text fields and editors, which keep their own undo. Unsaved means "differs from the file as last read or saved", so undoing back to the saved text clears the marker.
+- After an edit, the reader updates in place: every section stays mounted, blocks are keyed by content hash (plus an occurrence count), so unchanged blocks keep their DOM, and the browser's scroll anchoring keeps the reader's place. The image token is reused when the document's images are unchanged, so images aren't fetched again. Edits are queued, and Ctrl+S commits an open editor and waits for it before saving.
+- Measured on the 100K-word fixture (release build): about 100 ms from commit to repaint (97 and 107 ms), at the edge of the budget; most of it is re-parsing and re-sending the whole model. Sending only changed blocks is tracked as a follow-up.
+
 ### 9.2 Raw mode
 
 Ctrl+E toggles between the reading view and a full-document CodeMirror 6 editor showing the raw Markdown, including front matter. Scroll position carries over in both directions via source offsets. Raw mode gets basic Markdown syntax highlighting, search and replace, and soft wrap at the theme's measure.

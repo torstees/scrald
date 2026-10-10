@@ -3,15 +3,17 @@
   // sections; each mounted section uses `content-visibility: auto` so the
   // browser skips layout and paint for off-screen sections. Sections are
   // mounted outward from the initial position, the rest in idle time.
-  import { tick, untrack } from "svelte";
-  import type { DocumentModel } from "../lib/types";
+  import { onDestroy, tick, untrack } from "svelte";
+  import type { Block, DocumentModel } from "../lib/types";
+  import BlockEditor from "../editor/BlockEditor.svelte";
+  import type { BlockEditing } from "../editor/blocks";
   import { assetUrl } from "../lib/commands";
   import { contentId } from "../lib/ids";
   import { richContent } from "../render/renderers";
   import PropertiesPanel from "../frontmatter/PropertiesPanel.svelte";
   import type { PropertyEditor } from "../frontmatter/properties";
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
-  import { batchByBlocks, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
+  import { batchByBlocks, blockKeys, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
   import { blockIndexAtOffset, firstBoxBelow, fractionInto, TOP_ANCHOR, type ScrollAnchor } from "./anchor";
 
   interface Props {
@@ -37,6 +39,14 @@
     propertiesOpen?: boolean;
     /** Makes the properties panel editable. */
     propertyEditor?: PropertyEditor | null;
+    /** Makes blocks editable by double-clicking them. */
+    blockEditing?: BlockEditing | null;
+    /**
+     * When the next `doc` is an edit of the current one: update it in place,
+     * keeping every section mounted and the scroll position, instead of
+     * remounting at `initialAnchor`.
+     */
+    keepPosition?: boolean;
     onpropertiestoggle?: (open: boolean) => void;
   }
 
@@ -53,6 +63,8 @@
     fillWindow = false,
     propertiesOpen = true,
     propertyEditor = null,
+    blockEditing = null,
+    keepPosition = false,
     onpropertiestoggle,
   }: Props = $props();
 
@@ -73,15 +85,66 @@
   let currentSection = -1;
   let scrollFrame = 0;
 
-  // (Re)start mounting whenever the document changes.
+  const keys = $derived(blockKeys(doc));
+  onDestroy(() => cancelIdle?.());
+  let shownPath: string | null = null;
+
+  // (Re)start mounting whenever the document changes, or for an edit of the
+  // same document, update it in place.
   $effect(() => {
     const d = doc;
     const anchor = initialAnchor;
     // `untrack` keeps the mount work from subscribing this effect to
-    // `mounted`, which it writes.
-    untrack(() => void startMount(d, anchor));
-    return () => cancelIdle?.();
+    // `mounted` (which it writes) and to `keepPosition`.
+    untrack(() => {
+      if (keepPosition && shownPath === d.path) {
+        updateInPlace(d);
+      } else {
+        void startMount(d, anchor);
+      }
+      shownPath = d.path;
+    });
   });
+
+  /**
+   * Shows an edited version of the same document: every section mounted, so
+   * unchanged blocks keep their DOM (they're keyed by content), and the
+   * browser's scroll anchoring keeps the reader's place.
+   */
+  function updateInPlace(d: DocumentModel): void {
+    cancelIdle?.();
+    cancelIdle = null;
+    mounted = d.sections.map(() => true);
+    void tick().then(noteScrolled);
+  }
+
+  // The block being edited, by id, and the source the editor started from.
+  let editing = $state<{ id: number; source: string } | null>(null);
+
+  async function onDoubleClick(event: MouseEvent): Promise<void> {
+    if (!blockEditing || editing) return;
+    const target = event.target as Element | null;
+    // Not in the properties panel or endnotes, and not on a control.
+    if (target?.closest(".sk-properties, .sk-endnotes, input, button, a")) return;
+    const el = target?.closest<HTMLElement>(".sk-section > .sk-block[data-block]");
+    const block = el ? doc.blocks[Number(el.dataset.block)] : undefined;
+    if (!block || block.kind.type === "footnoteDefinition") return;
+    // The double-click selected a word; the editor replaces the text anyway.
+    window.getSelection()?.removeAllRanges();
+    try {
+      const source = await blockEditing.load(block);
+      editing = { id: block.id, source };
+    } catch {
+      // The document changed underneath; leave it in reading view.
+    }
+  }
+
+  async function finishEdit(block: Block, text: string): Promise<void> {
+    const original = editing?.source ?? "";
+    editing = null;
+    if (text === original) return;
+    await blockEditing?.commit(block, original, text);
+  }
 
   async function startMount(d: DocumentModel, anchor: ScrollAnchor): Promise<void> {
     const gen = ++generation;
@@ -417,6 +480,7 @@
   bind:this={scroller}
   onscroll={onScroll}
   onclick={onClick}
+  ondblclick={onDoubleClick}
   onpointerover={onPointerOver}
   onpointerout={onPointerOut}
   onfocusin={onFocusIn}
@@ -440,8 +504,12 @@
           data-section={section.id}
           style:contain-intrinsic-size={`auto ${heights[i] ?? 0}px`}
         >
-          {#each sectionBlocks(doc, section) as block (block.id)}
-            {#if block.kind.type === "footnoteDefinition"}
+          {#each sectionBlocks(doc, section) as block (keys[block.id])}
+            {#if editing?.id === block.id}
+              <div class="sk-block sk-editing" data-block={block.id}>
+                <BlockEditor source={editing.source} oncommit={(text) => finishEdit(block, text)} />
+              </div>
+            {:else if block.kind.type === "footnoteDefinition"}
               <!-- Shown in the endnotes instead; the empty block keeps its place for
                    scroll anchoring and, later, editing. -->
               <div class="sk-block sk-footnote-def" data-block={block.id}></div>

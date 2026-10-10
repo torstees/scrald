@@ -50,6 +50,21 @@ export function estimateSectionHeights(doc: DocumentModel, m: EstimateMetrics = 
 }
 
 /** The blocks belonging to a section. */
+/**
+ * A key for each block (by block id) that stays the same while the block's
+ * content does: its hash, plus how many earlier blocks share that hash. After
+ * an edit, unchanged blocks keep their key even though their ids shift, so
+ * the reader keeps their DOM instead of rebuilding it (DESIGN.md §9.1).
+ */
+export function blockKeys(doc: DocumentModel): string[] {
+  const seen = new Map<number, number>();
+  return doc.blocks.map((b) => {
+    const n = seen.get(b.hash) ?? 0;
+    seen.set(b.hash, n + 1);
+    return `${b.hash}:${n}`;
+  });
+}
+
 export function sectionBlocks(doc: DocumentModel, section: Section): Block[] {
   return doc.blocks.slice(section.firstBlock, section.firstBlock + section.blockCount);
 }

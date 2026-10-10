@@ -40,6 +40,13 @@ impl AssetRegistry {
             .inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // Same files as before (an edit that didn't touch images): keep the
+        // token, so image URLs don't change and nothing is fetched again.
+        if let Some((token, existing)) = inner.by_window.get(window)
+            && *existing == files
+        {
+            return *token;
+        }
         inner.next_token += 1;
         let token = inner.next_token;
         inner.by_window.insert(window.to_string(), (token, files));
