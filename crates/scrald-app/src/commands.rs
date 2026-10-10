@@ -225,6 +225,8 @@ pub async fn reparse_document(
 /// text changes (DESIGN.md §8.3). Setting `scrald-theme` or `scrald-flavor`
 /// also clears the document's stored theme or flavor choice, so the value
 /// written to the document is the one in effect.
+// Most arguments are app state that Tauri injects; the frontend passes two.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn edit_front_matter(
     window: tauri::WebviewWindow,
