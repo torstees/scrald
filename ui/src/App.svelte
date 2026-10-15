@@ -203,14 +203,18 @@
     });
   }
 
-  async function enterRawMode(): Promise<void> {
+  /**
+   * Opens raw mode at the reading position, or at `atOffset` (a byte offset
+   * in the file, as core's ranges are) when given.
+   */
+  async function enterRawMode(atOffset?: number): Promise<void> {
     if (!doc || rawMode) return;
     await pendingEdits;
-    const anchor = reader?.captureAnchor() ?? TOP_ANCHOR;
+    const offset = atOffset ?? (reader?.captureAnchor() ?? TOP_ANCHOR).offset;
     try {
       const current = await documentText();
       const bom = doc.hasBom ? 3 : 0;
-      raw = { ...current, startByte: Math.max(0, anchor.offset - bom), resetKey: 0 };
+      raw = { ...current, startByte: Math.max(0, offset - bom), resetKey: 0 };
       rawMode = true;
       showNotice("Raw mode: Ctrl+E returns to reading");
     } catch (e) {
@@ -767,6 +771,7 @@
           {blockEditing}
           {keepPosition}
           onpropertiestoggle={togglePropertiesPanel}
+          onrawat={(offset) => void enterRawMode(offset)}
         />
       {/if}
     </main>

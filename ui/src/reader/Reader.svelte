@@ -48,6 +48,8 @@
      */
     keepPosition?: boolean;
     onpropertiestoggle?: (open: boolean) => void;
+    /** Opens raw mode at a byte offset in the file. */
+    onrawat?: ((offset: number) => void) | null;
   }
 
   let {
@@ -66,6 +68,7 @@
     blockEditing = null,
     keepPosition = false,
     onpropertiestoggle,
+    onrawat = null,
   }: Props = $props();
 
   /** How long scrolling must pause before the position counts as settled. */
@@ -495,6 +498,7 @@
         ontoggle={(open) => onpropertiestoggle?.(open)}
         onlink={(href) => onlink?.(href)}
         editor={propertyEditor}
+        onraw={onrawat}
       />
     {/if}
     {#each doc.sections as section, i (section.id)}

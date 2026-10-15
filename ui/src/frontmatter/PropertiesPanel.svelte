@@ -22,9 +22,11 @@
     /** Opens a link the same way links in the document do. */
     onlink: (href: string) => void;
     editor?: PropertyEditor | null;
+    /** Opens raw mode at a byte offset in the file (a read-only key's line). */
+    onraw?: ((offset: number) => void) | null;
   }
 
-  let { frontMatter, open, ontoggle, onlink, editor = null }: Props = $props();
+  let { frontMatter, open, ontoggle, onlink, editor = null, onraw = null }: Props = $props();
 
   const rows = $derived(propertyRows(frontMatter));
   const missing = $derived(editor ? missingProperties(frontMatter) : []);
@@ -162,6 +164,7 @@
             value: adding.kind === "list" || adding.kind === "tags" ? [] : "",
             editable: true,
             reason: null,
+            offset: null,
             property: adding.property,
             typed: false,
           },
@@ -208,7 +211,14 @@
           <dt title={row.label === row.key ? undefined : row.key}>
             {row.label}
             {#if !row.editable && row.reason}
-              <span class="sk-readonly" title={`Can't be edited here: ${row.reason}. Edit it in raw mode.`}>read-only</span>
+              <span class="sk-readonly" title={`Can't be edited here: ${row.reason}.`}>read-only</span>
+              {#if onraw}
+                <button
+                  class="sk-raw-link"
+                  title={`Can't be edited here: ${row.reason}. Opens the whole file at this key (Ctrl+E).`}
+                  onclick={() => onraw?.(row.offset ?? frontMatter.range.start)}>Edit in raw mode</button
+                >
+              {/if}
             {/if}
           </dt>
           <dd class:multiline={row.kind === "multiline"}>
@@ -507,6 +517,23 @@
     font-size: 0.85em;
     opacity: 0.8;
     cursor: help;
+  }
+
+  .sk-raw-link {
+    display: block;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--sk-color-link);
+    font: inherit;
+    font-size: 0.85em;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .sk-raw-link:hover,
+  .sk-raw-link:focus-visible {
+    text-decoration: underline;
   }
 
   .sk-properties-error {

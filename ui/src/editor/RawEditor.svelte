@@ -137,13 +137,57 @@
               "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
                 backgroundColor: "var(--sk-color-selection)",
               },
+              // The search panel: CodeMirror's own fields and buttons are
+              // light-themed (a pale gradient), unreadable on dark themes.
               ".cm-panels": {
                 backgroundColor: "var(--sk-color-ui-background, var(--sk-color-background))",
                 color: "var(--sk-color-foreground)",
                 fontFamily: "var(--sk-font-ui)",
               },
+              ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--sk-color-border)" },
+              ".cm-panels.cm-panels-bottom": { borderTop: "1px solid var(--sk-color-border)" },
+              ".cm-panel.cm-search": { padding: "0.4em 2em 0.5em 0.6em" },
+              ".cm-textfield": {
+                color: "var(--sk-color-foreground)",
+                backgroundColor: "var(--sk-color-background)",
+                border: "1px solid var(--sk-color-border)",
+                borderRadius: "4px",
+                padding: "0.15em 0.4em",
+              },
+              ".cm-textfield:focus": {
+                outline: "none",
+                borderColor: "var(--sk-color-accent)",
+              },
+              ".cm-textfield::placeholder": { color: "var(--sk-color-muted)" },
+              ".cm-button": {
+                color: "var(--sk-color-foreground)",
+                backgroundColor: "var(--sk-color-background)",
+                backgroundImage: "none",
+                border: "1px solid var(--sk-color-border)",
+                borderRadius: "4px",
+                padding: "0.15em 0.6em",
+                cursor: "pointer",
+              },
+              ".cm-button:hover": { borderColor: "var(--sk-color-accent)" },
+              ".cm-button:active": {
+                backgroundImage: "none",
+                backgroundColor: "var(--sk-color-selection)",
+              },
+              ".cm-panel.cm-search label": { color: "var(--sk-color-foreground)" },
+              ".cm-panel.cm-search input[type=checkbox]": { accentColor: "var(--sk-color-accent)" },
+              ".cm-panel.cm-search [name=close]": {
+                color: "var(--sk-color-muted)",
+                fontSize: "1.2em",
+                cursor: "pointer",
+              },
+              ".cm-panel.cm-search [name=close]:hover": { color: "var(--sk-color-foreground)" },
               ".cm-searchMatch": {
                 backgroundColor: "var(--sk-color-highlight-bg)",
+              },
+              // After .cm-searchMatch, so the current match wins.
+              ".cm-searchMatch.cm-searchMatch-selected": {
+                backgroundColor: "var(--sk-color-selection)",
+                outline: "1px solid var(--sk-color-accent)",
               },
               "&.cm-focused": { outline: "none" },
             }),

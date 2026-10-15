@@ -24,6 +24,8 @@ export interface PropertyRow {
   editable: boolean;
   /** Why it can't be edited in the panel, when it can't. */
   reason: string | null;
+  /** Byte offset in the file of the key's line, for "edit in raw mode". */
+  offset: number | null;
   /** The recognized property it shows, or null for other keys. */
   property: keyof PropertyKeys | null;
   /** A number or boolean (other keys only): edits keep that type. */
@@ -95,6 +97,7 @@ export function propertyRows(fm: FrontMatter): PropertyRow[] {
       value,
       editable: field?.editable ?? false,
       reason: field?.reason ?? null,
+      offset: field?.offset ?? null,
       property,
       typed: false,
     });
@@ -109,6 +112,7 @@ export function propertyRows(fm: FrontMatter): PropertyRow[] {
       value: list ?? formatValue(raw),
       editable: field?.editable ?? false,
       reason: field?.reason ?? null,
+      offset: field?.offset ?? null,
       property: null,
       typed: typeof raw === "number" || typeof raw === "boolean",
     });

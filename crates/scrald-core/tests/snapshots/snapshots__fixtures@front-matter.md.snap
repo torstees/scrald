@@ -49,42 +49,50 @@ front_matter: {
     {
       "key": "title",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 4
     },
     {
       "key": "authors",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 27
     },
     {
       "key": "synopsis",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 64
     },
     {
       "key": "tags",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 107
     },
     {
       "key": "scrald",
       "editable": false,
-      "reason": "it's a nested map"
+      "reason": "it's a nested map",
+      "offset": 138
     },
     {
       "key": "scrald-theme",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 180
     },
     {
       "key": "custom-key",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 207
     },
     {
       "key": "created",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 244
     }
   ],
   "error": null

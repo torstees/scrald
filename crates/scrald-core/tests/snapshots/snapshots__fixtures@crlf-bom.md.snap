@@ -35,7 +35,8 @@ front_matter: {
     {
       "key": "title",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 8
     }
   ],
   "error": null

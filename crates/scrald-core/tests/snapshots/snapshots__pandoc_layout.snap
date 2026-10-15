@@ -37,12 +37,14 @@ front_matter: {
     {
       "key": "title",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 4
     },
     {
       "key": "scrald-flavor",
       "editable": true,
-      "reason": null
+      "reason": null,
+      "offset": 25
     }
   ],
   "error": null
