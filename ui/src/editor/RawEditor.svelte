@@ -33,9 +33,17 @@
   let host: HTMLDivElement | undefined = $state();
   // The editable editor: the only one, or the right side of the merge view.
   let view: EditorView | null = null;
+  // Every editor on screen (two in the merge view), for appearance changes.
+  let editors: EditorView[] = [];
   // In compare mode, the merge view's own scrolling element.
   let mergeScroller: HTMLElement | null = null;
   let destroyMerge: (() => void) | null = null;
+  // Follows the theme's light/dark appearance while the editor is open.
+  let appearanceObserver: MutationObserver | null = null;
+
+  function themeIsDark(): boolean {
+    return document.documentElement.dataset.appearance === "dark";
+  }
   let failed = $state<string | null>(null);
   let shownResetKey = -1;
 
@@ -80,7 +88,7 @@
   onMount(() => {
     void (async () => {
       try {
-        const [{ basicSetup }, { markdown }, { yamlFrontmatter }, { EditorView }, { EditorState }, language, { tags }] =
+        const [{ basicSetup }, { markdown }, { yamlFrontmatter }, { EditorView }, { EditorState, Compartment }, language, { tags }] =
           await Promise.all([
           import("codemirror"),
           import("@codemirror/lang-markdown"),
@@ -110,6 +118,9 @@
           { tag: [tags.propertyName, tags.definition(tags.propertyName)], color: "var(--sk-color-link)" },
           { tag: [tags.string, tags.number, tags.bool, tags.null], color: "var(--sk-color-foreground)" },
         ]);
+        // A Compartment is a part of the editor's configuration that can be
+        // replaced later without rebuilding the editor.
+        const appearance = new Compartment();
         const common = [
             // Line breaks exactly as the file has them, so the text that
             // comes back is byte-for-byte the file's (no CRLF -> LF).
@@ -120,8 +131,9 @@
             language.syntaxHighlighting(highlight),
             EditorView.lineWrapping,
             // CodeMirror's built-in colors (merge highlights, folded lines)
-            // have light and dark variants; pick the theme's.
-            EditorView.darkTheme.of(document.documentElement.dataset.appearance === "dark"),
+            // have light and dark variants; pick the theme's, and switch
+            // when the theme does (below).
+            appearance.of(EditorView.darkTheme.of(themeIsDark())),
             EditorView.theme({
               "&": {
                 // In the merge view, the editors grow and the view scrolls.
@@ -143,9 +155,13 @@
               ".cm-activeLine, .cm-activeLineGutter": {
                 backgroundColor: "color-mix(in srgb, var(--sk-color-foreground) 5%, transparent)",
               },
-              "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-                backgroundColor: "var(--sk-color-selection)",
-              },
+              // The focused rule repeats CodeMirror's own selector so it's at
+              // least as specific; otherwise CodeMirror's light or dark
+              // default wins whenever the editor has focus.
+              "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection":
+                {
+                  backgroundColor: "var(--sk-color-selection)",
+                },
               // The search panel: CodeMirror's own fields and buttons are
               // light-themed (a pale gradient), unreadable on dark themes.
               ".cm-panels": {
@@ -233,12 +249,20 @@
           view = mergeView.b;
           mergeScroller = mergeView.dom;
           destroyMerge = () => mergeView.destroy();
+          editors = [mergeView.a, mergeView.b];
         } else {
           view = new EditorView({
             parent: host,
             state: EditorState.create({ doc: text, extensions: [...common, editable] }),
           });
+          editors = [view];
         }
+        // A theme switch changes `data-appearance` on the page.
+        appearanceObserver = new MutationObserver(() => {
+          const effect = appearance.reconfigure(EditorView.darkTheme.of(themeIsDark()));
+          for (const editor of editors) editor.dispatch({ effects: effect });
+        });
+        appearanceObserver.observe(document.documentElement, { attributeFilter: ["data-appearance"] });
         shownResetKey = resetKey;
         const index = positionFor(text, startByte);
         view.dispatch({ effects: EditorView.scrollIntoView(index, { y: "start" }), selection: { anchor: index } });
@@ -260,6 +284,7 @@
   });
 
   onDestroy(() => {
+    appearanceObserver?.disconnect();
     if (destroyMerge) destroyMerge();
     else view?.destroy();
   });
