@@ -315,6 +315,10 @@ pub struct FieldInfo {
     pub editable: bool,
     /// Why not, when it isn't (shown with an "edit in raw mode" link).
     pub reason: Option<String>,
+    /// Where the key's line starts: a byte offset into the YAML from
+    /// `field_info`, shifted to the original file by `frontmatter::parse`,
+    /// so raw mode can open at it.
+    pub offset: usize,
 }
 
 /// Editability of every top-level key, in file order.
@@ -326,11 +330,13 @@ pub fn field_info(yaml: &str) -> Vec<FieldInfo> {
                 key: e.key,
                 editable: false,
                 reason: Some(reason),
+                offset: e.start,
             },
             _ => FieldInfo {
                 key: e.key,
                 editable: true,
                 reason: None,
+                offset: e.start,
             },
         })
         .collect()
@@ -803,6 +809,21 @@ deep:
         assert!(matches!(err, EditError::ReadOnly { .. }));
         // Other keys in the same block can still be edited.
         assert!(edit("nested:\n  a: 1\ntitle: x\n", "title", &text("y"), LF).is_ok());
+    }
+
+    #[test]
+    fn field_offsets_point_at_key_lines() {
+        let yaml = "title: x
+# note
+nested:
+  a: 1
+Åse: y
+";
+        let fields = field_info(yaml);
+        let offsets: Vec<usize> = fields.iter().map(|f| f.offset).collect();
+        for (field, offset) in fields.iter().zip(offsets) {
+            assert!(yaml[offset..].starts_with(&field.key), "{}", field.key);
+        }
     }
 
     #[test]

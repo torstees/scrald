@@ -41,12 +41,12 @@ describe("propertyRows", () => {
       extra: { created: "2024-01-02", scrald: { theme: "x" }, list: [1, 2] },
       keys: { ...frontMatter({}).keys, title: "title", tags: "keywords", authors: "authors" },
       fields: [
-        { key: "keywords", editable: true, reason: null },
-        { key: "title", editable: true, reason: null },
-        { key: "authors", editable: true, reason: null },
-        { key: "created", editable: true, reason: null },
-        { key: "scrald", editable: false, reason: "it's a nested map" },
-        { key: "list", editable: true, reason: null },
+        { key: "keywords", editable: true, reason: null, offset: 0 },
+        { key: "title", editable: true, reason: null, offset: 0 },
+        { key: "authors", editable: true, reason: null, offset: 0 },
+        { key: "created", editable: true, reason: null, offset: 0 },
+        { key: "scrald", editable: false, reason: "it's a nested map", offset: 0 },
+        { key: "list", editable: true, reason: null, offset: 0 },
       ],
     });
     const rows = propertyRows(fm);
@@ -74,7 +74,7 @@ describe("missingProperties", () => {
     const fm = frontMatter({
       title: "T",
       keys: { ...frontMatter({}).keys, title: "title" },
-      fields: [{ key: "title", editable: true, reason: null }],
+      fields: [{ key: "title", editable: true, reason: null, offset: 0 }],
     });
     const missing = missingProperties(fm);
     expect(missing.map((p) => p.key)).toEqual([
@@ -90,7 +90,7 @@ describe("missingProperties", () => {
   });
 
   it("never offers a key that already exists in another shape", () => {
-    const fm = frontMatter({ fields: [{ key: "tags", editable: false, reason: "nested" }] });
+    const fm = frontMatter({ fields: [{ key: "tags", editable: false, reason: "nested", offset: 0 }] });
     expect(missingProperties(fm).some((p) => p.key === "tags")).toBe(false);
   });
 

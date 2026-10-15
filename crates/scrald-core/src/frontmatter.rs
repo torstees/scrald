@@ -111,11 +111,16 @@ const THEME: &[&str] = &["scrald-theme"];
 const FLAVOR: &[&str] = &["scrald-flavor"];
 
 /// Parses the YAML text of a front matter block. `range` is the block's
-/// position in the original file.
-pub fn parse(yaml: &str, range: SourceRange) -> FrontMatter {
+/// position in the original file, and `yaml_start` the YAML's, so field
+/// offsets can be given in the original file too.
+pub fn parse(yaml: &str, range: SourceRange, yaml_start: usize) -> FrontMatter {
+    let mut fields = field_info(yaml);
+    for field in &mut fields {
+        field.offset += yaml_start;
+    }
     let mut fm = FrontMatter {
         range,
-        fields: field_info(yaml),
+        fields,
         ..FrontMatter::default()
     };
 
@@ -237,7 +242,7 @@ mod tests {
     use super::*;
 
     fn parse_str(yaml: &str) -> FrontMatter {
-        parse(yaml, SourceRange::default())
+        parse(yaml, SourceRange::default(), 0)
     }
 
     #[test]

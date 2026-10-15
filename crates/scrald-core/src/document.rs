@@ -181,7 +181,8 @@ pub fn parse_document_with(
     let body_start = split.as_ref().map_or(0, |s| s.block.end);
     let front_matter = split.map(|s| {
         let range = SourceRange::new(bom_len + s.block.start, bom_len + s.block.end);
-        frontmatter::parse(&text[s.yaml], range)
+        let yaml_start = bom_len + s.yaml.start;
+        frontmatter::parse(&text[s.yaml], range, yaml_start)
     });
     let body = &text[body_start..];
 
@@ -871,6 +872,9 @@ mod tests {
         let fm = doc.front_matter.as_ref().unwrap();
         assert_eq!(fm.title.as_deref(), Some("Skål"));
         assert_eq!(fm.range, SourceRange::new(3, 27));
+        // Field offsets are in the original file, BOM included.
+        assert_eq!(fm.fields[0].offset, 8);
+        assert!(bytes[8..].starts_with(b"title:"));
         assert_eq!(slices(&doc, bytes), ["# Hé", "para å"]);
     }
 

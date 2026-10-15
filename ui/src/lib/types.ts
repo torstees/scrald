@@ -114,6 +114,8 @@ export interface FieldInfo {
   editable: boolean;
   /** Why it can't be edited in the panel, when it can't. */
   reason: string | null;
+  /** Byte offset in the original file where the key's line starts. */
+  offset: number;
 }
 
 /** Mirrors `ImageAsset`: a local image file the document uses. */

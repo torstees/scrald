@@ -220,7 +220,7 @@ fn title_from_text(path: &std::path::Path, text: &str) -> String {
     scrald_core::frontmatter::split(text)
         .and_then(|split| {
             let yaml = &text[split.yaml.clone()];
-            scrald_core::frontmatter::parse(yaml, scrald_core::SourceRange::default()).title
+            scrald_core::frontmatter::parse(yaml, scrald_core::SourceRange::default(), 0).title
         })
         .unwrap_or_else(|| scrald_core::title_from_path(path))
 }
