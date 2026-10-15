@@ -346,6 +346,8 @@ impl Sessions {
     pub fn keep_local(&self, window: &str) {
         // Rust note: a "let chain" (Rust 2024): `if let A && let B` runs the
         // body only if both patterns match, without nesting two `if let`s.
+        // `Option::take()` moves the value out and leaves `None` behind, so
+        // the snapshot is used once (like `std::exchange(x, nullopt)`).
         if let Some(session) = self.lock().get_mut(window)
             && let Some(snapshot) = session.disk_snapshot.take()
         {
