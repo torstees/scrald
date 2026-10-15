@@ -27,6 +27,8 @@
     blockSource,
     editBlock,
     stepHistory,
+    documentText,
+    setDocumentText,
   } from "./lib/commands";
   import { afterPaint } from "./lib/idle";
   import { launchMessage } from "./lib/launch";
@@ -42,6 +44,7 @@
   import UnsavedDialog, { type UnsavedChoice } from "./editor/UnsavedDialog.svelte";
   import type { PropertyEditor } from "./frontmatter/properties";
   import type { BlockEditing } from "./editor/blocks";
+  import RawEditor from "./editor/RawEditor.svelte";
   import { applyTheme } from "./themes/apply";
   import { refreshRichForTheme } from "./render/renderers";
   import ThemeSwitcher from "./themes/ThemeSwitcher.svelte";
@@ -147,6 +150,8 @@
    * true to go ahead. With unsaved changes, asks first, saving if chosen.
    */
   async function confirmLeave(action: string): Promise<boolean> {
+    if (rawMode) await syncRaw();
+    await pendingEdits;
     if (!dirty) return true;
     const choice = await askUnsaved(action);
     if (choice === "cancel") return false;
@@ -162,6 +167,71 @@
     const next = pendingEdits.then(run, run);
     pendingEdits = next.catch(() => {});
     return next;
+  }
+
+  // Raw mode (DESIGN.md §9.2): the whole file in CodeMirror. Its text is
+  // sent to the app shortly after typing stops; the reader re-parses when
+  // raw mode closes.
+  let rawMode = $state(false);
+  let raw = $state<{ text: string; version: number; startByte: number; resetKey: number } | null>(null);
+  let rawEditor: RawEditor | undefined = $state();
+  let rawPending: string | null = null;
+  let rawTimer = 0;
+  const RAW_SYNC_MS = 400;
+
+  function onRawChange(): void {
+    rawPending = "changed";
+    window.clearTimeout(rawTimer);
+    rawTimer = window.setTimeout(() => void syncRaw(), RAW_SYNC_MS);
+  }
+
+  /** Sends raw mode's latest text to the app (queued like any edit). */
+  function syncRaw(): Promise<void> {
+    window.clearTimeout(rawTimer);
+    return queueEdit(async () => {
+      if (rawPending === null || !raw) return;
+      const text = rawEditor?.currentText() ?? null;
+      if (text === null) return;
+      rawPending = null;
+      try {
+        const result = await setDocumentText(raw.version, text);
+        raw.version = result.version;
+        dirty = result.dirty;
+      } catch (e) {
+        showNotice(`Could not apply the raw edit: ${String(e)}`);
+      }
+    });
+  }
+
+  async function enterRawMode(): Promise<void> {
+    if (!doc || rawMode) return;
+    await pendingEdits;
+    const anchor = reader?.captureAnchor() ?? TOP_ANCHOR;
+    try {
+      const current = await documentText();
+      const bom = doc.hasBom ? 3 : 0;
+      raw = { ...current, startByte: Math.max(0, anchor.offset - bom), resetKey: 0 };
+      rawMode = true;
+      showNotice("Raw mode: Ctrl+E returns to reading");
+    } catch (e) {
+      showNotice(`Could not open raw mode: ${String(e)}`);
+    }
+  }
+
+  async function exitRawMode(): Promise<void> {
+    if (!doc || !rawMode) return;
+    await syncRaw();
+    await pendingEdits;
+    const bom = doc.hasBom ? 3 : 0;
+    const top = rawEditor?.topByte() ?? 0;
+    rawMode = false;
+    raw = null;
+    try {
+      const opened = await reparseDocument();
+      await applyOpened(opened, { offset: top + bom, fraction: 0 });
+    } catch (e) {
+      showNotice(`Could not show the document: ${String(e)}`);
+    }
   }
 
   // True while an edit's result is being shown: the reader updates in place.
@@ -208,6 +278,7 @@
   /** Saves the document; false (with a notice) if that failed. */
   async function save(): Promise<boolean> {
     if (!doc) return false;
+    if (rawMode) await syncRaw();
     await pendingEdits;
     try {
       await saveDocument();
@@ -257,7 +328,13 @@
       );
       return;
     }
-    if (state === "changed") await reload();
+    if (state === "changed") {
+      await reload();
+      if (rawMode && raw) {
+        const current = await documentText();
+        raw = { ...current, startByte: rawEditor?.topByte() ?? 0, resetKey: raw.resetKey + 1 };
+      }
+    }
   }
 
   function togglePropertiesPanel(open: boolean): void {
@@ -578,8 +655,14 @@
       // and `save` waits for the edit to land.
       (document.activeElement as HTMLElement | null)?.blur();
       void tick()
+        .then(() => (rawMode ? syncRaw() : undefined))
         .then(() => pendingEdits)
         .then(() => (dirty ? save() : undefined));
+      return;
+    }
+    if (event.ctrlKey && doc && (event.key === "e" || event.key === "E")) {
+      event.preventDefault();
+      void (rawMode ? exitRawMode() : enterRawMode());
       return;
     }
     // Document undo/redo, except in text fields and editors, which have
@@ -637,7 +720,14 @@
 
   function selectTocEntry(index: number): void {
     const entry = doc?.toc[index];
-    if (entry) void reader?.scrollToBlock(entry.blockId);
+    if (!entry || !doc) return;
+    if (rawMode) {
+      const block = doc.blocks[entry.blockId];
+      const bom = doc.hasBom ? 3 : 0;
+      if (block) void rawEditor?.scrollToByte(block.source.start - bom);
+      return;
+    }
+    void reader?.scrollToBlock(entry.blockId);
   }
 </script>
 
@@ -649,24 +739,36 @@
       <TocSidebar toc={doc.toc} current={currentEntry} onselect={selectTocEntry} {numbering} />
     {/if}
     <main class="sk-main" bind:this={mainElement}>
-      <Reader
-        bind:this={reader}
-        {doc}
-        {assetToken}
-        {initialAnchor}
-        onsectionchange={(s) => (currentSection = s)}
-        onfirstscreen={onFirstScreen}
-        onfullymounted={() => reportTiming("full_mount", performance.now() - openStarted)}
-        onlink={onLink}
-        onscrollsettled={rememberPosition}
-        fontSize={typography.fontSize}
-        fillWindow={typography.fillWindow}
-        {propertiesOpen}
-        {propertyEditor}
-        {blockEditing}
-        {keepPosition}
-        onpropertiestoggle={togglePropertiesPanel}
-      />
+      {#if rawMode && raw}
+        <RawEditor
+          bind:this={rawEditor}
+          text={raw.text}
+          lineEnding={doc.lineEnding}
+          startByte={raw.startByte}
+          resetKey={raw.resetKey}
+          fontSize={typography.fontSize}
+          onchange={onRawChange}
+        />
+      {:else}
+        <Reader
+          bind:this={reader}
+          {doc}
+          {assetToken}
+          {initialAnchor}
+          onsectionchange={(s) => (currentSection = s)}
+          onfirstscreen={onFirstScreen}
+          onfullymounted={() => reportTiming("full_mount", performance.now() - openStarted)}
+          onlink={onLink}
+          onscrollsettled={rememberPosition}
+          fontSize={typography.fontSize}
+          fillWindow={typography.fillWindow}
+          {propertiesOpen}
+          {propertyEditor}
+          {blockEditing}
+          {keepPosition}
+          onpropertiestoggle={togglePropertiesPanel}
+        />
+      {/if}
     </main>
     <StatusBar
       wordCount={doc.wordCount}

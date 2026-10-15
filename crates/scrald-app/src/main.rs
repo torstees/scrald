@@ -90,6 +90,8 @@ fn main() -> anyhow::Result<()> {
             commands::edit_front_matter,
             commands::save_document,
             commands::block_source,
+            commands::document_text,
+            commands::set_document_text,
             commands::edit_block,
             commands::step_history,
             commands::check_disk,

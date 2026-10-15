@@ -206,8 +206,72 @@ fn set_window_title(
         .as_ref()
         .and_then(|fm| fm.title.clone())
         .unwrap_or_else(|| scrald_core::title_from_path(&doc.path));
+    set_title_text(window, &title, dirty)
+}
+
+fn set_title_text(window: &tauri::WebviewWindow, title: &str, dirty: bool) -> tauri::Result<()> {
     let marker = if dirty { "\u{2022} " } else { "" };
     window.set_title(&format!("{marker}{title} \u{2014} Scrald"))
+}
+
+/// The window title for document text, read from its front matter alone
+/// (raw mode updates the title without parsing the whole document).
+fn title_from_text(path: &std::path::Path, text: &str) -> String {
+    scrald_core::frontmatter::split(text)
+        .and_then(|split| {
+            let yaml = &text[split.yaml.clone()];
+            scrald_core::frontmatter::parse(yaml, scrald_core::SourceRange::default()).title
+        })
+        .unwrap_or_else(|| scrald_core::title_from_path(path))
+}
+
+/// The whole document text (without BOM) and its version, for raw mode
+/// (DESIGN.md §9.2).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawText {
+    pub text: String,
+    pub version: u64,
+}
+
+#[tauri::command]
+pub fn document_text(
+    window: tauri::WebviewWindow,
+    sessions: tauri::State<'_, Sessions>,
+) -> Result<RawText, CommandError> {
+    let (text, version) = sessions
+        .text(window.label())
+        .context("no document is open in this window")?;
+    Ok(RawText { text, version })
+}
+
+/// After a raw-mode text replacement: the text's new version, and whether
+/// the document has unsaved changes.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawSync {
+    pub version: u64,
+    pub dirty: bool,
+}
+
+/// Replaces the whole text from raw mode (in memory; saved with Ctrl+S).
+/// Refused if `version` is out of date. Doesn't re-parse: the reader
+/// re-parses when raw mode closes.
+#[tauri::command]
+pub fn set_document_text(
+    window: tauri::WebviewWindow,
+    sessions: tauri::State<'_, Sessions>,
+    version: u64,
+    text: String,
+) -> Result<RawSync, CommandError> {
+    let title = sessions
+        .current(window.label())
+        .map(|(path, _)| title_from_text(&path, &text));
+    let (version, dirty) = sessions.replace_text(window.label(), version, text)?;
+    if let Some(title) = title {
+        set_title_text(&window, &title, dirty)?;
+    }
+    Ok(RawSync { version, dirty })
 }
 
 /// Parses the window's document again from its text in memory (keeping

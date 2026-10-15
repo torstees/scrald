@@ -273,5 +273,17 @@ export type PropertyChange =
   | { kind: "list"; value: string[] }
   | { kind: "remove" };
 
+/** Mirrors `RawText`: the whole document text (no BOM) and its version. */
+export interface RawText {
+  text: string;
+  version: number;
+}
+
+/** Mirrors `RawSync`: after replacing the text from raw mode. */
+export interface RawSync {
+  version: number;
+  dirty: boolean;
+}
+
 /** Mirrors `DiskState` (crates/scrald-app/src/session.rs). */
 export type DiskState = "unchanged" | "changed" | "missing";
