@@ -10,6 +10,8 @@ import type {
   OpenedDocument,
   PropertyChange,
   DiskState,
+  RawSync,
+  RawText,
   RecentDocument,
   ThemeStyle,
   ThemeSummary,
@@ -53,6 +55,16 @@ export function editBlock(start: number, end: number, original: string, text: st
 /** Undoes (or with `redo`, redoes) one edit; null if there's nothing to do. */
 export function stepHistory(redo: boolean): Promise<OpenedDocument | null> {
   return invoke<OpenedDocument | null>("step_history", { redo });
+}
+
+/** The whole document text and its version, for raw mode. */
+export function documentText(): Promise<RawText> {
+  return invoke<RawText>("document_text");
+}
+
+/** Replaces the whole text from raw mode; refused if `version` is out of date. */
+export function setDocumentText(version: number, text: string): Promise<RawSync> {
+  return invoke<RawSync>("set_document_text", { version, text });
 }
 
 /** Saves the window's document atomically. */

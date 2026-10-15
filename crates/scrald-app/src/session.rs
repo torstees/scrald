@@ -28,6 +28,9 @@ struct Session {
     /// that can be redone. Each is a small diff, not a copy of the text.
     undo: Vec<TextDiff>,
     redo: Vec<TextDiff>,
+    /// Goes up with every change to `text`, so raw mode can tell whether the
+    /// text it holds is still the current one.
+    version: u64,
 }
 
 /// How many changes undo remembers.
@@ -98,6 +101,7 @@ impl Sessions {
                 disk_hash: hash_bytes(&bytes),
                 undo: Vec::new(),
                 redo: Vec::new(),
+                version: self.next_version(),
             },
         );
         Ok(bytes)
@@ -138,6 +142,7 @@ impl Sessions {
             }
             session.redo.clear();
             session.text = edited;
+            session.version += 1;
             session.update_dirty();
         }
         Ok((session.path.clone(), session.bytes()))
@@ -168,6 +173,7 @@ impl Sessions {
             anyhow::bail!("the edit history no longer matches the document");
         };
         session.text = text;
+        session.version += 1;
         match step {
             Step::Undo => session.redo.push(diff),
             Step::Redo => session.undo.push(diff),
@@ -185,6 +191,45 @@ impl Sessions {
             .text
             .get(start.checked_sub(bom)?..end.checked_sub(bom)?)
             .map(str::to_string)
+    }
+
+    /// The whole text (without BOM) and its version, for raw mode.
+    pub fn text(&self, window: &str) -> Option<(String, u64)> {
+        self.lock().get(window).map(|s| (s.text.clone(), s.version))
+    }
+
+    /// Replaces the whole text (raw mode), if `version` is still current:
+    /// otherwise the text changed meanwhile (a reload, an undo) and nothing is
+    /// replaced. Recorded for undo like any edit. Returns the new version and
+    /// whether the document now has unsaved changes.
+    pub fn replace_text(
+        &self,
+        window: &str,
+        version: u64,
+        text: String,
+    ) -> anyhow::Result<(u64, bool)> {
+        let current = self
+            .lock()
+            .get(window)
+            .map(|s| s.version)
+            .context("no document is open in this window")?;
+        if current != version {
+            anyhow::bail!("the document changed while it was being edited in raw mode");
+        }
+        self.edit(window, |_| Ok::<String, std::io::Error>(text))?;
+        let sessions = self.lock();
+        let session = sessions
+            .get(window)
+            .context("no document is open in this window")?;
+        Ok((session.version, session.dirty))
+    }
+
+    /// Versions keep rising across documents too, so text from a document
+    /// that was replaced can never match the new one's version.
+    fn next_version(&self) -> u64 {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        NEXT.fetch_add(1_000_000, Ordering::Relaxed)
     }
 
     /// 3 if the document has a BOM, else 0: block ranges count it.
@@ -296,6 +341,25 @@ mod tests {
         // A new edit clears what could be redone.
         sessions.edit("w", upper).unwrap();
         assert!(sessions.step("w", Step::Redo).unwrap().is_none());
+    }
+
+    #[test]
+    fn raw_text_replacement_checks_the_version() {
+        let path = temp_file("raw.md", b"one\r\ntwo\r\n");
+        let sessions = Sessions::default();
+        sessions.open("w", &path).unwrap();
+        let (text, version) = sessions.text("w").unwrap();
+        assert_eq!(text, "one\r\ntwo\r\n");
+        let (v2, dirty) = sessions
+            .replace_text("w", version, "one\r\n2\r\n".into())
+            .unwrap();
+        assert!(dirty && v2 > version);
+        // Old version: refused, text unchanged.
+        assert!(sessions.replace_text("w", version, "x".into()).is_err());
+        assert_eq!(sessions.text("w").unwrap().0, "one\r\n2\r\n");
+        // Undo works on raw replacements too.
+        let (_, bytes) = sessions.step("w", Step::Undo).unwrap().unwrap();
+        assert_eq!(bytes, b"one\r\ntwo\r\n");
     }
 
     #[test]

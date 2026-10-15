@@ -542,6 +542,13 @@ As implemented:
 
 Ctrl+E toggles between the reading view and a full-document CodeMirror 6 editor showing the raw Markdown, including front matter. Scroll position carries over in both directions via source offsets. Raw mode gets basic Markdown syntax highlighting, search and replace, and soft wrap at the theme's measure.
 
+As implemented (`ui/src/editor/RawEditor.svelte`):
+
+- CodeMirror 6 with its basic setup (line numbers, search and replace on Ctrl+F, bracket matching, its own undo), Markdown with the front matter parsed as YAML, and a highlight style built from the theme's `--sk-*` variables, so every theme colors raw mode. The text column wraps at the theme's measure (in the monospace font). CodeMirror and its language packages load only when raw mode is first opened.
+- **Line endings are kept exactly.** The editor's line separator is set to the document's (`\r\n` for CRLF files), and the text is read with `state.sliceDoc()`, which joins lines with that separator; `doc.toString()` always uses `\n` and would turn a CRLF file into LF. (A CRLF file containing stray LF-only lines shows those as characters rather than breaks, but keeps them.) Positions count each line break as one, so offsets are converted accordingly (`ui/src/editor/offsets.ts`).
+- The reading position carries both ways as a byte offset: the block at the top of the reader becomes the line at the top of the editor, and the line at the top of the editor becomes the reader's anchor when raw mode closes. Clicking a TOC entry in raw mode jumps to that heading in the editor.
+- Typing is sent to the app 400 ms after it stops (the window title shows "• " without parsing; the title is read from the front matter alone). Each replacement carries a version number, so text from before a reload or another edit is refused instead of overwriting newer text; it's recorded for undo as the smallest diff. Ctrl+S, leaving the document, and closing send any pending text first. The reader re-parses when raw mode closes. A reload from disk (no unsaved changes) replaces the editor's text.
+
 ### 9.3 Saving and external changes
 
 - Unsaved changes are marked in the title bar. Ctrl+S saves. Closing a window (or quitting) with unsaved changes asks whether to save, discard, or cancel.
