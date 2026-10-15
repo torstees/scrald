@@ -15,7 +15,7 @@ use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::AssetRegistry;
-use crate::session::{DiskState, Sessions, Step};
+use crate::session::{DiskState, SaveOutcome, Sessions, Step};
 use crate::state::{
     DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore, TypographyDefaults,
 };
@@ -394,24 +394,64 @@ pub async fn step_history(
 }
 
 /// Saves the window's document to disk (atomically, keeping its BOM and
-/// line endings) and clears the unsaved marker.
+/// line endings) and clears the unsaved marker. Returns `conflict` without
+/// writing if the file changed on disk and the user hasn't chosen what to
+/// keep (DESIGN.md §9.3).
 #[tauri::command]
 pub fn save_document(
     window: tauri::WebviewWindow,
     sessions: tauri::State<'_, Sessions>,
-) -> Result<(), CommandError> {
-    sessions.save(window.label())?;
-    if let Some((path, bytes)) = sessions.current(window.label()) {
+) -> Result<SaveOutcome, CommandError> {
+    let outcome = sessions.save(window.label())?;
+    // Rust note: a "let chain" mixes a plain condition with `let` patterns;
+    // the body runs only if all of them hold.
+    if outcome == SaveOutcome::Saved
+        && let Some((path, bytes)) = sessions.current(window.label())
         // Only the title changes; a parse failure here can't lose anything.
-        if let Ok(doc) = scrald_core::parse_document(path, &bytes) {
-            set_window_title(&window, &doc, false)?;
-        }
+        && let Ok(doc) = scrald_core::parse_document(path, &bytes)
+    {
+        set_window_title(&window, &doc, false)?;
     }
-    Ok(())
+    Ok(outcome)
+}
+
+/// The text of the changed disk version found by `check_disk` or a refused
+/// save, for comparing with the window's text.
+#[tauri::command]
+pub fn disk_text(
+    window: tauri::WebviewWindow,
+    sessions: tauri::State<'_, Sessions>,
+) -> Result<String, CommandError> {
+    Ok(sessions.disk_text(window.label())?)
+}
+
+/// "Keep mine": the next save may replace the changed disk version.
+#[tauri::command]
+pub fn keep_local_version(window: tauri::WebviewWindow, sessions: tauri::State<'_, Sessions>) {
+    sessions.keep_local(window.label());
+}
+
+/// "Load disk version": replaces the window's text with the changed disk
+/// version (undoable) and returns the re-parsed document.
+#[tauri::command]
+pub async fn load_disk_version(
+    window: tauri::WebviewWindow,
+    registry: tauri::State<'_, AssetRegistry>,
+    store: tauri::State<'_, StateStore>,
+    themes: tauri::State<'_, ThemeService>,
+    sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
+) -> Result<OpenedDocument, CommandError> {
+    let (path, bytes) = sessions.load_disk_version(window.label())?;
+    let memory = store.record_open(&path).unwrap_or_default();
+    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let dirty = sessions.is_dirty(window.label());
+    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
 }
 
 /// How the file on disk compares with what this window last read or saved,
-/// so a change notification caused by Scrald's own save can be ignored.
+/// so a change notification caused by Scrald's own save can be ignored. A
+/// changed version is remembered for `disk_text` and `load_disk_version`.
 #[tauri::command]
 pub fn check_disk(window: tauri::WebviewWindow, sessions: tauri::State<'_, Sessions>) -> DiskState {
     sessions.disk_state(window.label())

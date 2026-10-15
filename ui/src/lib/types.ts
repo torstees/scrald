@@ -289,3 +289,9 @@ export interface RawSync {
 
 /** Mirrors `DiskState` (crates/scrald-app/src/session.rs). */
 export type DiskState = "unchanged" | "changed" | "missing";
+
+/**
+ * Mirrors `SaveOutcome` (crates/scrald-app/src/session.rs): "conflict" means
+ * the file changed on disk and nothing was written.
+ */
+export type SaveOutcome = "saved" | "conflict";
