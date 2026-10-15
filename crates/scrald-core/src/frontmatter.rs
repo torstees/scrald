@@ -115,6 +115,8 @@ const FLAVOR: &[&str] = &["scrald-flavor"];
 /// offsets can be given in the original file too.
 pub fn parse(yaml: &str, range: SourceRange, yaml_start: usize) -> FrontMatter {
     let mut fields = field_info(yaml);
+    // Rust note: iterating `&mut fields` borrows each item mutably, so the
+    // loop changes the Vec's elements in place (like `for (auto& f : v)`).
     for field in &mut fields {
         field.offset += yaml_start;
     }
