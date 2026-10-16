@@ -26,6 +26,10 @@
     diskText,
     keepLocalVersion,
     loadDiskVersion,
+    recoveredChanges,
+    restoreRecovered,
+    discardRecovered,
+    recoveredText,
     pickAssetsFolder,
     blockSource,
     editBlock,
@@ -40,6 +44,7 @@
     Flavor,
     OpenedDocument,
     PropertyChange,
+    RecoveredChanges,
     ResolvedTheme,
     ThemeSummary,
   } from "./lib/types";
@@ -55,6 +60,8 @@
   import { TOP_ANCHOR, type ScrollAnchor } from "./reader/anchor";
   import Reader from "./reader/Reader.svelte";
   import ConflictBanner from "./editor/ConflictBanner.svelte";
+  import RecoveryBanner from "./editor/RecoveryBanner.svelte";
+  import RecoveredList from "./editor/RecoveredList.svelte";
   import TocSidebar from "./toc/TocSidebar.svelte";
   import { entryForHeadingBlock } from "./toc/tree";
   import StatusBar from "./status/StatusBar.svelte";
@@ -456,6 +463,74 @@
     raw = { ...current, startByte: rawEditor?.topByte() ?? 0, resetKey: 0, compareWith: null, mount: raw.mount + 1 };
   }
 
+  // Crash recovery (DESIGN.md §9.3): unsaved changes Scrald found from a
+  // run that stopped before they were saved. Offered for the open document,
+  // or listed when Scrald starts without one.
+  let recovered = $state<RecoveredChanges | null>(null);
+  let recoveredList = $state<RecoveredChanges[]>([]);
+  let recoveryBusy = $state(false);
+
+  /** Replaces the document's text with recovered changes (undoable). */
+  async function restoreRecovery(id: string): Promise<void> {
+    recoveryBusy = true;
+    if (rawMode) await syncRaw();
+    await queueEdit(async () => {
+      try {
+        const opened = await restoreRecovered(id);
+        recovered = null;
+        if (rawMode && raw) {
+          const current = await documentText();
+          raw = { ...raw, ...current, startByte: rawEditor?.topByte() ?? 0, resetKey: raw.resetKey + 1 };
+        }
+        await applyEdit(opened);
+        showNotice(
+          rawMode
+            ? "Restored your unsaved changes. Ctrl+S saves them."
+            : "Restored your unsaved changes. Ctrl+S saves them; Ctrl+Z goes back to the file.",
+        );
+      } catch (e) {
+        showNotice(`Could not restore the changes: ${String(e)}`);
+      }
+    });
+    recoveryBusy = false;
+  }
+
+  /** Deletes recovered changes; the banner then offers any others for this document. */
+  async function discardRecovery(id: string): Promise<void> {
+    recoveryBusy = true;
+    try {
+      await discardRecovered(id);
+      const others = await recoveredChanges();
+      recoveredList = doc === null ? others : [];
+      recovered = doc === null ? null : (others.find((r) => r.path === doc?.path) ?? null);
+    } catch (e) {
+      showNotice(`Could not discard the changes: ${String(e)}`);
+    } finally {
+      recoveryBusy = false;
+    }
+  }
+
+  /** From the list shown without a document: open it, then restore. */
+  async function restoreFromList(item: RecoveredChanges): Promise<void> {
+    recoveryBusy = true;
+    try {
+      await navigate(item.path);
+    } finally {
+      recoveryBusy = false;
+    }
+    if (doc) await restoreRecovery(item.id);
+  }
+
+  /** Copies recovered text (for changes whose file is gone). */
+  async function copyRecovered(id: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(await recoveredText(id));
+      message = "Copied the recovered text.";
+    } catch (e) {
+      message = `Could not copy the text: ${String(e)}`;
+    }
+  }
+
   function togglePropertiesPanel(open: boolean): void {
     propertiesOpen = open;
     void setPropertiesOpen(open).catch(() => {});
@@ -506,6 +581,7 @@
       const info = await launchInfo();
       if (info.path === null || !info.exists) {
         message = launchMessage(info);
+        recoveredList = await recoveredChanges().catch(() => []);
         return;
       }
       await navigate(info.path);
@@ -525,6 +601,7 @@
       const opened = await openDocument(path);
       reportTiming("ipc_open_document", performance.now() - openStarted);
       await applyOpened(opened, anchor);
+      recovered = opened.recovered;
       conflict = null;
       if (comparing) {
         comparing = false;
@@ -875,6 +952,14 @@
           oncompare={startCompare}
         />
       {/if}
+      {#if recovered}
+        <RecoveryBanner
+          changes={recovered}
+          busy={recoveryBusy}
+          onrestore={() => recovered && restoreRecovery(recovered.id)}
+          ondiscard={() => recovered && discardRecovery(recovered.id)}
+        />
+      {/if}
       {#if rawMode && raw}
         {#key raw.mount}
           <RawEditor
@@ -969,6 +1054,15 @@
     <main class="sk-main sk-message">
       <h1>Scrald</h1>
       {#if message}<p>{message}</p>{/if}
+      {#if recoveredList.length > 0}
+        <RecoveredList
+          items={recoveredList}
+          busy={recoveryBusy}
+          onrestore={restoreFromList}
+          oncopy={(item) => copyRecovered(item.id)}
+          ondiscard={(item) => discardRecovery(item.id)}
+        />
+      {/if}
     </main>
   {/if}
 </div>

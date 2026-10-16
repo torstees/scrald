@@ -54,6 +54,46 @@ pub struct OpenedDocument {
     pub theme: ResolvedTheme,
     /// Whether the window holds edits that aren't saved yet.
     pub dirty: bool,
+    /// Unsaved changes to this document left behind when Scrald stopped
+    /// before saving them (only when opening; the newest, if several).
+    pub recovered: Option<RecoveredChanges>,
+}
+
+/// Unsaved changes found in a recovery file (DESIGN.md §9.3).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveredChanges {
+    pub id: String,
+    pub path: PathBuf,
+    /// The title in the recovered text (front matter or file name).
+    pub title: String,
+    /// When the changes were last written, in milliseconds since the epoch.
+    pub saved_at: u64,
+    /// The file changed after these changes were made: restoring and saving
+    /// would replace that newer version.
+    pub file_changed: bool,
+    /// The file can't be read any more, so the changes can't be restored
+    /// into it (they can still be copied).
+    pub file_missing: bool,
+}
+
+/// Describes a recovery file for the frontend. `None` if it can't be read.
+fn describe_recovery(
+    sessions: &Sessions,
+    entry: &scrald_core::recovery::RecoveryEntry,
+) -> Option<RecoveredChanges> {
+    let (header, text) = sessions.recovery_text(&entry.id).ok()?;
+    let disk = std::fs::read(&header.path).ok();
+    Some(RecoveredChanges {
+        id: entry.id.clone(),
+        title: title_from_text(&header.path, &text),
+        saved_at: header.saved_at,
+        file_changed: disk
+            .as_deref()
+            .is_some_and(|bytes| scrald_core::hash::fnv1a(bytes) != header.base_hash),
+        file_missing: disk.is_none(),
+        path: header.path,
+    })
 }
 
 /// A document's theme after the resolution order in DESIGN.md §7.6.
@@ -140,7 +180,12 @@ pub async fn open_document(
         tracing::warn!(error = format!("{error:#}"), "live reload unavailable");
     }
 
-    finish_open(&window, &registry, &store, &themes, doc, memory, false)
+    let mut opened = finish_open(&window, &registry, &store, &themes, doc, memory, false)?;
+    opened.recovered = sessions
+        .orphaned_recoveries(Some(&path))
+        .first()
+        .and_then(|entry| describe_recovery(&sessions, entry));
+    Ok(opened)
 }
 
 /// Parses document bytes on a background thread so the window stays
@@ -192,6 +237,7 @@ fn finish_open(
         memory,
         theme,
         dirty,
+        recovered: None,
     })
 }
 
@@ -447,6 +493,59 @@ pub async fn load_disk_version(
     let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
     finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+}
+
+/// Every set of unsaved changes left behind when Scrald stopped before they
+/// were saved or discarded, newest first (offered when Scrald starts without
+/// a document).
+#[tauri::command]
+pub fn recovered_changes(sessions: tauri::State<'_, Sessions>) -> Vec<RecoveredChanges> {
+    sessions
+        .orphaned_recoveries(None)
+        .iter()
+        .filter_map(|entry| describe_recovery(&sessions, entry))
+        .collect()
+}
+
+/// Restores recovered changes into this window's document, which must be
+/// the one they belong to. They become unsaved changes; Ctrl+Z goes back to
+/// the file's text.
+#[tauri::command]
+pub async fn restore_recovered(
+    window: tauri::WebviewWindow,
+    registry: tauri::State<'_, AssetRegistry>,
+    store: tauri::State<'_, StateStore>,
+    themes: tauri::State<'_, ThemeService>,
+    sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
+    id: String,
+) -> Result<OpenedDocument, CommandError> {
+    let (path, bytes) = sessions.restore_recovery(window.label(), &id)?;
+    tracing::info!(path = %path.display(), "restored recovered changes");
+    let memory = store.record_open(&path).unwrap_or_default();
+    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let dirty = sessions.is_dirty(window.label());
+    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+}
+
+/// Deletes recovered changes the user chose not to restore.
+#[tauri::command]
+pub fn discard_recovered(
+    sessions: tauri::State<'_, Sessions>,
+    id: String,
+) -> Result<(), CommandError> {
+    sessions.discard_recovery(&id)?;
+    tracing::info!("discarded recovered changes");
+    Ok(())
+}
+
+/// The text of recovered changes, for copying when their file is gone.
+#[tauri::command]
+pub fn recovered_text(
+    sessions: tauri::State<'_, Sessions>,
+    id: String,
+) -> Result<String, CommandError> {
+    Ok(sessions.recovery_text(&id)?.1)
 }
 
 /// How the file on disk compares with what this window last read or saved,

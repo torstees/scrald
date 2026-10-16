@@ -14,6 +14,7 @@ import type {
   RawSync,
   RawText,
   RecentDocument,
+  RecoveredChanges,
   ThemeStyle,
   ThemeSummary,
   TypographyDefaults,
@@ -86,6 +87,26 @@ export function keepLocalVersion(): Promise<void> {
 /** "Load disk version": replaces the text with it (undoable), re-parsed. */
 export function loadDiskVersion(): Promise<OpenedDocument> {
   return invoke<OpenedDocument>("load_disk_version");
+}
+
+/** Unsaved changes left behind when Scrald stopped, newest first. */
+export function recoveredChanges(): Promise<RecoveredChanges[]> {
+  return invoke<RecoveredChanges[]>("recovered_changes");
+}
+
+/** Restores recovered changes into the open document (undoable), re-parsed. */
+export function restoreRecovered(id: string): Promise<OpenedDocument> {
+  return invoke<OpenedDocument>("restore_recovered", { id });
+}
+
+/** Deletes recovered changes the user chose not to restore. */
+export function discardRecovered(id: string): Promise<void> {
+  return invoke<void>("discard_recovered", { id });
+}
+
+/** The text of recovered changes, for copying. */
+export function recoveredText(id: string): Promise<string> {
+  return invoke<string>("recovered_text", { id });
 }
 
 /** How the file on disk compares with what this window last read or saved. */

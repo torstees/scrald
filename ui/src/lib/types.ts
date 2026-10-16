@@ -265,6 +265,22 @@ export interface OpenedDocument {
   theme: ResolvedTheme;
   /** Whether the window holds edits that aren't saved yet. */
   dirty: boolean;
+  /** Unsaved changes left behind when Scrald stopped (only when opening). */
+  recovered: RecoveredChanges | null;
+}
+
+/** Mirrors `RecoveredChanges` (crates/scrald-app/src/commands.rs): unsaved changes from a recovery file. */
+export interface RecoveredChanges {
+  id: string;
+  path: string;
+  /** The title in the recovered text. */
+  title: string;
+  /** When the changes were last written, in milliseconds since the epoch. */
+  savedAt: number;
+  /** The file changed after these changes were made. */
+  fileChanged: boolean;
+  /** The file can't be read any more; the changes can only be copied. */
+  fileMissing: boolean;
 }
 
 /** Mirrors `Change` (crates/scrald-core/src/yaml_edit.rs): a new value for a front matter key. */

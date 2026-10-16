@@ -98,6 +98,10 @@ fn main() -> anyhow::Result<()> {
             commands::disk_text,
             commands::keep_local_version,
             commands::load_disk_version,
+            commands::recovered_changes,
+            commands::restore_recovered,
+            commands::discard_recovered,
+            commands::recovered_text,
             commands::pick_assets_folder,
             commands::save_reading_position,
             commands::set_remote_images,
@@ -146,6 +150,8 @@ fn main() -> anyhow::Result<()> {
                 );
             }
             app.manage(theme_service);
+
+            start_crash_recovery(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -159,15 +165,8 @@ fn main() -> anyhow::Result<()> {
 
 /// Opens the state database in the app data directory. If that fails, Scrald
 /// still runs, with an in-memory store that forgets everything on exit.
-///
-/// `SCRALD_DATA_DIR` overrides the directory, so automated test runs keep
-/// their state out of the user's real app data.
 fn open_state_store(app: &tauri::AppHandle) -> state::StateStore {
-    let dir = match std::env::var_os("SCRALD_DATA_DIR") {
-        Some(dir) => Ok(PathBuf::from(dir)),
-        None => app.path().app_data_dir().context("no app data directory"),
-    };
-    let opened = dir.and_then(|dir| {
+    let opened = data_dir(app).and_then(|dir| {
         let db = dir.join("scrald.db");
         tracing::info!(path = %db.display(), "state database");
         state::StateStore::open(&db)
@@ -184,6 +183,36 @@ fn open_state_store(app: &tauri::AppHandle) -> state::StateStore {
             state::StateStore::in_memory().expect("in-memory SQLite database")
         }
     }
+}
+
+/// The app data folder, or `SCRALD_DATA_DIR` if set, so automated test runs
+/// keep their state out of the user's real app data.
+fn data_dir(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
+    match std::env::var_os("SCRALD_DATA_DIR") {
+        Some(dir) => Ok(PathBuf::from(dir)),
+        None => app.path().app_data_dir().context("no app data directory"),
+    }
+}
+
+/// Copies unsaved changes to recovery files in `recovery/` in the app data
+/// folder every few seconds (DESIGN.md §9.3), on a thread of its own.
+fn start_crash_recovery(app: &tauri::AppHandle) {
+    let dir = match data_dir(app) {
+        Ok(dir) => dir.join("recovery"),
+        Err(error) => {
+            tracing::warn!(error = format!("{error:#}"), "crash recovery unavailable");
+            return;
+        }
+    };
+    tracing::info!(path = %dir.display(), "recovery files");
+    app.state::<session::Sessions>().set_recovery_dir(dir);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(session::RECOVERY_INTERVAL);
+            app.state::<session::Sessions>().write_recovery();
+        }
+    });
 }
 
 /// `themes/` in the app config folder (or under `SCRALD_DATA_DIR`, for tests).
