@@ -30,6 +30,9 @@
     restoreRecovered,
     discardRecovered,
     recoveredText,
+    autosave as autosaveSetting,
+    setAutosave,
+    onAutosaveChanged,
     pickAssetsFolder,
     blockSource,
     editBlock,
@@ -62,6 +65,7 @@
   import ConflictBanner from "./editor/ConflictBanner.svelte";
   import RecoveryBanner from "./editor/RecoveryBanner.svelte";
   import RecoveredList from "./editor/RecoveredList.svelte";
+  import { AUTOSAVE_DELAY_MS, Autosaver } from "./editor/autosave";
   import TocSidebar from "./toc/TocSidebar.svelte";
   import { entryForHeadingBlock } from "./toc/tree";
   import StatusBar from "./status/StatusBar.svelte";
@@ -164,6 +168,9 @@
     if (rawMode) await syncRaw();
     await pendingEdits;
     if (!dirty) return true;
+    // With autosave on, leaving saves; if that fails (say, the file changed
+    // on disk), ask as usual.
+    if (autosave && (await save())) return true;
     const choice = await askUnsaved(action);
     if (choice === "cancel") return false;
     if (choice === "save") return save();
@@ -201,6 +208,7 @@
 
   function onRawChange(): void {
     rawPending = "changed";
+    noteEdit();
     window.clearTimeout(rawTimer);
     rawTimer = window.setTimeout(() => void syncRaw(), RAW_SYNC_MS);
   }
@@ -279,6 +287,7 @@
         try {
           const started = performance.now();
           await applyEdit(await editBlock(block.source.start, block.source.end, original, text));
+          noteEdit();
           // DESIGN.md §4 budget: re-render after a single-block edit < 100 ms.
           void afterPaint().then(() => reportTiming("block_edit", performance.now() - started));
         } catch (e) {
@@ -292,7 +301,10 @@
     return queueEdit(async () => {
       try {
         const opened = await stepHistory(redo);
-        if (opened) await applyEdit(opened);
+        if (opened) {
+          await applyEdit(opened);
+          noteEdit();
+        }
         else showNotice(redo ? "Nothing to redo" : "Nothing to undo");
       } catch (e) {
         showNotice(`Could not ${redo ? "redo" : "undo"}: ${String(e)}`);
@@ -301,7 +313,7 @@
   }
 
   /** Saves the document; false (with a notice) if that failed. */
-  async function save(): Promise<boolean> {
+  async function save(savedNotice = "Saved"): Promise<boolean> {
     if (!doc) return false;
     if (rawMode) await syncRaw();
     await pendingEdits;
@@ -312,7 +324,7 @@
         return false;
       }
       dirty = false;
-      showNotice("Saved");
+      showNotice(savedNotice);
       return true;
     } catch (e) {
       showNotice(`Could not save: ${String(e)}`);
@@ -325,6 +337,7 @@
     return queueEdit(async () => {
       try {
         await applyEdit(await editFrontMatter(key, change));
+        noteEdit();
       } catch (e) {
         showNotice(`Could not change ${key}: ${String(e)}`);
       }
@@ -463,6 +476,43 @@
     raw = { ...current, startByte: rawEditor?.topByte() ?? 0, resetKey: 0, compareWith: null, mount: raw.mount + 1 };
   }
 
+  // Autosave (DESIGN.md §9.3): off by default; when on, the document saves
+  // itself once editing pauses. Only the user's own edits start the wait;
+  // loading the disk version or restoring recovered changes doesn't.
+  let autosave = $state(false);
+  const autosaver = new Autosaver(AUTOSAVE_DELAY_MS, autosaveNow);
+
+  /** Called after each edit by the user. */
+  function noteEdit(): void {
+    if (autosave) autosaver.touch();
+  }
+
+  async function autosaveNow(): Promise<void> {
+    // A conflict waits for the user's decision; a "save changes?" prompt
+    // is already handling the unsaved changes.
+    if (!autosave || !doc || conflict || unsavedPrompt) return;
+    if (rawMode) await syncRaw();
+    await pendingEdits;
+    if (dirty) await save("Autosaved");
+  }
+
+  async function toggleAutosave(): Promise<void> {
+    const enabled = !autosave;
+    try {
+      await setAutosave(enabled);
+      applyAutosave(enabled);
+      showNotice(enabled ? "Autosave on" : "Autosave off: Ctrl+S saves");
+    } catch (e) {
+      showNotice(`Could not change autosave: ${String(e)}`);
+    }
+  }
+
+  function applyAutosave(enabled: boolean): void {
+    autosave = enabled;
+    if (!enabled) autosaver.cancel();
+    else if (dirty) autosaver.touch();
+  }
+
   // Crash recovery (DESIGN.md §9.3): unsaved changes Scrald found from a
   // run that stopped before they were saved. Offered for the open document,
   // or listed when Scrald starts without one.
@@ -550,6 +600,10 @@
     void propertiesOpenSetting()
       .then((open) => (propertiesOpen = open))
       .catch(() => {});
+    void autosaveSetting()
+      .then(applyAutosave)
+      .catch(() => {});
+    const unlistenAutosave = onAutosaveChanged(applyAutosave);
     void typography.loadDefaults().then(start);
     // Live reload (DESIGN.md §9.3), unless it's our own save or there are
     // unsaved edits.
@@ -572,6 +626,7 @@
       void unlisten.then((stop) => stop());
       void unlistenClose.then((stop) => stop());
       void unlistenThemes.then((stop) => stop());
+      void unlistenAutosave.then((stop) => stop());
       window.removeEventListener("wheel", onWheel);
     };
   });
@@ -600,6 +655,7 @@
     try {
       const opened = await openDocument(path);
       reportTiming("ipc_open_document", performance.now() - openStarted);
+      autosaver.cancel();
       await applyOpened(opened, anchor);
       recovered = opened.recovered;
       conflict = null;
@@ -1015,6 +1071,8 @@
       onflavor={chooseFlavor}
       typography={typography.summary}
       ontypographyclick={() => (typographyOpen = !typographyOpen)}
+      {autosave}
+      onautosave={toggleAutosave}
     />
     {#if typographyOpen}
       <TypographyPanel

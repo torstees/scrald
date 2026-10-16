@@ -689,6 +689,33 @@ pub fn set_properties_open(
     Ok(store.set_properties_open(open)?)
 }
 
+/// Event sent to every window when autosave is turned on or off, with the
+/// new value.
+pub const AUTOSAVE_CHANGED: &str = "autosave-changed";
+
+/// Whether documents save themselves after a pause in editing (off by
+/// default, DESIGN.md §9.3).
+#[tauri::command]
+pub fn autosave(store: tauri::State<'_, StateStore>) -> Result<bool, CommandError> {
+    Ok(store.autosave()?)
+}
+
+/// Turns autosave on or off, for every window.
+#[tauri::command]
+pub fn set_autosave(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, StateStore>,
+    enabled: bool,
+) -> Result<(), CommandError> {
+    store.set_autosave(enabled)?;
+    tracing::info!(enabled, "autosave");
+    // Rust note: `Emitter` is a trait; its `emit` method is only callable
+    // once the trait is in scope, hence the `use` inside the function.
+    use tauri::Emitter;
+    app.emit(AUTOSAVE_CHANGED, enabled)?;
+    Ok(())
+}
+
 /// Global typography settings ("Make this the default" and "fill window").
 #[tauri::command]
 pub fn typography_defaults(

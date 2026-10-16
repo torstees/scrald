@@ -89,6 +89,21 @@ export function loadDiskVersion(): Promise<OpenedDocument> {
   return invoke<OpenedDocument>("load_disk_version");
 }
 
+/** Whether documents save themselves after a pause in editing. */
+export function autosave(): Promise<boolean> {
+  return invoke<boolean>("autosave");
+}
+
+/** Turns autosave on or off, for every window. */
+export function setAutosave(enabled: boolean): Promise<void> {
+  return invoke<void>("set_autosave", { enabled });
+}
+
+/** Calls `handler` when autosave is turned on or off (in any window). */
+export function onAutosaveChanged(handler: (enabled: boolean) => void): Promise<UnlistenFn> {
+  return listen<boolean>("autosave-changed", (event) => handler(event.payload));
+}
+
 /** Unsaved changes left behind when Scrald stopped, newest first. */
 export function recoveredChanges(): Promise<RecoveredChanges[]> {
   return invoke<RecoveredChanges[]>("recovered_changes");

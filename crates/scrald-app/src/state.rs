@@ -56,6 +56,10 @@ const TYPOGRAPHY: &str = "typography";
 /// Settings key: whether the properties panel starts open (DESIGN.md §8.2).
 const PROPERTIES_OPEN: &str = "properties.open";
 
+/// Settings key: whether documents save themselves after a pause in editing
+/// (DESIGN.md §9.3).
+const AUTOSAVE: &str = "editing.autosave";
+
 /// Zoom is a multiplier on the base font size; outside this range the
 /// reader stops being useful.
 pub const MIN_ZOOM: f64 = 0.5;
@@ -281,6 +285,15 @@ impl StateStore {
 
     pub fn set_properties_open(&self, open: bool) -> anyhow::Result<()> {
         self.set_setting(PROPERTIES_OPEN, &open)
+    }
+
+    /// Whether autosave is on. Off unless the user turned it on.
+    pub fn autosave(&self) -> anyhow::Result<bool> {
+        Ok(self.get_setting(AUTOSAVE)?.unwrap_or(false))
+    }
+
+    pub fn set_autosave(&self, enabled: bool) -> anyhow::Result<()> {
+        self.set_setting(AUTOSAVE, &enabled)
     }
 
     pub fn typography_defaults(&self) -> anyhow::Result<TypographyDefaults> {
@@ -578,6 +591,10 @@ mod tests {
         assert!(store.properties_open().unwrap());
         store.set_properties_open(false).unwrap();
         assert!(!store.properties_open().unwrap());
+        // Autosave is off by default (DESIGN.md §9.3).
+        assert!(!store.autosave().unwrap());
+        store.set_autosave(true).unwrap();
+        assert!(store.autosave().unwrap());
     }
 
     #[test]
