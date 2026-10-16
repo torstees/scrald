@@ -117,6 +117,8 @@ fn main() -> anyhow::Result<()> {
             commands::set_document_flavor,
             commands::properties_open,
             commands::set_properties_open,
+            commands::autosave,
+            commands::set_autosave,
             commands::typography_defaults,
             commands::set_typography_defaults,
             commands::resolve_link,

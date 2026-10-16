@@ -30,6 +30,9 @@
     /** Text sizing and zoom summary; clicking it opens the typography panel. */
     typography: string;
     ontypographyclick: () => void;
+    /** Whether autosave is on; clicking toggles it (for every window). */
+    autosave: boolean;
+    onautosave: () => void;
   }
 
   let {
@@ -52,6 +55,8 @@
     flavor,
     flavorSource,
     onflavor,
+    autosave,
+    onautosave,
   }: Props = $props();
 
   let flavorMenuOpen = $state(false);
@@ -84,6 +89,16 @@
       <button class="load" onclick={onallowremote} title="Load remote images for this document">Load</button>
     </span>
   {/if}
+  <button
+    class="theme"
+    class:on={autosave}
+    onclick={onautosave}
+    aria-pressed={autosave}
+    title={autosave
+      ? "Documents save themselves 5 seconds after you stop editing. Click to turn off."
+      : "Off: changes are saved only with Ctrl+S. Click to save automatically 5 seconds after you stop editing."}
+    >Autosave {autosave ? "on" : "off"}</button
+  >
   {#if themeName}
     <button class="theme" onclick={onthemeclick} title="Change theme (Ctrl+T)">{themeName}</button>
   {/if}
@@ -165,6 +180,10 @@
 
   .theme:hover {
     border-color: var(--sk-color-border);
+    color: var(--sk-color-foreground);
+  }
+
+  .theme.on {
     color: var(--sk-color-foreground);
   }
 
