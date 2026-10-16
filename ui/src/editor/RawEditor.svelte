@@ -2,7 +2,9 @@
   // Raw mode (DESIGN.md §9.2): the whole document, front matter included,
   // in CodeMirror 6, with Markdown highlighting in the theme's colors, search
   // and replace (Ctrl+F), and soft wrap at the theme's measure. Loaded only
-  // when raw mode is first opened.
+  // when raw mode is first opened. With `compareWith`, it's a side-by-side
+  // merge view instead (§9.3): the disk version, read-only, on the left, and
+  // the document's text, editable as usual, on the right.
   import { onDestroy, onMount } from "svelte";
   import type { EditorView } from "@codemirror/view";
   import type { LineEnding } from "../lib/types";
@@ -22,12 +24,26 @@
      * `currentText()`, so the whole text isn't built on every keystroke.
      */
     onchange: () => void;
+    /** The changed disk version to compare with, or null for plain raw mode. */
+    compareWith?: string | null;
   }
 
-  let { text, lineEnding, startByte, resetKey, fontSize, onchange }: Props = $props();
+  let { text, lineEnding, startByte, resetKey, fontSize, onchange, compareWith = null }: Props = $props();
 
   let host: HTMLDivElement | undefined = $state();
+  // The editable editor: the only one, or the right side of the merge view.
   let view: EditorView | null = null;
+  // Every editor on screen (two in the merge view), for appearance changes.
+  let editors: EditorView[] = [];
+  // In compare mode, the merge view's own scrolling element.
+  let mergeScroller: HTMLElement | null = null;
+  let destroyMerge: (() => void) | null = null;
+  // Follows the theme's light/dark appearance while the editor is open.
+  let appearanceObserver: MutationObserver | null = null;
+
+  function themeIsDark(): boolean {
+    return document.documentElement.dataset.appearance === "dark";
+  }
   let failed = $state<string | null>(null);
   let shownResetKey = -1;
 
@@ -46,7 +62,8 @@
   /** Byte offset (in the text) of the first line visible at the top. */
   export function topByte(): number {
     if (!view) return startByte;
-    const top = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
+    const scrollTop = mergeScroller ? mergeScroller.scrollTop : view.scrollDOM.scrollTop;
+    const top = view.lineBlockAtHeight(scrollTop);
     return byteLength(view.state.sliceDoc(0, top.from));
   }
 
@@ -71,7 +88,7 @@
   onMount(() => {
     void (async () => {
       try {
-        const [{ basicSetup }, { markdown }, { yamlFrontmatter }, { EditorView }, { EditorState }, language, { tags }] =
+        const [{ basicSetup }, { markdown }, { yamlFrontmatter }, { EditorView }, { EditorState, Compartment }, language, { tags }] =
           await Promise.all([
           import("codemirror"),
           import("@codemirror/lang-markdown"),
@@ -81,6 +98,7 @@
           import("@codemirror/language"),
           import("@lezer/highlight"),
         ]);
+        const merge = compareWith === null ? null : await import("@codemirror/merge");
         if (!host) return;
         // Markdown highlighting from the theme's variables, so every theme
         // (and a theme switch) colors raw mode without code changes.
@@ -100,9 +118,10 @@
           { tag: [tags.propertyName, tags.definition(tags.propertyName)], color: "var(--sk-color-link)" },
           { tag: [tags.string, tags.number, tags.bool, tags.null], color: "var(--sk-color-foreground)" },
         ]);
-        const state = EditorState.create({
-          doc: text,
-          extensions: [
+        // A Compartment is a part of the editor's configuration that can be
+        // replaced later without rebuilding the editor.
+        const appearance = new Compartment();
+        const common = [
             // Line breaks exactly as the file has them, so the text that
             // comes back is byte-for-byte the file's (no CRLF -> LF).
             EditorState.lineSeparator.of(separator),
@@ -111,12 +130,14 @@
             yamlFrontmatter({ content: markdown() }),
             language.syntaxHighlighting(highlight),
             EditorView.lineWrapping,
-            EditorView.updateListener.of((update) => {
-              if (update.docChanged) onchange();
-            }),
+            // CodeMirror's built-in colors (merge highlights, folded lines)
+            // have light and dark variants; pick the theme's, and switch
+            // when the theme does (below).
+            appearance.of(EditorView.darkTheme.of(themeIsDark())),
             EditorView.theme({
               "&": {
-                height: "100%",
+                // In the merge view, the editors grow and the view scrolls.
+                height: merge ? "auto" : "100%",
                 color: "var(--sk-color-foreground)",
                 backgroundColor: "var(--sk-color-background)",
               },
@@ -134,9 +155,13 @@
               ".cm-activeLine, .cm-activeLineGutter": {
                 backgroundColor: "color-mix(in srgb, var(--sk-color-foreground) 5%, transparent)",
               },
-              "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-                backgroundColor: "var(--sk-color-selection)",
-              },
+              // The focused rule repeats CodeMirror's own selector so it's at
+              // least as specific; otherwise CodeMirror's light or dark
+              // default wins whenever the editor has focus.
+              "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection":
+                {
+                  backgroundColor: "var(--sk-color-selection)",
+                },
               // The search panel: CodeMirror's own fields and buttons are
               // light-themed (a pale gradient), unreadable on dark themes.
               ".cm-panels": {
@@ -190,10 +215,54 @@
                 outline: "1px solid var(--sk-color-accent)",
               },
               "&.cm-focused": { outline: "none" },
+              ".cm-merge-revert button": {
+                color: "var(--sk-color-accent)",
+                cursor: "pointer",
+              },
             }),
-          ],
+          ];
+        const editable = EditorView.updateListener.of((update) => {
+          if (update.docChanged) onchange();
         });
-        view = new EditorView({ parent: host, state });
+        if (merge && compareWith !== null) {
+          // Shown with this document's line breaks, so a chunk taken from it
+          // arrives with the right ones (a change of line endings alone
+          // doesn't show as a difference).
+          const disk = compareWith.replace(/\r\n|\r|\n/g, separator);
+          const mergeView = new merge.MergeView({
+            parent: host,
+            a: {
+              doc: disk,
+              extensions: [
+                ...common,
+                EditorState.readOnly.of(true),
+                EditorView.editable.of(false),
+                // The arrows' label, which comes from this side's phrases.
+                EditorState.phrases.of({ "Revert this chunk": "Use the disk version of this change" }),
+              ],
+            },
+            b: { doc: text, extensions: [...common, editable] },
+            // Arrows between the sides copy a disk chunk into the document.
+            revertControls: "a-to-b",
+            collapseUnchanged: { margin: 3, minSize: 6 },
+          });
+          view = mergeView.b;
+          mergeScroller = mergeView.dom;
+          destroyMerge = () => mergeView.destroy();
+          editors = [mergeView.a, mergeView.b];
+        } else {
+          view = new EditorView({
+            parent: host,
+            state: EditorState.create({ doc: text, extensions: [...common, editable] }),
+          });
+          editors = [view];
+        }
+        // A theme switch changes `data-appearance` on the page.
+        appearanceObserver = new MutationObserver(() => {
+          const effect = appearance.reconfigure(EditorView.darkTheme.of(themeIsDark()));
+          for (const editor of editors) editor.dispatch({ effects: effect });
+        });
+        appearanceObserver.observe(document.documentElement, { attributeFilter: ["data-appearance"] });
         shownResetKey = resetKey;
         const index = positionFor(text, startByte);
         view.dispatch({ effects: EditorView.scrollIntoView(index, { y: "start" }), selection: { anchor: index } });
@@ -214,10 +283,14 @@
     }
   });
 
-  onDestroy(() => view?.destroy());
+  onDestroy(() => {
+    appearanceObserver?.disconnect();
+    if (destroyMerge) destroyMerge();
+    else view?.destroy();
+  });
 </script>
 
-<div class="sk-raw" bind:this={host} style:font-size={fontSize === null ? null : `${fontSize * 0.85}px`}>
+<div class="sk-raw" class:compare={compareWith !== null} bind:this={host} style:font-size={fontSize === null ? null : `${fontSize * 0.85}px`}>
   {#if failed}<p class="sk-raw-error">{failed}</p>{/if}
 </div>
 
@@ -229,6 +302,14 @@
 
   .sk-raw :global(.cm-editor) {
     height: 100%;
+  }
+
+  .sk-raw.compare :global(.cm-mergeView) {
+    height: 100%;
+  }
+
+  .sk-raw.compare :global(.cm-editor) {
+    height: auto;
   }
 
   .sk-raw :global(.cm-scroller) {

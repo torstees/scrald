@@ -23,6 +23,9 @@
     editFrontMatter,
     saveDocument,
     checkDisk,
+    diskText,
+    keepLocalVersion,
+    loadDiskVersion,
     pickAssetsFolder,
     blockSource,
     editBlock,
@@ -51,6 +54,7 @@
   import { NavHistory } from "./nav/history";
   import { TOP_ANCHOR, type ScrollAnchor } from "./reader/anchor";
   import Reader from "./reader/Reader.svelte";
+  import ConflictBanner from "./editor/ConflictBanner.svelte";
   import TocSidebar from "./toc/TocSidebar.svelte";
   import { entryForHeadingBlock } from "./toc/tree";
   import StatusBar from "./status/StatusBar.svelte";
@@ -173,7 +177,16 @@
   // sent to the app shortly after typing stops; the reader re-parses when
   // raw mode closes.
   let rawMode = $state(false);
-  let raw = $state<{ text: string; version: number; startByte: number; resetKey: number } | null>(null);
+  let raw = $state<{
+    text: string;
+    version: number;
+    startByte: number;
+    resetKey: number;
+    /** The disk version shown beside the text (compare view), or null. */
+    compareWith: string | null;
+    /** Changes when the editor must be built again (compare view on or off). */
+    mount: number;
+  } | null>(null);
   let rawEditor: RawEditor | undefined = $state();
   let rawPending: string | null = null;
   let rawTimer = 0;
@@ -214,7 +227,7 @@
     try {
       const current = await documentText();
       const bom = doc.hasBom ? 3 : 0;
-      raw = { ...current, startByte: Math.max(0, offset - bom), resetKey: 0 };
+      raw = { ...current, startByte: Math.max(0, offset - bom), resetKey: 0, compareWith: null, mount: 0 };
       rawMode = true;
       showNotice("Raw mode: Ctrl+E returns to reading");
     } catch (e) {
@@ -230,6 +243,7 @@
     const top = rawEditor?.topByte() ?? 0;
     rawMode = false;
     raw = null;
+    comparing = false;
     try {
       const opened = await reparseDocument();
       await applyOpened(opened, { offset: top + bom, fraction: 0 });
@@ -285,7 +299,11 @@
     if (rawMode) await syncRaw();
     await pendingEdits;
     try {
-      await saveDocument();
+      if ((await saveDocument()) === "conflict") {
+        conflict = "changed";
+        showNotice("Not saved: the file changed on disk. Choose what to keep first.");
+        return false;
+      }
       dirty = false;
       showNotice("Saved");
       return true;
@@ -316,29 +334,126 @@
         },
   );
 
+  // External changes while there are unsaved edits (DESIGN.md §9.3): the
+  // banner offers to keep mine, load the disk version, or compare.
+  let conflict = $state<"changed" | "missing" | null>(null);
+  let comparing = $state(false);
+  let conflictBusy = $state(false);
+
   /**
    * The document changed on disk. Scrald's own saves (and touches that
    * change nothing) are ignored; with unsaved edits the file isn't reloaded,
-   * so nothing is lost (the full conflict banner comes with M6).
+   * so nothing is lost, and the conflict banner asks what to keep.
    */
   async function onDiskChanged(): Promise<void> {
+    if (rawMode) await syncRaw();
+    await pendingEdits;
     const state = await checkDisk().catch(() => "changed" as const);
-    if (state === "unchanged") return;
-    if (dirty) {
-      showNotice(
-        state === "missing"
-          ? "The file was moved or deleted. Your unsaved changes are kept; saving writes it again."
-          : "The file changed on disk. Your unsaved changes are kept; saving will replace the disk version.",
-      );
+    if (state === "unchanged") {
+      // Changed back (or to the version already kept): nothing to decide.
+      if (conflict) await endConflict();
+      return;
+    }
+    if (dirty || conflict) {
+      conflict = state;
+      // Changed again while comparing: compare with the new version.
+      if (comparing) {
+        if (state === "changed") await startCompare();
+        else await stopComparing();
+      }
       return;
     }
     if (state === "changed") {
       await reload();
       if (rawMode && raw) {
         const current = await documentText();
-        raw = { ...current, startByte: rawEditor?.topByte() ?? 0, resetKey: raw.resetKey + 1 };
+        raw = { ...raw, ...current, startByte: rawEditor?.topByte() ?? 0, resetKey: raw.resetKey + 1 };
       }
     }
+  }
+
+  /** Closes the banner (and the compare view, staying in raw mode). */
+  async function endConflict(): Promise<void> {
+    conflict = null;
+    if (comparing) await stopComparing();
+  }
+
+  async function keepMine(): Promise<void> {
+    conflictBusy = true;
+    try {
+      if (rawMode) await syncRaw();
+      await keepLocalVersion();
+      const wasChanged = conflict === "changed";
+      await endConflict();
+      if (wasChanged) showNotice("Keeping your version: Ctrl+S replaces the file on disk");
+    } catch (e) {
+      showNotice(`Could not keep your version: ${String(e)}`);
+    } finally {
+      conflictBusy = false;
+    }
+  }
+
+  async function loadDisk(): Promise<void> {
+    conflictBusy = true;
+    if (rawMode) await syncRaw();
+    await queueEdit(async () => {
+      try {
+        const opened = await loadDiskVersion();
+        conflict = null;
+        if (rawMode && raw) {
+          const current = await documentText();
+          raw = {
+            ...current,
+            startByte: rawEditor?.topByte() ?? 0,
+            resetKey: 0,
+            compareWith: null,
+            mount: raw.mount + 1,
+          };
+        }
+        comparing = false;
+        await applyEdit(opened);
+        // In raw mode, Ctrl+Z is the editor's own undo, which starts afresh.
+        showNotice(
+          rawMode
+            ? "Loaded the disk version. After Ctrl+E, Ctrl+Z brings your changes back."
+            : "Loaded the disk version. Ctrl+Z brings your changes back.",
+        );
+      } catch (e) {
+        showNotice(`Could not load the disk version: ${String(e)}`);
+      }
+    });
+    conflictBusy = false;
+  }
+
+  /** Shows the disk version beside the document's text, in raw mode. */
+  async function startCompare(): Promise<void> {
+    if (!doc) return;
+    conflictBusy = true;
+    try {
+      if (rawMode) await syncRaw();
+      await pendingEdits;
+      const disk = await diskText();
+      const current = await documentText();
+      const bom = doc.hasBom ? 3 : 0;
+      const startByte =
+        rawMode && rawEditor ? rawEditor.topByte() : Math.max(0, (reader?.captureAnchor() ?? TOP_ANCHOR).offset - bom);
+      raw = { ...current, startByte, resetKey: 0, compareWith: disk, mount: (raw?.mount ?? 0) + 1 };
+      rawMode = true;
+      comparing = true;
+    } catch (e) {
+      showNotice(`Could not compare: ${String(e)}`);
+    } finally {
+      conflictBusy = false;
+    }
+  }
+
+  /** Back from the compare view to plain raw mode. */
+  async function stopComparing(): Promise<void> {
+    comparing = false;
+    if (!rawMode || !raw) return;
+    await syncRaw();
+    const current = await documentText();
+    raw = { ...current, startByte: rawEditor?.topByte() ?? 0, resetKey: 0, compareWith: null, mount: raw.mount + 1 };
   }
 
   function togglePropertiesPanel(open: boolean): void {
@@ -410,6 +525,12 @@
       const opened = await openDocument(path);
       reportTiming("ipc_open_document", performance.now() - openStarted);
       await applyOpened(opened, anchor);
+      conflict = null;
+      if (comparing) {
+        comparing = false;
+        rawMode = false;
+        raw = null;
+      }
       message = null;
       return true;
     } catch (e) {
@@ -656,8 +777,9 @@
     if (event.ctrlKey && (event.key === "s" || event.key === "S")) {
       event.preventDefault();
       // Commit a property or block being edited first: both commit on blur,
-      // and `save` waits for the edit to land.
-      (document.activeElement as HTMLElement | null)?.blur();
+      // and `save` waits for the edit to land. Raw mode sends its text
+      // instead, and keeps the cursor where it was.
+      if (!rawMode) (document.activeElement as HTMLElement | null)?.blur();
       void tick()
         .then(() => (rawMode ? syncRaw() : undefined))
         .then(() => pendingEdits)
@@ -743,16 +865,29 @@
       <TocSidebar toc={doc.toc} current={currentEntry} onselect={selectTocEntry} {numbering} />
     {/if}
     <main class="sk-main" bind:this={mainElement}>
-      {#if rawMode && raw}
-        <RawEditor
-          bind:this={rawEditor}
-          text={raw.text}
-          lineEnding={doc.lineEnding}
-          startByte={raw.startByte}
-          resetKey={raw.resetKey}
-          fontSize={typography.fontSize}
-          onchange={onRawChange}
+      {#if conflict}
+        <ConflictBanner
+          state={conflict}
+          {comparing}
+          busy={conflictBusy}
+          onkeep={keepMine}
+          onload={loadDisk}
+          oncompare={startCompare}
         />
+      {/if}
+      {#if rawMode && raw}
+        {#key raw.mount}
+          <RawEditor
+            bind:this={rawEditor}
+            text={raw.text}
+            lineEnding={doc.lineEnding}
+            startByte={raw.startByte}
+            resetKey={raw.resetKey}
+            fontSize={typography.fontSize}
+            onchange={onRawChange}
+            compareWith={raw.compareWith}
+          />
+        {/key}
       {:else}
         <Reader
           bind:this={reader}
@@ -856,6 +991,14 @@
 
   .sk-main {
     min-width: 0;
+    min-height: 0;
+    /* The conflict banner, when shown, sits above the reader or editor. */
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sk-main > :global(:last-child) {
+    flex: 1;
     min-height: 0;
   }
 

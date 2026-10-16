@@ -31,6 +31,19 @@ struct Session {
     /// Goes up with every change to `text`, so raw mode can tell whether the
     /// text it holds is still the current one.
     version: u64,
+    /// The changed file as last found on disk while there were unsaved edits:
+    /// what the conflict banner offers to load or compare (DESIGN.md §9.3).
+    disk_snapshot: Option<DiskSnapshot>,
+    /// Hash of a disk version the user chose to overwrite ("Keep mine"), so
+    /// saving over it is allowed. Any other external change blocks the save.
+    overwrite_hash: Option<u64>,
+}
+
+/// A version of the file found on disk.
+#[derive(Debug, Clone)]
+struct DiskSnapshot {
+    hash: u64,
+    bytes: Vec<u8>,
 }
 
 /// How many changes undo remembers.
@@ -48,6 +61,16 @@ impl Session {
     }
 }
 
+/// What happened to a save.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SaveOutcome {
+    Saved,
+    /// The file changed on disk and the user hasn't chosen what to keep;
+    /// nothing was written.
+    Conflict,
+}
+
 /// Which way to step through the edit history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
@@ -59,7 +82,8 @@ pub enum Step {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DiskState {
-    /// Same bytes: Scrald's own save, or a touch that changed nothing.
+    /// Same bytes: Scrald's own save, a touch that changed nothing, or the
+    /// version the user already chose to overwrite.
     Unchanged,
     /// Different bytes: someone else edited the file.
     Changed,
@@ -102,6 +126,8 @@ impl Sessions {
                 undo: Vec::new(),
                 redo: Vec::new(),
                 version: self.next_version(),
+                disk_snapshot: None,
+                overwrite_hash: None,
             },
         );
         Ok(bytes)
@@ -239,39 +265,117 @@ impl Sessions {
             .map_or(0, |s| usize::from(s.has_bom) * 3)
     }
 
-    /// Writes the document to disk atomically and marks it saved.
-    pub fn save(&self, window: &str) -> anyhow::Result<PathBuf> {
+    /// Writes the document to disk atomically and marks it saved, unless
+    /// the file changed on disk in a way the user hasn't seen: then nothing
+    /// is written and the change is kept for the conflict banner. (A missing
+    /// file is written again.)
+    pub fn save(&self, window: &str) -> anyhow::Result<SaveOutcome> {
         let mut sessions = self.lock();
         let session = sessions
             .get_mut(window)
             .context("no document is open in this window")?;
+        if let Ok(on_disk) = std::fs::read(&session.path) {
+            let hash = hash_bytes(&on_disk);
+            if hash != session.disk_hash && Some(hash) != session.overwrite_hash {
+                tracing::info!(path = %session.path.display(), "save refused: the file changed on disk");
+                session.disk_snapshot = Some(DiskSnapshot {
+                    hash,
+                    bytes: on_disk,
+                });
+                return Ok(SaveOutcome::Conflict);
+            }
+        }
         let bytes = session.bytes();
         scrald_core::save::write_atomic(&session.path, &bytes)
             .with_context(|| format!("could not save {}", session.path.display()))?;
         session.disk_hash = hash_bytes(&bytes);
         session.dirty = false;
+        session.disk_snapshot = None;
+        session.overwrite_hash = None;
         tracing::info!(path = %session.path.display(), bytes = bytes.len(), "saved document");
-        Ok(session.path.clone())
+        Ok(SaveOutcome::Saved)
     }
 
     pub fn is_dirty(&self, window: &str) -> bool {
         self.lock().get(window).is_some_and(|s| s.dirty)
     }
 
-    /// Compares the file on disk with what was last read or saved.
+    /// Compares the file on disk with what was last read or saved. A
+    /// changed file is remembered, so "load" and "compare" use exactly the
+    /// version the user was told about.
     pub fn disk_state(&self, window: &str) -> DiskState {
-        let Some((path, expected)) = self
-            .lock()
-            .get(window)
-            .map(|s| (s.path.clone(), s.disk_hash))
-        else {
+        let Some(path) = self.lock().get(window).map(|s| s.path.clone()) else {
             return DiskState::Missing;
         };
-        match std::fs::read(&path) {
-            Ok(bytes) if hash_bytes(&bytes) == expected => DiskState::Unchanged,
-            Ok(_) => DiskState::Changed,
-            Err(_) => DiskState::Missing,
+        // Read without holding the lock; a slow disk mustn't block edits.
+        let read = std::fs::read(&path);
+        let mut sessions = self.lock();
+        let Some(session) = sessions.get_mut(window) else {
+            return DiskState::Missing;
+        };
+        match read {
+            Ok(bytes) => {
+                let hash = hash_bytes(&bytes);
+                if hash == session.disk_hash || Some(hash) == session.overwrite_hash {
+                    session.disk_snapshot = None;
+                    DiskState::Unchanged
+                } else {
+                    session.disk_snapshot = Some(DiskSnapshot { hash, bytes });
+                    DiskState::Changed
+                }
+            }
+            Err(_) => {
+                session.disk_snapshot = None;
+                DiskState::Missing
+            }
         }
+    }
+
+    /// The text of the changed disk version (without BOM), for comparing.
+    pub fn disk_text(&self, window: &str) -> anyhow::Result<String> {
+        let sessions = self.lock();
+        let snapshot = sessions
+            .get(window)
+            .and_then(|s| s.disk_snapshot.as_ref())
+            .context("there is no changed disk version to compare with")?;
+        Ok(scrald_core::source::decode(&snapshot.bytes)?.text)
+    }
+
+    /// "Keep mine": the user has seen the changed disk version and chose
+    /// their own text, so the next save may replace it.
+    pub fn keep_local(&self, window: &str) {
+        // Rust note: a "let chain" (Rust 2024): `if let A && let B` runs the
+        // body only if both patterns match, without nesting two `if let`s.
+        // `Option::take()` moves the value out and leaves `None` behind, so
+        // the snapshot is used once (like `std::exchange(x, nullopt)`).
+        if let Some(session) = self.lock().get_mut(window)
+            && let Some(snapshot) = session.disk_snapshot.take()
+        {
+            session.overwrite_hash = Some(snapshot.hash);
+        }
+    }
+
+    /// "Load disk version": replaces the text with the changed disk version,
+    /// which becomes the saved state. Recorded for undo like any edit, so
+    /// Ctrl+Z brings the user's text back (as unsaved changes). Returns the
+    /// path and new bytes, to parse.
+    pub fn load_disk_version(&self, window: &str) -> anyhow::Result<(PathBuf, Vec<u8>)> {
+        let snapshot = self
+            .lock()
+            .get_mut(window)
+            .and_then(|s| s.disk_snapshot.take())
+            .context("there is no changed disk version to load")?;
+        let decoded = scrald_core::source::decode(&snapshot.bytes)?;
+        self.edit(window, |_| Ok::<String, std::io::Error>(decoded.text))?;
+        let mut sessions = self.lock();
+        let session = sessions
+            .get_mut(window)
+            .context("no document is open in this window")?;
+        session.has_bom = decoded.has_bom;
+        session.disk_hash = snapshot.hash;
+        session.overwrite_hash = None;
+        session.update_dirty();
+        Ok((session.path.clone(), session.bytes()))
     }
 
     pub fn forget(&self, window: &str) {
@@ -390,5 +494,64 @@ mod tests {
         sessions.open("w", &path).unwrap();
         sessions.edit("w", upper).unwrap();
         assert!(!sessions.is_dirty("w"));
+    }
+
+    #[test]
+    fn saving_over_an_unseen_disk_change_is_refused() {
+        let path = temp_file("conflict-save.md", b"mine");
+        let sessions = Sessions::default();
+        sessions.open("w", &path).unwrap();
+        sessions.edit("w", upper).unwrap();
+        // Changed on disk before the watcher reported it.
+        std::fs::write(&path, b"theirs").unwrap();
+        assert_eq!(sessions.save("w").unwrap(), SaveOutcome::Conflict);
+        assert_eq!(std::fs::read(&path).unwrap(), b"theirs");
+        assert!(sessions.is_dirty("w"));
+        // The refused save remembered the disk version for comparing.
+        assert_eq!(sessions.disk_text("w").unwrap(), "theirs");
+    }
+
+    #[test]
+    fn keep_mine_allows_overwriting_that_version_only() {
+        let path = temp_file("conflict-keep.md", b"mine");
+        let sessions = Sessions::default();
+        sessions.open("w", &path).unwrap();
+        sessions.edit("w", upper).unwrap();
+        std::fs::write(&path, b"theirs").unwrap();
+        assert_eq!(sessions.disk_state("w"), DiskState::Changed);
+        sessions.keep_local("w");
+        // The version the user chose to overwrite no longer counts as a change.
+        assert_eq!(sessions.disk_state("w"), DiskState::Unchanged);
+        // A further change does, and blocks the save again.
+        std::fs::write(&path, b"theirs, again").unwrap();
+        assert_eq!(sessions.disk_state("w"), DiskState::Changed);
+        assert_eq!(sessions.save("w").unwrap(), SaveOutcome::Conflict);
+        sessions.keep_local("w");
+        assert_eq!(sessions.save("w").unwrap(), SaveOutcome::Saved);
+        assert_eq!(std::fs::read(&path).unwrap(), b"MINE");
+        assert!(!sessions.is_dirty("w"));
+    }
+
+    #[test]
+    fn loading_the_disk_version_is_undoable() {
+        let path = temp_file("conflict-load.md", b"mine\r\n");
+        let sessions = Sessions::default();
+        sessions.open("w", &path).unwrap();
+        sessions.edit("w", upper).unwrap();
+        std::fs::write(&path, b"\xEF\xBB\xBFtheirs\r\n").unwrap();
+        assert_eq!(sessions.disk_state("w"), DiskState::Changed);
+
+        let (_, bytes) = sessions.load_disk_version("w").unwrap();
+        // Exactly the disk version, BOM included, and it counts as saved.
+        assert_eq!(bytes, b"\xEF\xBB\xBFtheirs\r\n");
+        assert!(!sessions.is_dirty("w"));
+        assert_eq!(sessions.disk_state("w"), DiskState::Unchanged);
+
+        // Undo brings the user's text back, as unsaved changes.
+        let (_, bytes) = sessions.step("w", Step::Undo).unwrap().unwrap();
+        assert!(bytes.ends_with(b"MINE\r\n"));
+        assert!(sessions.is_dirty("w"));
+        // Nothing left to load.
+        assert!(sessions.load_disk_version("w").is_err());
     }
 }

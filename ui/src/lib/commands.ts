@@ -10,6 +10,7 @@ import type {
   OpenedDocument,
   PropertyChange,
   DiskState,
+  SaveOutcome,
   RawSync,
   RawText,
   RecentDocument,
@@ -68,8 +69,23 @@ export function setDocumentText(version: number, text: string): Promise<RawSync>
 }
 
 /** Saves the window's document atomically. */
-export function saveDocument(): Promise<void> {
-  return invoke("save_document");
+export function saveDocument(): Promise<SaveOutcome> {
+  return invoke<SaveOutcome>("save_document");
+}
+
+/** The changed disk version's text, for comparing (after `checkDisk` found one). */
+export function diskText(): Promise<string> {
+  return invoke<string>("disk_text");
+}
+
+/** "Keep mine": the next save may replace the changed disk version. */
+export function keepLocalVersion(): Promise<void> {
+  return invoke("keep_local_version");
+}
+
+/** "Load disk version": replaces the text with it (undoable), re-parsed. */
+export function loadDiskVersion(): Promise<OpenedDocument> {
+  return invoke<OpenedDocument>("load_disk_version");
 }
 
 /** How the file on disk compares with what this window last read or saved. */
