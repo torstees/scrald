@@ -679,7 +679,9 @@
     // the previous document's theme.
     theme = opened.theme;
     typography.setDocument(opened.memory);
-    await showTheme(opened.theme.id, false);
+    // After an edit the theme is usually the one already shown; applying it
+    // again would restyle the page and redraw every diagram.
+    if (opened.theme.id !== shownThemeId) await showTheme(opened.theme.id, false);
     initialAnchor = anchor === "remembered" ? (opened.memory.anchor ?? TOP_ANCHOR) : anchor;
     assetToken = opened.assetToken;
     doc = opened.document;
@@ -796,6 +798,9 @@
     if (fragment !== null) void reader?.scrollToId(fragment);
   }
 
+  // The theme whose styles are on the page.
+  let shownThemeId: string | null = null;
+
   /**
    * Puts theme `id` on screen. With `keepPlace`, the reading position is
    * restored afterwards, since a new font or size reflows the text.
@@ -806,6 +811,7 @@
     try {
       const style = await themeStyle(id);
       applyTheme(style);
+      shownThemeId = id;
       // Diagrams and music carry the old theme's colors; redraw them.
       void refreshRichForTheme();
       themeName = style.name;

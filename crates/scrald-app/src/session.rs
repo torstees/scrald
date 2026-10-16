@@ -13,12 +13,14 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use anyhow::Context;
+use scrald_core::delta::{self, ShownBlocks};
 use scrald_core::edit::TextDiff;
 use scrald_core::recovery::{self, RecoveryEntry, RecoveryHeader};
+use scrald_core::{Block, RenderCache};
 use serde::Serialize;
 
 /// One window's document.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Session {
     path: PathBuf,
     /// The document's text without its BOM, with any unsaved edits.
@@ -46,6 +48,26 @@ struct Session {
     /// text it holds; `None` while there's no file.
     recovery_id: String,
     recovery_written: Option<u64>,
+    /// Sanitized HTML and highlighted code from the last parse, so the next
+    /// one only redoes changed blocks (`scrald_core::RenderCache`).
+    render_cache: RenderCache,
+    /// The blocks last sent to the window, and that model's number, so the
+    /// next model can leave out the HTML the window already has.
+    shown_blocks: ShownBlocks,
+    shown_model: u64,
+}
+
+/// A model about to be sent to a window (see `Sessions::send_blocks`).
+#[derive(Debug)]
+pub struct BlocksSent {
+    /// This model's number.
+    pub model: u64,
+    /// The model the window must be showing to fill in the left-out HTML,
+    /// or `None` if every block has its HTML.
+    pub base: Option<u64>,
+    /// For each block with its HTML left out, the id of the block in the
+    /// `base` model to copy it from.
+    pub html_from: Vec<Option<u32>>,
 }
 
 /// A version of the file found on disk.
@@ -215,6 +237,9 @@ impl Sessions {
                 overwrite_hash: None,
                 recovery_id: new_recovery_id(),
                 recovery_written: None,
+                render_cache: RenderCache::default(),
+                shown_blocks: ShownBlocks::new(),
+                shown_model: 0,
             },
         );
         if let Some(previous) = previous {
@@ -346,6 +371,53 @@ impl Sessions {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(1);
         NEXT.fetch_add(1_000_000, Ordering::Relaxed)
+    }
+
+    /// Takes the window's render cache for a parse; `put_render_cache` gives
+    /// it back. Empty if there's no document (or another parse has it).
+    pub fn take_render_cache(&self, window: &str) -> RenderCache {
+        self.lock()
+            .get_mut(window)
+            .map(|s| std::mem::take(&mut s.render_cache))
+            .unwrap_or_default()
+    }
+
+    pub fn put_render_cache(&self, window: &str, cache: RenderCache) {
+        if let Some(session) = self.lock().get_mut(window) {
+            session.render_cache = cache;
+        }
+    }
+
+    /// Records `blocks` as sent to the window, leaving out the HTML of the
+    /// blocks it already shows (all of it is kept with `full`, or when the
+    /// window hasn't been sent a model for this document yet).
+    pub fn send_blocks(&self, window: &str, blocks: &mut [Block], full: bool) -> BlocksSent {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_MODEL: AtomicU64 = AtomicU64::new(1);
+        let mut sessions = self.lock();
+        let Some(session) = sessions.get_mut(window) else {
+            return BlocksSent {
+                model: 0,
+                base: None,
+                html_from: Vec::new(),
+            };
+        };
+        let model = NEXT_MODEL.fetch_add(1, Ordering::Relaxed);
+        let base = (!full && session.shown_model != 0).then_some(session.shown_model);
+        let html_from = if base.is_some() {
+            let (from, shown) = delta::reuse_html(blocks, &session.shown_blocks);
+            session.shown_blocks = shown;
+            from
+        } else {
+            session.shown_blocks = delta::shown_blocks(blocks);
+            Vec::new()
+        };
+        session.shown_model = model;
+        BlocksSent {
+            model,
+            base,
+            html_from,
+        }
     }
 
     /// 3 if the document has a BOM, else 0: block ranges count it.
@@ -661,6 +733,76 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"\xEF\xBB\xBFHELLO\r\n");
         // Our own save doesn't count as an external change.
         assert_eq!(sessions.disk_state("main"), DiskState::Unchanged);
+    }
+
+    #[test]
+    fn models_after_the_first_leave_out_shown_html() {
+        let path = temp_file(
+            "models.md",
+            b"One.
+
+Two.
+",
+        );
+        let sessions = Sessions::default();
+        let parse =
+            |text: &str| scrald_core::parse_document(path.clone(), text.as_bytes()).unwrap();
+        // No document: nothing to build on.
+        let mut blocks = parse(
+            "One.
+",
+        )
+        .blocks;
+        assert_eq!(sessions.send_blocks("main", &mut blocks, false).base, None);
+
+        sessions.open("main", &path).unwrap();
+        let mut blocks = parse(
+            "One.
+
+Two.
+",
+        )
+        .blocks;
+        let first = sessions.send_blocks("main", &mut blocks, false);
+        // The first model for a document is sent whole.
+        assert_eq!(first.base, None);
+        assert!(blocks.iter().all(|b| !b.html.is_empty()));
+
+        let mut blocks = parse(
+            "One.
+
+Two, edited.
+",
+        )
+        .blocks;
+        let second = sessions.send_blocks("main", &mut blocks, false);
+        assert_eq!(second.base, Some(first.model));
+        assert_eq!(second.html_from, vec![Some(0), None]);
+        assert_eq!(blocks[0].html, "");
+
+        // `full` sends everything again (the window lost track).
+        let mut blocks = parse(
+            "One.
+
+Two, edited.
+",
+        )
+        .blocks;
+        let third = sessions.send_blocks("main", &mut blocks, true);
+        assert_eq!(third.base, None);
+        assert!(third.model > second.model);
+        assert!(blocks.iter().all(|b| !b.html.is_empty()));
+
+        // Opening the document again starts over.
+        sessions.open("main", &path).unwrap();
+        let mut blocks = parse(
+            "One.
+
+Two.
+",
+        )
+        .blocks;
+        assert_eq!(sessions.send_blocks("main", &mut blocks, false).base, None);
     }
 
     #[test]

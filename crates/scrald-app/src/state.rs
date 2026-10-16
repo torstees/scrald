@@ -193,36 +193,13 @@ impl StateStore {
                 last_opened = excluded.last_opened",
             params![key, size, hash, now_millis()],
         )?;
+        read_memory(&conn, &key)
+    }
 
-        let memory = conn.query_row(
-            "SELECT scroll_offset, scroll_fraction, remote_images, theme, text_sizing, zoom, flavor
-             FROM documents WHERE path = ?1",
-            [&key],
-            |row| {
-                let offset: Option<i64> = row.get(0)?;
-                let fraction: Option<f64> = row.get(1)?;
-                // Rust note: `zip` pairs two Options: `Some` only if both are.
-                let anchor = offset.zip(fraction).map(|(offset, fraction)| ScrollAnchor {
-                    offset: usize::try_from(offset).unwrap_or(0),
-                    fraction,
-                });
-                Ok(DocumentMemory {
-                    anchor,
-                    remote_images: row.get(2)?,
-                    theme: row.get(3)?,
-                    text_sizing: row
-                        .get::<_, Option<String>>(4)?
-                        .as_deref()
-                        .and_then(parse_text_sizing),
-                    zoom: row.get(5)?,
-                    flavor: row
-                        .get::<_, Option<String>>(6)?
-                        .as_deref()
-                        .and_then(Flavor::from_name),
-                })
-            },
-        )?;
-        Ok(memory)
+    /// What's remembered about `path`, without recording an open (for
+    /// re-parsing a document that is already open, say after an edit).
+    pub fn memory(&self, path: &Path) -> anyhow::Result<DocumentMemory> {
+        read_memory(&self.conn(), &document_key(path))
     }
 
     pub fn save_reading_position(&self, path: &Path, anchor: ScrollAnchor) -> anyhow::Result<()> {
@@ -438,6 +415,41 @@ fn migrate(conn: &mut Connection) -> anyhow::Result<()> {
 
 /// If a remembered document with the same identity no longer exists at its
 /// old path, moves its row to `key` so its memory follows the file.
+/// The remembered settings in a document's row (defaults if it has none).
+fn read_memory(conn: &Connection, key: &str) -> anyhow::Result<DocumentMemory> {
+    let memory = conn
+        .query_row(
+            "SELECT scroll_offset, scroll_fraction, remote_images, theme, text_sizing, zoom, flavor
+             FROM documents WHERE path = ?1",
+            [key],
+            |row| {
+                let offset: Option<i64> = row.get(0)?;
+                let fraction: Option<f64> = row.get(1)?;
+                // Rust note: `zip` pairs two Options: `Some` only if both are.
+                let anchor = offset.zip(fraction).map(|(offset, fraction)| ScrollAnchor {
+                    offset: usize::try_from(offset).unwrap_or(0),
+                    fraction,
+                });
+                Ok(DocumentMemory {
+                    anchor,
+                    remote_images: row.get(2)?,
+                    theme: row.get(3)?,
+                    text_sizing: row
+                        .get::<_, Option<String>>(4)?
+                        .as_deref()
+                        .and_then(parse_text_sizing),
+                    zoom: row.get(5)?,
+                    flavor: row
+                        .get::<_, Option<String>>(6)?
+                        .as_deref()
+                        .and_then(Flavor::from_name),
+                })
+            },
+        )
+        .optional()?;
+    Ok(memory.unwrap_or_default())
+}
+
 fn reconnect_moved(conn: &Connection, key: &str, size: i64, hash: &str) -> anyhow::Result<()> {
     let mut statement = conn.prepare(
         "SELECT path FROM documents WHERE identity_size = ?1 AND identity_hash = ?2
@@ -534,6 +546,11 @@ mod tests {
         let memory = store.record_open(&path).unwrap();
         assert_eq!(memory.anchor, Some(anchor));
         assert!(memory.remote_images);
+        // Reading without recording an open gives the same.
+        assert_eq!(store.memory(&path).unwrap(), memory);
+        // A document never opened has nothing remembered.
+        let other = doc(&dir, "b.md", "# B");
+        assert_eq!(store.memory(&other).unwrap(), DocumentMemory::default());
     }
 
     #[test]

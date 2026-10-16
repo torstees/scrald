@@ -11,9 +11,9 @@ use serde::Serialize;
 
 use crate::DocumentError;
 use crate::assets::{AssetContext, ImageAsset, ImageCollector};
+use crate::cache::RenderCache;
 use crate::flavor::{self, Flavor, FlavorSource};
 use crate::frontmatter::{self, FrontMatter};
-use crate::highlight;
 use crate::obsidian::{self, VaultIndex};
 use crate::pandoc;
 use crate::render::{self, Renderer};
@@ -172,6 +172,18 @@ pub fn parse_document_with(
     bytes: &[u8],
     parse_options: &ParseOptions,
 ) -> Result<DocumentModel, DocumentError> {
+    parse_document_cached(path, bytes, parse_options, &mut RenderCache::default())
+}
+
+/// `parse_document_with`, reusing rendering results from earlier parses of
+/// the same document in `cache` (and leaving this parse's there), so after
+/// an edit only changed blocks are sanitized and highlighted again.
+pub fn parse_document_cached(
+    path: PathBuf,
+    bytes: &[u8],
+    parse_options: &ParseOptions,
+    cache: &mut RenderCache,
+) -> Result<DocumentModel, DocumentError> {
     let decoded = source::decode(bytes)?;
     let text = &decoded.text;
     let bom_len = decoded.bom_len();
@@ -237,7 +249,10 @@ pub fn parse_document_with(
     asset_ctx.vault = vault.clone();
     let mut images = ImageCollector::default();
 
-    let renderer = Renderer::new(parse_options.allow_remote_images);
+    // Rust note: `mem::take` moves the cache out of `*cache` (leaving an
+    // empty one) so the renderer can own it; it's put back at the end.
+    let mut renderer =
+        Renderer::with_cache(parse_options.allow_remote_images, std::mem::take(cache));
     let mut slugger = Slugger::new();
     let mut blocks = Vec::new();
     let mut sections: Vec<Section> = Vec::new();
@@ -341,7 +356,7 @@ pub fn parse_document_with(
             };
             images.rewrite(node, &asset_ctx);
             pandoc::finish_figures(figures, &options);
-            highlight_code_blocks(node);
+            highlight_code_blocks(node, &mut renderer);
             if obsidian {
                 obsidian::transform_callouts(node, &options);
             }
@@ -432,7 +447,7 @@ pub fn parse_document_with(
             footnotes.push(Footnote {
                 name: def.name.clone(),
                 number: footnote_numbers.get(&def.name).copied().unwrap_or(0),
-                html: footnote_html(&renderer, only, &options),
+                html: footnote_html(&mut renderer, only, &options),
                 block_id: Some(id),
             });
         }
@@ -473,12 +488,13 @@ pub fn parse_document_with(
             footnotes.push(Footnote {
                 name: def.name.clone(),
                 number: footnote_numbers.get(&def.name).copied().unwrap_or(0),
-                html: footnote_html(&renderer, node, &options),
+                html: footnote_html(&mut renderer, node, &options),
                 block_id: None,
             });
         }
     }
     footnotes.sort_by_key(|f| f.number);
+    *cache = renderer.into_cache();
 
     Ok(DocumentModel {
         path,
@@ -587,7 +603,7 @@ fn count_tags(html: &str, prefix: &str) -> i32 {
 /// Replaces fenced code in a known language with syntax-highlighted HTML
 /// (class-based; colors come from the theme). Unknown languages, frontend-
 /// rendered fences (math, mermaid, abc), and very large blocks stay as they are.
-fn highlight_code_blocks(node: Node<'_>) {
+fn highlight_code_blocks(node: Node<'_>, renderer: &mut Renderer) {
     let code_nodes: Vec<Node<'_>> = node
         .descendants()
         .filter(|n| matches!(n.data().value, NodeValue::CodeBlock(_)))
@@ -599,7 +615,9 @@ fn highlight_code_blocks(node: Node<'_>) {
             .unwrap_or_default();
         let highlighted = match &code_node.data().value {
             NodeValue::CodeBlock(code) => code_language(&code.info).and_then(|language| {
-                highlight::highlight(&code.literal, &language).map(|spans| (language, spans))
+                renderer
+                    .highlight(&code.literal, &language)
+                    .map(|spans| (language, spans))
             }),
             _ => None,
         };
@@ -668,7 +686,11 @@ fn group_blocks<'n, 'a>(
 
 /// A footnote definition's contents as HTML. comrak leaves a space where
 /// its back-link would go; the reader adds its own back-link.
-fn footnote_html(renderer: &Renderer, definition: Node<'_>, options: &comrak::Options) -> String {
+fn footnote_html(
+    renderer: &mut Renderer,
+    definition: Node<'_>,
+    options: &comrak::Options,
+) -> String {
     let children: Vec<Node<'_>> = definition.children().collect();
     renderer
         .render_group(&children, options)

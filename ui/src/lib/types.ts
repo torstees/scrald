@@ -267,6 +267,15 @@ export interface OpenedDocument {
   dirty: boolean;
   /** Unsaved changes left behind when Scrald stopped (only when opening). */
   recovered: RecoveredChanges | null;
+  /** This model's number. */
+  model: number;
+  /**
+   * The model this window must be showing to fill in left-out block HTML;
+   * null when every block has its HTML (see `ModelTracker`).
+   */
+  base: number | null;
+  /** For each block, the block in `base` whose HTML it has, or null if its HTML is included. */
+  htmlFrom: (number | null)[];
 }
 
 /** Mirrors `RecoveredChanges` (crates/scrald-app/src/commands.rs): unsaved changes from a recovery file. */
