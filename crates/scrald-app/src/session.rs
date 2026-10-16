@@ -2,14 +2,19 @@
 //! §9.3). Edits change this text, never the file; `save` writes it back
 //! atomically with the BOM it was read with. The text keeps the file's line
 //! endings, because edits only splice into it.
+//!
+//! While a document has unsaved changes, `write_recovery` keeps a copy of its
+//! text in a recovery file (`scrald_core::recovery`), deleted again once the
+//! changes are saved or discarded, so a crash loses at most a few seconds.
 
 use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::time::Duration;
 
 use anyhow::Context;
 use scrald_core::edit::TextDiff;
+use scrald_core::recovery::{self, RecoveryEntry, RecoveryHeader};
 use serde::Serialize;
 
 /// One window's document.
@@ -37,6 +42,10 @@ struct Session {
     /// Hash of a disk version the user chose to overwrite ("Keep mine"), so
     /// saving over it is allowed. Any other external change blocks the save.
     overwrite_hash: Option<u64>,
+    /// The name of this session's recovery file, and the `version` of the
+    /// text it holds; `None` while there's no file.
+    recovery_id: String,
+    recovery_written: Option<u64>,
 }
 
 /// A version of the file found on disk.
@@ -48,6 +57,9 @@ struct DiskSnapshot {
 
 /// How many changes undo remembers.
 const UNDO_LIMIT: usize = 500;
+
+/// How often unsaved text is copied to its recovery file (if it changed).
+pub const RECOVERY_INTERVAL: Duration = Duration::from_secs(3);
 
 impl Session {
     fn bytes(&self) -> Vec<u8> {
@@ -94,19 +106,89 @@ pub enum DiskState {
 #[derive(Default)]
 pub struct Sessions {
     inner: Mutex<HashMap<String, Session>>,
+    /// The folder for recovery files; unset (no recovery) if the app has no
+    /// data folder.
+    // Rust note: a `OnceLock` can be set once, from any thread, and read
+    // freely afterwards: a thread-safe "initialized later" value.
+    recovery_dir: OnceLock<PathBuf>,
+    /// Held while recovery files are written or deleted, so a write that
+    /// started before a save or discard can't bring a file back after it.
+    /// Always taken before `inner`, never while holding it.
+    recovery_files: Mutex<()>,
 }
 
+/// A stable hash, since recovery files store it (DESIGN.md §12).
 fn hash_bytes(bytes: &[u8]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    hasher.finish()
+    scrald_core::hash::fnv1a(bytes)
+}
+
+/// A recovery file name no other session, in this run or another, uses.
+fn new_recovery_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{:x}-{:x}-{n:x}", now_millis(), std::process::id())
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
+/// Whether two paths name the same document (as the state database sees it).
+fn same_document(a: &Path, b: &Path) -> bool {
+    a == b || crate::state::document_key(a) == crate::state::document_key(b)
+}
+
+/// One recovery file to bring up to date, collected under the lock.
+enum RecoveryJob {
+    Write {
+        window: String,
+        id: String,
+        version: u64,
+        header: RecoveryHeader,
+        text: String,
+    },
+    Remove {
+        window: String,
+        id: String,
+    },
 }
 
 impl Sessions {
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Session>> {
+    fn lock(&self) -> MutexGuard<'_, HashMap<String, Session>> {
         self.inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    // Rust note: `Mutex<()>` guards no data, only a stretch of code; the
+    // returned guard keeps it locked until it's dropped at the end of the
+    // caller's scope, like `std::lock_guard`.
+    fn lock_recovery_files(&self) -> MutexGuard<'_, ()> {
+        self.recovery_files
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Where recovery files go. Set once at startup; without it, nothing is
+    /// written.
+    pub fn set_recovery_dir(&self, dir: PathBuf) {
+        let _ = self.recovery_dir.set(dir);
+    }
+
+    /// Deletes a session's recovery file, if it has one. Logged, not
+    /// returned: a leftover file is offered again later, never lost.
+    fn remove_recovery_file(&self, session: &Session) {
+        if session.recovery_written.is_none() {
+            return;
+        }
+        if let Some(dir) = self.recovery_dir.get()
+            && let Err(error) = recovery::remove(dir, &session.recovery_id)
+        {
+            tracing::warn!(error = %error, "could not delete a recovery file");
+        }
     }
 
     /// Reads `path` from disk as `window`'s document, replacing any earlier
@@ -115,7 +197,10 @@ impl Sessions {
         let bytes =
             std::fs::read(path).with_context(|| format!("could not read {}", path.display()))?;
         let decoded = scrald_core::source::decode(&bytes)?;
-        self.lock().insert(
+        let _files = self.lock_recovery_files();
+        // Replacing the window's document discards its unsaved changes
+        // (the user was asked), so their recovery file goes too.
+        let previous = self.lock().insert(
             window.to_string(),
             Session {
                 path: path.to_path_buf(),
@@ -128,8 +213,13 @@ impl Sessions {
                 version: self.next_version(),
                 disk_snapshot: None,
                 overwrite_hash: None,
+                recovery_id: new_recovery_id(),
+                recovery_written: None,
             },
         );
+        if let Some(previous) = previous {
+            self.remove_recovery_file(&previous);
+        }
         Ok(bytes)
     }
 
@@ -270,6 +360,7 @@ impl Sessions {
     /// is written and the change is kept for the conflict banner. (A missing
     /// file is written again.)
     pub fn save(&self, window: &str) -> anyhow::Result<SaveOutcome> {
+        let _files = self.lock_recovery_files();
         let mut sessions = self.lock();
         let session = sessions
             .get_mut(window)
@@ -293,6 +384,8 @@ impl Sessions {
         session.disk_snapshot = None;
         session.overwrite_hash = None;
         tracing::info!(path = %session.path.display(), bytes = bytes.len(), "saved document");
+        self.remove_recovery_file(session);
+        session.recovery_written = None;
         Ok(SaveOutcome::Saved)
     }
 
@@ -378,8 +471,145 @@ impl Sessions {
         Ok((session.path.clone(), session.bytes()))
     }
 
+    /// The window closed. Its unsaved changes were saved or discarded (the
+    /// user was asked), so its recovery file goes too.
     pub fn forget(&self, window: &str) {
-        self.lock().remove(window);
+        let _files = self.lock_recovery_files();
+        let removed = self.lock().remove(window);
+        if let Some(session) = removed {
+            self.remove_recovery_file(&session);
+        }
+    }
+
+    /// Brings every recovery file up to date: writes the text of documents
+    /// with unsaved changes that changed since the last write, and deletes
+    /// the files of documents that no longer have unsaved changes (say,
+    /// after undoing back to the saved text). Runs every `RECOVERY_INTERVAL`.
+    pub fn write_recovery(&self) {
+        let Some(dir) = self.recovery_dir.get() else {
+            return;
+        };
+        let _files = self.lock_recovery_files();
+        // Copy what's needed under the lock, then write without it, so a
+        // slow disk never holds up editing.
+        let jobs: Vec<RecoveryJob> = self
+            .lock()
+            .iter()
+            .filter_map(|(window, s)| {
+                let window = window.clone();
+                let id = s.recovery_id.clone();
+                if s.dirty && s.recovery_written != Some(s.version) {
+                    Some(RecoveryJob::Write {
+                        window,
+                        id,
+                        version: s.version,
+                        header: RecoveryHeader::new(s.path.clone(), s.disk_hash, now_millis()),
+                        text: s.text.clone(),
+                    })
+                } else if !s.dirty && s.recovery_written.is_some() {
+                    Some(RecoveryJob::Remove { window, id })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for job in jobs {
+            let (window, written, result) = match job {
+                RecoveryJob::Write {
+                    window,
+                    id,
+                    version,
+                    header,
+                    text,
+                } => {
+                    let result = recovery::write(dir, &id, &header, &text);
+                    (window, Some(version), result)
+                }
+                RecoveryJob::Remove { window, id } => (window, None, recovery::remove(dir, &id)),
+            };
+            match result {
+                Ok(()) => {
+                    if let Some(session) = self.lock().get_mut(&window) {
+                        session.recovery_written = written;
+                    }
+                }
+                // Tried again next time, since `recovery_written` is unchanged.
+                Err(error) => tracing::warn!(error = %error, "could not update a recovery file"),
+            }
+        }
+    }
+
+    /// Recovery files that no open window is writing: left behind when
+    /// Scrald stopped before the changes were saved or discarded. Newest
+    /// first, and only those for `path` if given.
+    pub fn orphaned_recoveries(&self, path: Option<&Path>) -> Vec<RecoveryEntry> {
+        let Some(dir) = self.recovery_dir.get() else {
+            return Vec::new();
+        };
+        let live: Vec<String> = self
+            .lock()
+            .values()
+            .map(|s| s.recovery_id.clone())
+            .collect();
+        recovery::list(dir)
+            .into_iter()
+            .filter(|entry| !live.contains(&entry.id))
+            .filter(|entry| path.is_none_or(|path| same_document(&entry.header.path, path)))
+            .collect()
+    }
+
+    /// The header and text of an orphaned recovery file.
+    pub fn recovery_text(&self, id: &str) -> anyhow::Result<(RecoveryHeader, String)> {
+        let dir = self
+            .recovery_dir
+            .get()
+            .context("crash recovery is not available")?;
+        Ok(recovery::read(dir, id)?)
+    }
+
+    /// Restores an orphaned recovery file into `window`, which must have its
+    /// document open: the text replaces the document's as an ordinary edit
+    /// (unsaved, and Ctrl+Z goes back to the file's text). The window then
+    /// keeps that recovery file up to date as its own. Returns the path and
+    /// new bytes, to parse.
+    pub fn restore_recovery(&self, window: &str, id: &str) -> anyhow::Result<(PathBuf, Vec<u8>)> {
+        let _files = self.lock_recovery_files();
+        let path = self
+            .lock()
+            .get(window)
+            .map(|s| s.path.clone())
+            .context("no document is open in this window")?;
+        if !self
+            .orphaned_recoveries(Some(&path))
+            .iter()
+            .any(|e| e.id == id)
+        {
+            anyhow::bail!("those recovered changes are not for this document, or are in use");
+        }
+        let (_, text) = self.recovery_text(id)?;
+        self.edit(window, |_| Ok::<String, std::io::Error>(text))?;
+        let mut sessions = self.lock();
+        let session = sessions
+            .get_mut(window)
+            .context("no document is open in this window")?;
+        self.remove_recovery_file(session);
+        session.recovery_id = id.to_string();
+        // The file holds exactly this text now.
+        session.recovery_written = Some(session.version);
+        Ok((session.path.clone(), session.bytes()))
+    }
+
+    /// Deletes an orphaned recovery file: the user chose not to restore it.
+    pub fn discard_recovery(&self, id: &str) -> anyhow::Result<()> {
+        let _files = self.lock_recovery_files();
+        if !self.orphaned_recoveries(None).iter().any(|e| e.id == id) {
+            anyhow::bail!("those recovered changes are in use");
+        }
+        let dir = self
+            .recovery_dir
+            .get()
+            .context("crash recovery is not available")?;
+        Ok(recovery::remove(dir, id)?)
     }
 }
 
@@ -397,6 +627,18 @@ mod tests {
 
     fn upper(text: &str) -> Result<String, std::io::Error> {
         Ok(text.to_uppercase())
+    }
+
+    /// Sessions writing recovery files into a fresh folder.
+    fn with_recovery(name: &str) -> (Sessions, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "scrald-session-recovery-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let sessions = Sessions::default();
+        sessions.set_recovery_dir(dir.clone());
+        (sessions, dir)
     }
 
     #[test]
@@ -553,5 +795,116 @@ mod tests {
         assert!(sessions.is_dirty("w"));
         // Nothing left to load.
         assert!(sessions.load_disk_version("w").is_err());
+    }
+
+    #[test]
+    fn unsaved_text_is_kept_in_a_recovery_file_until_saved() {
+        let (sessions, dir) = with_recovery("save");
+        let path = temp_file("recover-save.md", b"one\r\n");
+        sessions.open("w", &path).unwrap();
+        sessions.write_recovery();
+        assert!(recovery::list(&dir).is_empty(), "nothing unsaved yet");
+
+        sessions.edit("w", upper).unwrap();
+        sessions.write_recovery();
+        let files = recovery::list(&dir);
+        assert_eq!(files.len(), 1);
+        let (header, text) = recovery::read(&dir, &files[0].id).unwrap();
+        assert_eq!(text, "ONE\r\n");
+        assert_eq!(header.path, path);
+        assert_eq!(header.base_hash, scrald_core::hash::fnv1a(b"one\r\n"));
+        // Still in use by the window, so not offered for restoring.
+        assert!(sessions.orphaned_recoveries(None).is_empty());
+
+        sessions.save("w").unwrap();
+        assert!(recovery::list(&dir).is_empty());
+    }
+
+    #[test]
+    fn undoing_back_to_the_saved_text_deletes_the_recovery_file() {
+        let (sessions, dir) = with_recovery("undo");
+        let path = temp_file("recover-undo.md", b"one");
+        sessions.open("w", &path).unwrap();
+        sessions.edit("w", upper).unwrap();
+        sessions.write_recovery();
+        assert_eq!(recovery::list(&dir).len(), 1);
+        sessions.step("w", Step::Undo).unwrap();
+        sessions.write_recovery();
+        assert!(recovery::list(&dir).is_empty());
+    }
+
+    #[test]
+    fn discarding_deletes_the_recovery_file() {
+        let (sessions, dir) = with_recovery("discard");
+        let path = temp_file("recover-discard.md", b"one");
+        let other = temp_file("recover-other.md", b"two");
+        sessions.open("w", &path).unwrap();
+        sessions.edit("w", upper).unwrap();
+        sessions.write_recovery();
+        // Opening another document in the window ("Don't save").
+        sessions.open("w", &other).unwrap();
+        assert!(recovery::list(&dir).is_empty());
+
+        sessions.edit("w", upper).unwrap();
+        sessions.write_recovery();
+        // Closing the window.
+        sessions.forget("w");
+        assert!(recovery::list(&dir).is_empty());
+    }
+
+    #[test]
+    fn a_crash_leaves_a_file_that_can_be_restored_and_undone() {
+        let (crashed, dir) = with_recovery("restore");
+        let path = temp_file("recover-restore.md", b"one\n");
+        crashed.open("w", &path).unwrap();
+        crashed.edit("w", upper).unwrap();
+        crashed.write_recovery();
+        // Rust note: `std::mem::forget` drops nothing and runs no cleanup,
+        // standing in for a process that stopped without closing its windows.
+        std::mem::forget(crashed);
+
+        let sessions = Sessions::default();
+        sessions.set_recovery_dir(dir.clone());
+        let orphans = sessions.orphaned_recoveries(Some(&path));
+        assert_eq!(orphans.len(), 1);
+        let id = orphans[0].id.clone();
+        // Only offered for its own document.
+        let other = temp_file("recover-unrelated.md", b"x");
+        assert!(sessions.orphaned_recoveries(Some(&other)).is_empty());
+
+        sessions.open("w", &path).unwrap();
+        let (_, bytes) = sessions.restore_recovery("w", &id).unwrap();
+        assert_eq!(bytes, b"ONE\n");
+        assert!(sessions.is_dirty("w"));
+        // The window took the file over: no longer an orphan, and kept.
+        assert!(sessions.orphaned_recoveries(None).is_empty());
+        assert_eq!(recovery::list(&dir).len(), 1);
+        assert!(sessions.discard_recovery(&id).is_err());
+
+        // Undo goes back to the file's text, and the file goes away.
+        let (_, bytes) = sessions.step("w", Step::Undo).unwrap().unwrap();
+        assert_eq!(bytes, b"one\n");
+        sessions.write_recovery();
+        assert!(recovery::list(&dir).is_empty());
+    }
+
+    #[test]
+    fn an_orphaned_recovery_file_can_be_discarded() {
+        let (crashed, dir) = with_recovery("discard-orphan");
+        let path = temp_file("recover-discard-orphan.md", b"one");
+        crashed.open("w", &path).unwrap();
+        crashed.edit("w", upper).unwrap();
+        crashed.write_recovery();
+        std::mem::forget(crashed);
+
+        let sessions = Sessions::default();
+        sessions.set_recovery_dir(dir.clone());
+        let id = sessions.orphaned_recoveries(None)[0].id.clone();
+        // It isn't for another document.
+        let other = temp_file("recover-discard-other.md", b"x");
+        sessions.open("w", &other).unwrap();
+        assert!(sessions.restore_recovery("w", &id).is_err());
+        sessions.discard_recovery(&id).unwrap();
+        assert!(recovery::list(&dir).is_empty());
     }
 }

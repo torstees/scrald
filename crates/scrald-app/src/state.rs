@@ -469,18 +469,7 @@ fn file_identity(path: &Path) -> Option<(i64, String)> {
     let size = i64::try_from(file.metadata().ok()?.len()).ok()?;
     let mut head = Vec::with_capacity(1024);
     file.by_ref().take(1024).read_to_end(&mut head).ok()?;
-    Some((size, format!("{:016x}", fnv1a(&head))))
-}
-
-/// FNV-1a, a tiny hash that, unlike `DefaultHasher`, gives the same value in
-/// every Rust version, which matters for values stored on disk.
-fn fnv1a(bytes: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in bytes {
-        hash ^= u64::from(b);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
+    Some((size, format!("{:016x}", scrald_core::hash::fnv1a(&head))))
 }
 
 fn now_millis() -> i64 {
@@ -758,12 +747,5 @@ mod tests {
             strip_verbatim_prefix(Path::new(r"\\?\UNC\server\share\a.md")),
             PathBuf::from(r"\\?\UNC\server\share\a.md")
         );
-    }
-
-    #[test]
-    fn fnv1a_is_stable() {
-        // Known FNV-1a 64-bit values.
-        assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
-        assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
     }
 }
