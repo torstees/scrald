@@ -11,13 +11,13 @@ mod vaults;
 mod watcher;
 mod window;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use tauri::Manager;
 use tracing_subscriber::EnvFilter;
 
-use commands::LaunchInfo;
+use commands::{LaunchInfo, Launches};
 
 /// Default log filter when `RUST_LOG` isn't set: info everywhere, debug for our crates.
 const DEFAULT_LOG_FILTER: &str = "info,scrald=debug,scrald_core=debug";
@@ -30,16 +30,28 @@ fn main() -> anyhow::Result<()> {
     let launch = LaunchInfo::from_arg(std::env::args_os().nth(1).map(PathBuf::from));
     tracing::info!(path = ?launch.path, exists = launch.exists, "starting Scrald");
 
-    // Without a document to show, the window is the start screen: "Scrald".
-    let window_title = if launch.exists {
-        format!("{} \u{2014} Scrald", launch.title)
-    } else {
-        "Scrald".to_string()
-    };
-    let launch_path = launch.path.clone();
+    let first_launch = launch.clone();
+    let launches = Launches::default();
+    launches.set("main", launch);
 
     tauri::Builder::default()
-        .manage(launch)
+        // Registered first, so a second launch hands its file to this process
+        // and exits before anything else starts (DESIGN.md §11).
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            // `args[0]` is the program; a file comes after it.
+            let launch = LaunchInfo::from_arg_in(args.get(1).map(PathBuf::from), Path::new(&cwd));
+            tracing::info!(path = ?launch.path, "launch handed over by a new instance");
+            let app = app.clone();
+            // Rust note: `move` hands `app` and `launch` to the thread, which
+            // owns them from then on (a C++ lambda capturing by value).
+            // Windows are built off this callback's thread, the event loop's.
+            std::thread::spawn(move || {
+                if let Err(error) = window::open_window(&app, launch) {
+                    tracing::warn!(error = format!("{error:#}"), "could not open a window");
+                }
+            });
+        }))
+        .manage(launches)
         .manage(protocol::AssetRegistry::default())
         .manage(watcher::DocumentWatchers::default())
         .manage(session::Sessions::default())
@@ -79,6 +91,7 @@ fn main() -> anyhow::Result<()> {
             tauri::WindowEvent::CloseRequested { .. } => remember_window(window),
             tauri::WindowEvent::Destroyed => {
                 let label = window.label();
+                window.state::<Launches>().forget(label);
                 window
                     .state::<protocol::AssetRegistry>()
                     .remove_window(label);
@@ -136,23 +149,14 @@ fn main() -> anyhow::Result<()> {
             commands::report_timing,
         ])
         .setup(move |app| {
-            let store = open_state_store(app.handle());
-            // The main window starts hidden (tauri.conf.json) so it can be
-            // moved to its remembered place before anyone sees it.
+            app.manage(open_state_store(app.handle()));
+            // Windows start hidden (tauri.conf.json) so they can be moved to
+            // their remembered place before anyone sees them.
             if let Some(webview_window) = app.get_webview_window("main") {
                 // Geometry and window events work with the plain `Window`.
                 let window = webview_window.as_ref().window();
-                window.set_title(&window_title)?;
-                match store.window_for(launch_path.as_deref()) {
-                    Ok(Some(geometry)) => window::apply_geometry(&window, geometry)?,
-                    Ok(None) => {}
-                    Err(error) => {
-                        tracing::warn!(error = format!("{error:#}"), "could not read window state")
-                    }
-                }
-                window.show()?;
+                window::show_placed(&window, &first_launch, &[])?;
             }
-            app.manage(store);
 
             let theme_service = themes::ThemeService::new(user_theme_dir(app.handle()));
             if let Err(error) = theme_service.watch(app.handle()) {
@@ -166,13 +170,30 @@ fn main() -> anyhow::Result<()> {
             start_crash_recovery(app.handle());
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .run(app_context())
         // Rust note: `.context(...)` (from anyhow) wraps an error with a
         // message; together with `?` it propagates the error out of `main`,
         // like rethrowing with extra detail.
         .context("error while running the Tauri application")?;
 
     Ok(())
+}
+
+/// The app's configuration. With `SCRALD_DATA_DIR` set (automated and manual
+/// test runs), the identifier gets a suffix for that folder, because the
+/// single-instance plugin finds the running Scrald by its identifier: a test
+/// run then never hands its file to the user's own Scrald, which would open
+/// it with their real state database, and test runs on one folder still find
+/// each other.
+fn app_context() -> tauri::Context {
+    let mut context = tauri::generate_context!();
+    if let Some(dir) = std::env::var_os("SCRALD_DATA_DIR") {
+        let suffix = scrald_core::hash::fnv1a(dir.as_encoded_bytes());
+        let config = context.config_mut();
+        config.identifier = format!("{}.test-{suffix:016x}", config.identifier);
+        tracing::info!(identifier = config.identifier, "test identifier");
+    }
+    context
 }
 
 /// Opens the state database in the app data directory. If that fails, Scrald

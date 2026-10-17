@@ -1004,8 +1004,8 @@ pub fn report_timing(name: String, ms: f64) {
     tracing::info!(name, ms = (ms * 10.0).round() / 10.0, "frontend timing");
 }
 
-/// What the app was launched with. Built once at startup and stored as Tauri
-/// managed state.
+/// What a window was opened with: the file from the command line (of this
+/// process, or of a later launch handed over to it), or nothing.
 // Rust note: `#[derive(...)]` asks the compiler to generate trait impls:
 // `Clone` gives `.clone()` (an explicit deep copy, like a C++ copy ctor), and
 // serde's `Serialize` generates the JSON conversion Tauri needs.
@@ -1023,9 +1023,19 @@ pub struct LaunchInfo {
 impl LaunchInfo {
     /// Builds launch info from the first command-line argument, if any.
     pub fn from_arg(arg: Option<PathBuf>) -> Self {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        Self::from_arg_in(arg, &cwd)
+    }
+
+    /// Like `from_arg`, with a relative path taken from `cwd`: the folder a
+    /// later launch was started in, which needn't be this process's.
+    pub fn from_arg_in(arg: Option<PathBuf>, cwd: &Path) -> Self {
         // Rust note: `map` transforms the value inside an Option only if it's
         // present, much like Python's `f(x) if x is not None else None`.
-        let path = arg.map(|p| std::path::absolute(&p).unwrap_or(p));
+        let path = arg.map(|p| {
+            let joined = cwd.join(&p);
+            std::path::absolute(&joined).unwrap_or(joined)
+        });
         let title = match &path {
             Some(p) => scrald_core::title_from_path(p),
             None => "Scrald".to_string(),
@@ -1037,15 +1047,55 @@ impl LaunchInfo {
             exists,
         }
     }
+
+    /// The window title: the document's, or "Scrald" for the start screen
+    /// (also shown when the file doesn't exist).
+    pub fn window_title(&self) -> String {
+        if self.exists {
+            format!("{} \u{2014} Scrald", self.title)
+        } else {
+            "Scrald".to_string()
+        }
+    }
 }
 
-/// Returns the path and title the app was launched with.
+/// Returns the path and title this window was opened with.
 // Rust note: `State<'_, T>` borrows Tauri's managed state for the duration of
 // this call; `'_` tells the compiler "infer the lifetime", so you rarely need
-// to name it. We return a clone because the frontend needs an owned value.
+// to name it.
 #[tauri::command]
-pub fn launch_info(state: tauri::State<'_, LaunchInfo>) -> LaunchInfo {
-    state.inner().clone()
+pub fn launch_info(window: tauri::Window, launches: tauri::State<'_, Launches>) -> LaunchInfo {
+    launches.get(window.label())
+}
+
+/// What each window was opened with, by window label.
+#[derive(Default)]
+pub struct Launches {
+    inner: std::sync::Mutex<std::collections::HashMap<String, LaunchInfo>>,
+}
+
+impl Launches {
+    pub fn set(&self, window: &str, launch: LaunchInfo) {
+        self.lock().insert(window.to_string(), launch);
+    }
+
+    /// The window's launch info; nothing (the start screen) if it has none.
+    pub fn get(&self, window: &str) -> LaunchInfo {
+        self.lock()
+            .get(window)
+            .cloned()
+            .unwrap_or_else(|| LaunchInfo::from_arg(None))
+    }
+
+    pub fn forget(&self, window: &str) {
+        self.lock().remove(window);
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, LaunchInfo>> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 #[cfg(test)]
@@ -1076,5 +1126,36 @@ mod tests {
         let info = LaunchInfo::from_arg(Some(manifest));
         assert!(info.exists);
         assert_eq!(info.title, "Cargo");
+        assert_eq!(info.window_title(), "Cargo \u{2014} Scrald");
+    }
+
+    #[test]
+    fn relative_argument_is_taken_from_the_given_folder() {
+        // A later launch's relative path belongs to the folder it ran in.
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let info = LaunchInfo::from_arg_in(Some(PathBuf::from("Cargo.toml")), &crate_dir);
+        assert_eq!(info.path, Some(crate_dir.join("Cargo.toml")));
+        assert!(info.exists);
+        // An absolute path ignores the folder.
+        let manifest = crate_dir.join("Cargo.toml");
+        let elsewhere = LaunchInfo::from_arg_in(Some(manifest.clone()), Path::new("/elsewhere"));
+        assert_eq!(elsewhere.path, Some(manifest));
+    }
+
+    #[test]
+    fn missing_file_titles_the_window_scrald() {
+        let info = LaunchInfo::from_arg(Some(PathBuf::from("does-not-exist.md")));
+        assert_eq!(info.window_title(), "Scrald");
+    }
+
+    #[test]
+    fn windows_without_launch_info_show_the_start_screen() {
+        let launches = Launches::default();
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        launches.set("main", LaunchInfo::from_arg(Some(manifest.clone())));
+        assert_eq!(launches.get("main").path, Some(manifest));
+        assert_eq!(launches.get("window-1").path, None);
+        launches.forget("main");
+        assert_eq!(launches.get("main").path, None);
     }
 }

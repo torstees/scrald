@@ -587,7 +587,11 @@ As implemented (`ui/src/editor/RawEditor.svelte`):
 ## 11. Startup and windows
 
 - **File associations** for `.md`, `.markdown`, and `.mdown`, registered by the Tauri bundler. The installer should not take over the default `.md` association without the user's consent; Windows offers it through "Open with."
-- **Single instance:** using Tauri's single-instance plugin, opening another file while Scrald is running opens it in a new window of the existing process.
+- **Single instance:** using Tauri's single-instance plugin, opening another file while Scrald is running opens it in a new window of the existing process. As implemented (`crates/scrald-app/src/window.rs`):
+  - A later launch hands its command line and working folder to the running process and exits; a relative path is taken from the folder that launch ran in. Each window (`main`, then `window-1`, `window-2`, ...) has its own launch info, document session, watcher, and asset token, and the app exits when the last window closes.
+  - A file that's already open in a window brings that window to the front instead of opening a second copy, so one document is never edited in two windows of one process. A launch with no file opens another start screen.
+  - A new window takes its document's remembered geometry (else the last window's), stepped 32 px down and right while it would sit on an open window. Start screens re-read their lists when focused, since other windows change them.
+  - The plugin finds the running Scrald by the app identifier. With `SCRALD_DATA_DIR` set, the identifier gets a suffix derived from that folder, so a test run never hands its file to the user's own Scrald (which would open it with their real state database), while test runs on the same folder still find each other.
 - **Command line:** `scrald path/to/file.md` opens the file directly.
 - **Start screen:** launching with no file shows recent documents (title from front matter, path, last opened, theme swatch), pinned documents, an Open button, and a drop zone for drag and drop. As implemented (`ui/src/start/`):
   - The window is titled "Scrald" and uses the global default theme (else the built-in light or dark one). It lists any recovered changes (§9.3), then **Pinned** and **Recent** documents, up to 50 in all.

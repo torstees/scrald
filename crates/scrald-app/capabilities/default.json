@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window. Keep this minimal; add permissions only as features need them.",
-  "windows": ["main"],
+  "description": "Permissions for every window (\"main\" and the \"window-N\" ones opened later). Keep this minimal; add permissions only as features need them.",
+  "windows": ["main", "window-*"],
   "permissions": ["core:default", "core:window:allow-destroy"]
 }
