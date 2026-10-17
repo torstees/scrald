@@ -152,7 +152,7 @@
         >
         <button onclick={() => act(onmakedefault)}>Make default</button>
         <button onclick={() => act(onduplicate)}>Duplicate to customize</button>
-        <button onclick={onimport} title="Create a theme from a Windows Terminal color scheme"
+        <button onclick={onimport} title="Create a theme from a terminal color scheme: Windows Terminal, iTerm2, Alacritty, Ghostty, kitty, or base16/base24"
           >Import terminal theme…</button
         >
         {#if current.source === "document"}

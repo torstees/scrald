@@ -1,12 +1,20 @@
 //! Creating themes from terminal color schemes (DESIGN.md §7.3).
 //!
-//! Each supported format is read into a `TerminalScheme`; `theme_toml` then
+//! Each supported format (one module each) is read into a `TerminalScheme`
+//! by `read_schemes`; `theme_toml` then
 //! turns a scheme into an ordinary `theme.toml`, so an imported theme needs no
 //! special handling afterwards. The semantic colors a terminal doesn't have
 //! (muted, accent, link, ...) are derived and written out, so the user can
 //! adjust them.
 
+pub mod alacritty;
+pub mod base16;
+pub mod ghostty;
+pub mod iterm;
+pub mod kitty;
 pub mod windows_terminal;
+
+use std::path::Path;
 
 use super::color::Color;
 use super::schema::{
@@ -14,11 +22,177 @@ use super::schema::{
     ThemeFile,
 };
 
-/// Reads the color schemes in a terminal theme file. Returns them with a
-/// description of the format, for the new theme's comment. (Windows Terminal
-/// only, so far; DESIGN.md §7.3 lists the formats to come.)
-pub fn read_schemes(text: &str) -> Result<(Vec<TerminalScheme>, &'static str), String> {
-    windows_terminal::parse(text).map(|schemes| (schemes, windows_terminal::FORMAT))
+/// The terminal theme formats Scrald reads (DESIGN.md §7.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    WindowsTerminal,
+    Iterm,
+    Alacritty,
+    Ghostty,
+    Kitty,
+    Base16,
+}
+
+impl Format {
+    /// Where an imported theme came from, for its `theme.toml` comment.
+    pub fn description(self) -> &'static str {
+        match self {
+            Format::WindowsTerminal => windows_terminal::FORMAT,
+            Format::Iterm => iterm::FORMAT,
+            Format::Alacritty => alacritty::FORMAT,
+            Format::Ghostty => ghostty::FORMAT,
+            Format::Kitty => kitty::FORMAT,
+            Format::Base16 => base16::FORMAT,
+        }
+    }
+
+    /// The format of a file, from its extension, or from its text when the
+    /// extension doesn't say (Ghostty themes have none; `.conf` is used by
+    /// both kitty and Ghostty).
+    pub fn detect(file_name: &str, text: &str) -> Option<Format> {
+        let extension = Path::new(file_name)
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase());
+        match extension.as_deref() {
+            Some("json") => return Some(Format::WindowsTerminal),
+            Some("itermcolors") => return Some(Format::Iterm),
+            Some("toml") => return Some(Format::Alacritty),
+            Some("yaml" | "yml") => return Some(Format::Base16),
+            _ => {}
+        }
+        let trimmed = text.trim_start_matches('\u{feff}').trim_start();
+        if trimmed.starts_with('{')
+            || trimmed
+                .strip_prefix('[')
+                .is_some_and(|r| r.trim_start().starts_with('{'))
+        {
+            return Some(Format::WindowsTerminal);
+        }
+        if trimmed.starts_with("<?xml") || trimmed.contains("<plist") {
+            return Some(Format::Iterm);
+        }
+        // Rust note: `lines()` borrows each line from `text` without copying,
+        // and `any` stops at the first line that matches.
+        let lines = || {
+            text.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        };
+        if lines().any(|l| l.starts_with("[colors")) {
+            return Some(Format::Alacritty);
+        }
+        if lines().any(|l| l.starts_with("base00") && l.contains(':')) {
+            return Some(Format::Base16);
+        }
+        // Ghostty writes `key = value`; kitty writes `key value`.
+        let first_word = |l: &str| l.split_whitespace().next().unwrap_or("").to_string();
+        if lines().any(|l| {
+            let key = l.split('=').next().unwrap_or("").trim();
+            l.contains('=') && matches!(key, "background" | "foreground" | "palette")
+        }) {
+            return Some(Format::Ghostty);
+        }
+        if lines().any(|l| {
+            let key = first_word(l);
+            matches!(key.as_str(), "background" | "foreground" | "color0")
+        }) {
+            return Some(Format::Kitty);
+        }
+        None
+    }
+}
+
+/// Reads the color schemes in a terminal theme file named `file_name`
+/// (only its name is used: for the format and as the scheme's name when the
+/// file doesn't give one). Returns them with their format.
+pub fn read_schemes(text: &str, file_name: &str) -> Result<(Vec<TerminalScheme>, Format), String> {
+    let format = Format::detect(file_name, text).ok_or_else(|| {
+        "not a terminal theme Scrald can read (Windows Terminal, iTerm2, Alacritty, \
+         Ghostty, kitty, or base16/base24)"
+            .to_string()
+    })?;
+    let stem = Path::new(file_name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let schemes = match format {
+        Format::WindowsTerminal => windows_terminal::parse(text)?,
+        Format::Iterm => vec![iterm::parse(text, &stem)?],
+        Format::Alacritty => vec![alacritty::parse(text, &stem)?],
+        Format::Ghostty => vec![ghostty::parse(text, &stem)?],
+        Format::Kitty => vec![kitty::parse(text, &stem)?],
+        Format::Base16 => vec![base16::parse(text, &stem)?],
+    };
+    Ok((schemes, format))
+}
+
+/// A hex color written as `#rrggbb`, `rrggbb`, or `0xrrggbb` (terminal
+/// formats differ), optionally quoted.
+pub(crate) fn parse_hex(text: &str) -> Option<Color> {
+    let text = text.trim().trim_matches(|c| c == '"' || c == '\'');
+    let hex = text
+        .strip_prefix('#')
+        .or_else(|| text.strip_prefix("0x"))
+        .or_else(|| text.strip_prefix("0X"))
+        .unwrap_or(text);
+    if hex.len() != 6 && hex.len() != 3 {
+        return None;
+    }
+    Color::parse(&format!("#{hex}"))
+}
+
+/// The ANSI colors' names, for messages about a missing one.
+const ANSI_NAMES: [&str; 16] = [
+    "black",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+    "bright black",
+    "bright red",
+    "bright green",
+    "bright yellow",
+    "bright blue",
+    "bright magenta",
+    "bright cyan",
+    "bright white",
+];
+
+/// A scheme's colors as a format's reader finds them, any of which may be
+/// missing until `finish` checks.
+#[derive(Debug, Default)]
+pub(crate) struct SchemeParts {
+    pub background: Option<Color>,
+    pub foreground: Option<Color>,
+    pub cursor: Option<Color>,
+    pub selection: Option<Color>,
+    pub ansi: [Option<Color>; 16],
+}
+
+impl SchemeParts {
+    /// The finished scheme, or which required color is missing.
+    pub fn finish(self, name: &str) -> Result<TerminalScheme, String> {
+        let name = match name.trim() {
+            "" => "Imported theme",
+            trimmed => trimmed,
+        };
+        let missing = |what: &str| format!("\"{name}\" has no {what} color");
+        let mut ansi = [Color::rgb(0, 0, 0); 16];
+        for (i, slot) in ansi.iter_mut().enumerate() {
+            *slot = self.ansi[i].ok_or_else(|| missing(ANSI_NAMES[i]))?;
+        }
+        Ok(TerminalScheme {
+            name: name.to_string(),
+            background: self.background.ok_or_else(|| missing("background"))?,
+            foreground: self.foreground.ok_or_else(|| missing("foreground"))?,
+            cursor: self.cursor,
+            selection: self.selection,
+            ansi,
+        })
+    }
 }
 
 /// A terminal color scheme, as read from any supported format.
@@ -428,6 +602,109 @@ mod tests {
         scheme.name = r#"Bob's "Best" \ Theme"#.to_string();
         let loaded = ThemeFile::parse(&theme_toml(&scheme, "x")).expect("valid TOML");
         assert_eq!(loaded.meta.name, scheme.name);
+    }
+
+    #[test]
+    fn formats_are_detected_by_extension_then_content() {
+        let d = Format::detect;
+        assert_eq!(d("x.json", ""), Some(Format::WindowsTerminal));
+        assert_eq!(d("Dracula.itermcolors", ""), Some(Format::Iterm));
+        assert_eq!(d("alacritty.toml", ""), Some(Format::Alacritty));
+        assert_eq!(d("ocean.YAML", ""), Some(Format::Base16));
+        // No telling extension: the text decides.
+        assert_eq!(
+            d("Tango Dark", "background = 000000\npalette = 0=#000000"),
+            Some(Format::Ghostty)
+        );
+        assert_eq!(
+            d("theme.conf", "# kitty\nbackground #000000\ncolor0 #000000"),
+            Some(Format::Kitty)
+        );
+        assert_eq!(d("theme.conf", "background=#000000"), Some(Format::Ghostty));
+        assert_eq!(
+            d("scheme", "scheme: X\nbase00: \"000000\""),
+            Some(Format::Base16)
+        );
+        assert_eq!(
+            d("x", "[colors.primary]\nbackground = '#000000'"),
+            Some(Format::Alacritty)
+        );
+        assert_eq!(
+            d("x", "<?xml version=\"1.0\"?><plist>"),
+            Some(Format::Iterm)
+        );
+        assert_eq!(
+            d("x", "  { \"name\": \"y\" }"),
+            Some(Format::WindowsTerminal)
+        );
+        assert_eq!(d("notes.txt", "Just some text."), None);
+        assert!(
+            read_schemes("Just some text.", "notes.txt")
+                .unwrap_err()
+                .contains("kitty")
+        );
+    }
+
+    #[test]
+    fn every_fixture_file_imports() {
+        // One file per format, as the PR's manual tests import them.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/terminal");
+        let expected = [
+            (
+                "windows-terminal-settings.json",
+                Format::WindowsTerminal,
+                "Campbell",
+            ),
+            ("tango-dark.json", Format::WindowsTerminal, "Tango Dark"),
+            ("Dracula.itermcolors", Format::Iterm, "Dracula"),
+            ("one-dark.toml", Format::Alacritty, "one-dark"),
+            ("TokyoNight", Format::Ghostty, "TokyoNight"),
+            ("gruvbox-dark.conf", Format::Kitty, "Gruvbox Dark"),
+            ("ocean.yaml", Format::Base16, "Ocean"),
+        ];
+        for (file, format, name) in expected {
+            let text = std::fs::read_to_string(dir.join(file)).expect(file);
+            let (schemes, found) =
+                read_schemes(&text, file).unwrap_or_else(|e| panic!("{file}: {e}"));
+            assert_eq!(found, format, "{file}");
+            assert_eq!(schemes[0].name, name, "{file}");
+            // And each makes a theme that loads.
+            ThemeFile::parse(&theme_toml(&schemes[0], format.description()))
+                .unwrap_or_else(|e| panic!("{file}: {e:?}"));
+        }
+        let dracula = std::fs::read_to_string(dir.join("Dracula.itermcolors")).unwrap();
+        let scheme = &read_schemes(&dracula, "Dracula.itermcolors").unwrap().0[0];
+        assert_eq!(scheme.background, c("#282a36"));
+        assert_eq!(scheme.ansi[4], c("#bd93f9"));
+    }
+
+    #[test]
+    fn hex_colors_in_every_spelling() {
+        let teal = Some(Color::rgb(0x00, 0x80, 0x80));
+        assert_eq!(parse_hex("#008080"), teal);
+        assert_eq!(parse_hex("008080"), teal);
+        assert_eq!(parse_hex("0x008080"), teal);
+        assert_eq!(parse_hex(" '#008080' "), teal);
+        assert_eq!(parse_hex("\"008080\""), teal);
+        assert_eq!(parse_hex("CellForeground"), None);
+        assert_eq!(parse_hex("#0080"), None);
+    }
+
+    #[test]
+    fn missing_colors_are_named() {
+        let mut parts = SchemeParts {
+            background: Some(Color::rgb(0, 0, 0)),
+            foreground: Some(Color::rgb(255, 255, 255)),
+            ..SchemeParts::default()
+        };
+        parts.ansi = [Some(Color::rgb(1, 2, 3)); 16];
+        parts.ansi[12] = None;
+        assert_eq!(
+            parts.finish("X").unwrap_err(),
+            "\"X\" has no bright blue color"
+        );
+        let empty = SchemeParts::default().finish(" ").unwrap_err();
+        assert_eq!(empty, "\"Imported theme\" has no black color");
     }
 
     #[test]
