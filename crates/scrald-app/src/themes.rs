@@ -6,10 +6,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+use anyhow::Context;
 use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
+use scrald_core::theme::edit::{ThemeChange, apply_changes};
 use scrald_core::theme::import::read_schemes;
-use scrald_core::theme::{Theme, ThemeLibrary, ThemeOrigin, ThemeSummary};
+use scrald_core::theme::{Theme, ThemeFile, ThemeLibrary, ThemeOrigin, ThemeSummary};
 use tauri::http::{Request, Response, StatusCode, header};
 use tauri::{AppHandle, Emitter};
 
@@ -95,6 +97,43 @@ impl ThemeService {
             .map_err(anyhow::Error::msg)?;
         self.reload();
         Ok(new_id)
+    }
+
+    /// Theme `id` with `changes` from the theme editor applied, and the
+    /// edited `theme.toml` text, without writing anything. Only themes in the
+    /// user folder can be edited.
+    pub fn edited(&self, id: &str, changes: &[ThemeChange]) -> anyhow::Result<(Theme, String)> {
+        let theme = self
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("no theme named {id}"))?;
+        let ThemeOrigin::User { dir } = &theme.origin else {
+            anyhow::bail!("built-in themes can't be edited; duplicate it first");
+        };
+        let path = dir.join("theme.toml");
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("could not read {}", path.display()))?;
+        let edited = apply_changes(&text, changes)
+            .map_err(|problems| anyhow::anyhow!(problems.join("\n")))?;
+        let file =
+            ThemeFile::parse(&edited).map_err(|problems| anyhow::anyhow!(problems.join("\n")))?;
+        Ok((Theme { file, ..theme }, edited))
+    }
+
+    /// Writes theme `id` with `changes` applied (DESIGN.md §7.2): to a
+    /// temporary file next to `theme.toml`, then renamed over it.
+    pub fn save_edit(&self, id: &str, changes: &[ThemeChange]) -> anyhow::Result<()> {
+        let (theme, text) = self.edited(id, changes)?;
+        let ThemeOrigin::User { dir } = &theme.origin else {
+            anyhow::bail!("built-in themes can't be edited");
+        };
+        let path = dir.join("theme.toml");
+        let temp = dir.join("theme.toml.saving");
+        std::fs::write(&temp, text)
+            .with_context(|| format!("could not write {}", temp.display()))?;
+        std::fs::rename(&temp, &path)
+            .with_context(|| format!("could not write {}", path.display()))?;
+        self.reload();
+        Ok(())
     }
 
     /// Creates a theme in the user theme folder for each scheme named in
@@ -335,6 +374,40 @@ mod tests {
                 .to_string()
                 .contains("no scheme named \"Day\"")
         );
+    }
+
+    #[test]
+    fn editor_changes_preview_and_save() {
+        let dir = temp_dir("edit");
+        let service = ThemeService::new(Some(dir.clone()));
+        let change = |key: &str, value: serde_json::Value| ThemeChange {
+            key: key.to_string(),
+            value: Some(value),
+        };
+        // Built-in themes are read-only.
+        let refused = service.edited("sepia", &[]).unwrap_err();
+        assert!(refused.to_string().contains("duplicate it first"));
+
+        let id = service.duplicate("sepia").unwrap();
+        let before = std::fs::read_to_string(dir.join(&id).join("theme.toml")).unwrap();
+        let changes = [change("colors.link", serde_json::json!("#123456"))];
+        // A preview changes the theme in memory only.
+        let (preview, _) = service.edited(&id, &changes).unwrap();
+        assert_eq!(preview.file.colors.link.as_deref(), Some("#123456"));
+        assert_eq!(
+            std::fs::read_to_string(dir.join(&id).join("theme.toml")).unwrap(),
+            before
+        );
+        // Saving writes it, and the library has it at once.
+        service.save_edit(&id, &changes).unwrap();
+        assert_eq!(
+            service.get(&id).unwrap().file.colors.link.as_deref(),
+            Some("#123456")
+        );
+        assert!(!dir.join(&id).join("theme.toml.saving").exists());
+        // An invalid edit says why and writes nothing.
+        let bad = service.save_edit(&id, &[change("layout.measure", serde_json::json!(5))]);
+        assert!(bad.unwrap_err().to_string().contains("measure"));
     }
 
     #[test]

@@ -16,6 +16,10 @@
     setDefaultTheme,
     duplicateTheme,
     pickTerminalTheme,
+    themeDetails,
+    previewThemeEdit,
+    saveThemeEdit,
+    systemFonts,
     importTerminalTheme,
     userThemeFolder,
     onThemesChanged,
@@ -59,9 +63,13 @@
     RecoveredChanges,
     ResolvedTheme,
     TerminalThemeFile,
+    ThemeChange,
+    ThemeDetails,
+    ThemeEditorValues,
     ThemeSummary,
   } from "./lib/types";
   import SchemeChooser from "./themes/SchemeChooser.svelte";
+  import ThemeEditor from "./themes/ThemeEditor.svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import UnsavedDialog, { type UnsavedChoice } from "./editor/UnsavedDialog.svelte";
   import type { PropertyEditor } from "./frontmatter/properties";
@@ -715,7 +723,7 @@
     });
     // Theme hot reload (DESIGN.md §7.1): re-apply when a user theme changes.
     const unlistenThemes = onThemesChanged(() => {
-      if (theme && !switcherOpen) void showTheme(theme.id);
+      if (theme && !switcherOpen && !themeEditing) void showTheme(theme.id);
       if (switcherOpen) void refreshThemeList();
       if (!doc) void showStartScreen();
     });
@@ -1131,6 +1139,48 @@
     }
   }
 
+  // The theme editor (DESIGN.md §7.2): a panel beside the document. It
+  // previews on the document as it goes; closing it puts the document's own
+  // theme back (the saved version, if the edited theme is that one).
+  let themeEditing = $state<{ details: ThemeDetails; fonts: string[] } | null>(null);
+  let installedFonts: string[] | null = null;
+
+  async function editTheme(id: string): Promise<void> {
+    try {
+      const details = await themeDetails(id);
+      installedFonts ??= await systemFonts().catch(() => []);
+      closeSwitcher();
+      themeEditing = { details, fonts: installedFonts };
+    } catch (e) {
+      showNotice(`Could not edit theme: ${String(e)}`);
+    }
+  }
+
+  async function previewEdit(changes: ThemeChange[]): Promise<ThemeEditorValues> {
+    if (!themeEditing) throw new Error("not editing");
+    const preview = await previewThemeEdit(themeEditing.details.id, changes);
+    applyTheme(preview.style);
+    themeName = preview.style.name;
+    numbering = preview.style.numbering;
+    typography.setTheme(preview.style.layout);
+    return preview.values;
+  }
+
+  async function saveEdit(changes: ThemeChange[]): Promise<void> {
+    if (!themeEditing) return;
+    const { id, values } = themeEditing.details;
+    await saveThemeEdit(id, changes);
+    themeEditing = null;
+    await refreshThemeList();
+    if (theme) await showTheme(theme.id);
+    showNotice(`Saved theme "${themeList.find((t) => t.id === id)?.name ?? values.name}"`);
+  }
+
+  function cancelEdit(): void {
+    themeEditing = null;
+    if (theme) void showTheme(theme.id);
+  }
+
   function cancelSwitcher(): void {
     closeSwitcher();
     if (theme) void showTheme(theme.id);
@@ -1239,7 +1289,7 @@
     {#if tocVisible}
       <TocSidebar toc={doc.toc} current={currentEntry} onselect={selectTocEntry} {numbering} />
     {/if}
-    <main class="sk-main" bind:this={mainElement}>
+    <main class="sk-main" class:sk-beside-editor={themeEditing !== null} bind:this={mainElement}>
       {#if conflict}
         <ConflictBanner
           state={conflict}
@@ -1348,9 +1398,19 @@
         onreset={resetTheme}
         onduplicate={duplicate}
         onimport={importTerminal}
+        onedit={(id) => void editTheme(id)}
         highlight={importedTheme}
         onsavetodocument={saveThemeToDocument}
         oncancel={cancelSwitcher}
+      />
+    {/if}
+    {#if themeEditing}
+      <ThemeEditor
+        details={themeEditing.details}
+        fonts={themeEditing.fonts}
+        onpreview={previewEdit}
+        onsave={saveEdit}
+        oncancel={cancelEdit}
       />
     {/if}
     {#if schemeChoice}
@@ -1406,6 +1466,11 @@
 
   .sk-app.with-toc :global(.sk-status) {
     grid-column: 1 / -1;
+  }
+
+  /* The theme editor panel sits at the right; the document makes room. */
+  .sk-main.sk-beside-editor {
+    margin-right: min(23rem, 92vw);
   }
 
   .sk-main {

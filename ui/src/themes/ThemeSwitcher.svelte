@@ -20,6 +20,8 @@
     onduplicate: (id: string) => void;
     /** Create themes from a terminal color scheme file. */
     onimport: () => void;
+    /** Open the theme editor on `id` (a user theme). */
+    onedit: (id: string) => void;
     /** A theme to select and preview once it's in the list (a new import). */
     highlight: string | null;
     /** Write `id` into the document's front matter (`scrald-theme`). */
@@ -38,6 +40,7 @@
     onreset,
     onduplicate,
     onimport,
+    onedit,
     highlight,
     onsavetodocument,
     oncancel,
@@ -151,6 +154,13 @@
           >Save to document</button
         >
         <button onclick={() => act(onmakedefault)}>Make default</button>
+        <button
+          onclick={() => act(onedit)}
+          disabled={usable[selected]?.bundled ?? true}
+          title={usable[selected]?.bundled
+            ? "Built-in themes can't be changed; duplicate one to customize it"
+            : "Change this theme's colors, fonts, and layout"}>Edit…</button
+        >
         <button onclick={() => act(onduplicate)}>Duplicate to customize</button>
         <button onclick={onimport} title="Create a theme from a terminal color scheme: Windows Terminal, iTerm2, Alacritty, Ghostty, kitty, or base16/base24"
           >Import terminal theme…</button
@@ -292,6 +302,11 @@
   button.primary {
     border-color: var(--sk-color-accent);
     color: var(--sk-color-accent);
+  }
+
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .hint {

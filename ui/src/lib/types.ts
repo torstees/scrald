@@ -222,6 +222,62 @@ export interface ResolvedTheme {
   source: ThemeSource;
 }
 
+/** Mirrors `ThemeChange` (crates/scrald-core/src/theme/edit.rs): set `key`, or remove it with null. */
+export interface ThemeChange {
+  key: string;
+  value: string | number | boolean | (string | number)[] | null;
+}
+
+/** Mirrors `ColorValue`: what the file sets, and what the theme uses. */
+export interface ThemeColorValue {
+  key: string;
+  value: string | null;
+  resolved: string;
+}
+
+/** Mirrors `FontValue`; `family` is null when the theme leaves the slot out. */
+export interface ThemeFontValue {
+  slot: "body" | "heading" | "mono" | "ui";
+  family: string | null;
+  source: "system" | "google" | "theme";
+  weights: number[];
+  italic: boolean;
+  fallback: string[];
+}
+
+/** Mirrors `EditorValues` (crates/scrald-core/src/theme/edit.rs). */
+export interface ThemeEditorValues {
+  name: string;
+  appearance: "light" | "dark";
+  colors: ThemeColorValue[];
+  fonts: ThemeFontValue[];
+  measure: number;
+  fontSize: number;
+  lineHeight: number;
+  paragraphSpacing: number;
+  textSizing: "fixed" | "fit";
+  blockquoteStyle: "bar" | "indent" | "boxed" | "pull-quote";
+  blockquoteItalic: boolean;
+  hrStyle: "line" | "dots" | "ornament" | "image";
+  hrGlyph: string | null;
+  numbering: boolean;
+  h1Rule: boolean;
+}
+
+/** Mirrors `ThemeDetails` (crates/scrald-app/src/commands.rs). */
+export interface ThemeDetails {
+  id: string;
+  editable: boolean;
+  folder: string | null;
+  values: ThemeEditorValues;
+}
+
+/** Mirrors `ThemeEditPreview` (crates/scrald-app/src/commands.rs). */
+export interface ThemeEditPreview {
+  style: ThemeStyle;
+  values: ThemeEditorValues;
+}
+
 /** Mirrors `TerminalThemeFile` (crates/scrald-app/src/commands.rs). */
 export interface TerminalThemeFile {
   path: string;
