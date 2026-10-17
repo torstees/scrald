@@ -40,6 +40,7 @@
     highlight_bg: "Highlight",
     ui_background: "Sidebar and status bar",
   };
+  const DEFAULT_GLYPH = "❦";
   const FONT_LABELS: Record<ThemeFontValue["slot"], string> = {
     body: "Body",
     heading: "Headings",
@@ -107,6 +108,12 @@
     font(slot).family = family === "" ? null : family;
     // An empty family leaves the slot to the default: remove it entirely.
     set(family === "" ? `fonts.${slot}` : `fonts.${slot}.family`, family === "" ? null : family);
+  }
+
+  /** The ornament divider's character; empty means the usual ❦. */
+  function setGlyph(text: string): void {
+    values.hrGlyph = text.trim() || DEFAULT_GLYPH;
+    set("elements.hr.glyph", values.hrGlyph);
   }
 
   async function save(): Promise<void> {
@@ -353,6 +360,8 @@
           onchange={(e) => {
             values.hrStyle = e.currentTarget.value as ThemeEditorValues["hrStyle"];
             set("elements.hr.style", values.hrStyle);
+            // An ornament divider needs its character; start with the usual one.
+            if (values.hrStyle === "ornament" && !values.hrGlyph) setGlyph("");
           }}
         >
           <option value="line">Line</option>
@@ -365,9 +374,9 @@
           <span>Ornament</span>
           <input
             type="text"
-            placeholder="❦"
+            placeholder={DEFAULT_GLYPH}
             value={values.hrGlyph ?? ""}
-            onchange={(e) => set("elements.hr.glyph", e.currentTarget.value.trim() || null)}
+            onchange={(e) => setGlyph(e.currentTarget.value)}
           />
         </label>
       {/if}
