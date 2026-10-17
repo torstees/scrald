@@ -332,7 +332,7 @@ nordic-night/
 └── assets/           # optional: fonts, divider images, textures, ...
 ```
 
-Themes live in two places: bundled themes (read-only, shipped with the app) and the user theme directory (`themes/` under the platform's app config directory, as resolved by Tauri's path API: `%APPDATA%\Scrald\themes\` on Windows). A bundled theme can be duplicated into the user directory as a starting point. User themes hot-reload when their files change.
+Themes live in two places: bundled themes (read-only, shipped with the app) and the user theme directory (`themes/` under the platform's app config directory, as resolved by Tauri's path API: `%APPDATA%\io.github.torstees.scrald\themes\` on Windows, since Tauri names the folder after the app identifier). A bundled theme can be duplicated into the user directory as a starting point. User themes hot-reload when their files change.
 
 As implemented: bundled themes are TOML-only (no asset files) and compiled into the binary from `crates/scrald-core/themes/<id>/theme.toml`: Scrald Light, Scrald Dark, Sepia, and Technical. The user directory is `themes/` in Tauri's app config directory, created on first run. A user theme whose folder name matches a bundled theme's id replaces it. Themes that fail to load are still listed in the switcher, with their errors, rather than silently missing. The whole user directory is watched recursively; any change reloads the library and re-applies the current theme in every window.
 
