@@ -14,6 +14,7 @@ import type {
   RawSync,
   RawText,
   RecentDocument,
+  ResolvedTheme,
   RecoveredChanges,
   ThemeStyle,
   ThemeSummary,
@@ -229,9 +230,29 @@ export function setTypographyDefaults(defaults: TypographyDefaults): Promise<voi
   return invoke("set_typography_defaults", { defaults });
 }
 
-/** Recently opened documents, newest (and pinned) first. */
+/** Recently opened documents: pinned first, then newest first. */
 export function recentDocuments(limit: number): Promise<RecentDocument[]> {
   return invoke<RecentDocument[]>("recent_documents", { limit });
+}
+
+/** Pins a document to the top of the start screen, or unpins it. */
+export function setDocumentPinned(path: string, pinned: boolean): Promise<void> {
+  return invoke("set_document_pinned", { path, pinned });
+}
+
+/** Forgets everything remembered about a document ("Remove from list"). */
+export function forgetDocument(path: string): Promise<void> {
+  return invoke("forget_document", { path });
+}
+
+/** Asks for a file to open, starting near `near`; null if cancelled. */
+export function pickDocument(near: string | null): Promise<string | null> {
+  return invoke<string | null>("pick_document", { near });
+}
+
+/** The theme for a window without a document (the start screen). */
+export function startTheme(): Promise<ResolvedTheme> {
+  return invoke<ResolvedTheme>("start_theme");
 }
 
 /**

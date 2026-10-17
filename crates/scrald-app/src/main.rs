@@ -30,7 +30,12 @@ fn main() -> anyhow::Result<()> {
     let launch = LaunchInfo::from_arg(std::env::args_os().nth(1).map(PathBuf::from));
     tracing::info!(path = ?launch.path, exists = launch.exists, "starting Scrald");
 
-    let window_title = format!("{} \u{2014} Scrald", launch.title);
+    // Without a document to show, the window is the start screen: "Scrald".
+    let window_title = if launch.exists {
+        format!("{} \u{2014} Scrald", launch.title)
+    } else {
+        "Scrald".to_string()
+    };
     let launch_path = launch.path.clone();
 
     tauri::Builder::default()
@@ -107,6 +112,10 @@ fn main() -> anyhow::Result<()> {
             commands::save_reading_position,
             commands::set_remote_images,
             commands::recent_documents,
+            commands::set_document_pinned,
+            commands::forget_document,
+            commands::pick_document,
+            commands::start_theme,
             commands::list_themes,
             commands::theme_style,
             commands::set_document_theme,

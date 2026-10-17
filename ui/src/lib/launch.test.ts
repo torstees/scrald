@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { launchMessage } from "./launch";
 
 describe("launchMessage", () => {
-  it("prompts for a file when launched without one", () => {
-    expect(launchMessage({ path: null, title: "Scrald", exists: false })).toMatch(/No document open/);
+  it("says nothing when launched without a file (the start screen shows)", () => {
+    expect(launchMessage({ path: null, title: "Scrald", exists: false })).toBeNull();
   });
 
   it("reports a missing file", () => {

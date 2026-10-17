@@ -85,6 +85,10 @@ build:
 bundle:
     npm run tauri build
 
-# Run the release build on a file, logging to a file (release builds have no console on Windows)
-run-release file $SCRALD_LOG_FILE="target/scrald.log": build
-    {{ release_exe }} "{{ absolute_path(file) }}"
+# Run the release build on an optional file, logging to a file (release builds have no console on Windows)
+run-release file='' $SCRALD_LOG_FILE="target/scrald.log": build
+    {{ release_exe }} {{ if file != '' { '"' + absolute_path(file) + '"' } else { '' } }}
+
+# Run the release build from previous build, logging to a file (release builds have no console on Windows)
+run-exe $SCRALD_LOG_FILE="target/scrald.log":
+    {{ release_exe }}

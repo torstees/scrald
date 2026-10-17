@@ -1,9 +1,12 @@
 import type { LaunchInfo } from "./types";
 
-/** One-line status describing what the app was launched with. */
-export function launchMessage(info: LaunchInfo): string {
+/**
+ * One-line status describing what the app was launched with; null when it
+ * was launched without a file (the start screen says what to do).
+ */
+export function launchMessage(info: LaunchInfo): string | null {
   if (info.path === null) {
-    return "No document open. Pass a Markdown file on the command line.";
+    return null;
   }
   if (!info.exists) {
     return `File not found: ${info.path}`;

@@ -42,6 +42,9 @@ const MIGRATIONS: &[&str] = &[
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL                 -- JSON
     );",
+    // 2: what the start screen shows for each document (DESIGN.md §11).
+    "ALTER TABLE documents ADD COLUMN title TEXT;        -- as in the window title
+    ALTER TABLE documents ADD COLUMN shown_theme TEXT;  -- theme id it was last shown in",
 ];
 
 /// Setting key for the most recently used window size (DESIGN.md §11).
@@ -118,13 +121,22 @@ pub struct WindowGeometry {
     pub maximized: bool,
 }
 
-/// A row for the start screen's recent documents list (M7).
+/// A row for the start screen's recent documents list (DESIGN.md §11).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentDocument {
     pub path: String,
+    /// The title it had when last opened or saved; `None` for rows from
+    /// before titles were stored.
+    pub title: Option<String>,
+    /// The theme it was last shown in, for the swatch.
+    pub theme: Option<String>,
+    /// Unix time in milliseconds.
     pub last_opened: i64,
     pub pinned: bool,
+    /// Whether the file is still there (filled in by the command, which
+    /// checks off the main thread).
+    pub exists: bool,
 }
 
 /// The state database. All access goes through one connection behind a lock.
@@ -337,19 +349,57 @@ impl StateStore {
     pub fn recent_documents(&self, limit: usize) -> anyhow::Result<Vec<RecentDocument>> {
         let conn = self.conn();
         let mut statement = conn.prepare(
-            "SELECT path, last_opened, pinned FROM documents
+            "SELECT path, title, shown_theme, last_opened, pinned FROM documents
              ORDER BY pinned DESC, last_opened DESC LIMIT ?1",
         )?;
         let rows = statement.query_map([limit as i64], |row| {
             Ok(RecentDocument {
                 path: row.get(0)?,
-                last_opened: row.get(1)?,
-                pinned: row.get(2)?,
+                title: row.get(1)?,
+                theme: row.get(2)?,
+                last_opened: row.get(3)?,
+                pinned: row.get(4)?,
+                exists: true,
             })
         })?;
         // Rust note: collecting an iterator of `Result`s into `Result<Vec<_>, _>`
         // stops at the first error, like a loop with an early `return Err`.
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Remembers how a document looked, for the start screen: its title and
+    /// the theme it was shown in. `None` keeps the stored value (a save
+    /// doesn't change the theme).
+    pub fn set_document_display(
+        &self,
+        path: &Path,
+        title: Option<&str>,
+        theme: Option<&str>,
+    ) -> anyhow::Result<()> {
+        self.conn().execute(
+            "UPDATE documents SET title = COALESCE(?2, title), shown_theme = COALESCE(?3, shown_theme)
+             WHERE path = ?1",
+            params![document_key(path), title, theme],
+        )?;
+        Ok(())
+    }
+
+    /// Pins a document to the top of the start screen, or unpins it.
+    pub fn set_pinned(&self, path: &Path, pinned: bool) -> anyhow::Result<()> {
+        self.conn().execute(
+            "UPDATE documents SET pinned = ?2 WHERE path = ?1",
+            params![document_key(path), pinned],
+        )?;
+        Ok(())
+    }
+
+    /// Forgets everything remembered about a document ("Remove from list").
+    pub fn forget_document(&self, path: &Path) -> anyhow::Result<()> {
+        self.conn().execute(
+            "DELETE FROM documents WHERE path = ?1",
+            [document_key(path)],
+        )?;
+        Ok(())
     }
 
     /// Reads a JSON-encoded setting; `None` if unset or unreadable.
@@ -413,8 +463,6 @@ fn migrate(conn: &mut Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// If a remembered document with the same identity no longer exists at its
-/// old path, moves its row to `key` so its memory follows the file.
 /// The remembered settings in a document's row (defaults if it has none).
 fn read_memory(conn: &Connection, key: &str) -> anyhow::Result<DocumentMemory> {
     let memory = conn
@@ -450,6 +498,8 @@ fn read_memory(conn: &Connection, key: &str) -> anyhow::Result<DocumentMemory> {
     Ok(memory.unwrap_or_default())
 }
 
+/// If a remembered document with the same identity no longer exists at its
+/// old path, moves its row to `key` so its memory follows the file.
 fn reconnect_moved(conn: &Connection, key: &str, size: i64, hash: &str) -> anyhow::Result<()> {
     let mut statement = conn.prepare(
         "SELECT path FROM documents WHERE identity_size = ?1 AND identity_hash = ?2
@@ -747,6 +797,39 @@ mod tests {
             })
             .collect();
         assert_eq!(names, ["three.md", "two.md"]);
+    }
+
+    #[test]
+    fn recent_documents_show_title_theme_and_pins() {
+        let dir = temp_dir("display");
+        let a = doc(&dir, "a.md", "a");
+        let b = doc(&dir, "b.md", "b");
+        let store = StateStore::in_memory().unwrap();
+        store.record_open(&a).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        store.record_open(&b).unwrap();
+
+        store
+            .set_document_display(&a, Some("The Long Winter"), Some("sepia"))
+            .unwrap();
+        // A save sets the title only; the theme stays.
+        store
+            .set_document_display(&a, Some("Renamed"), None)
+            .unwrap();
+        store.set_pinned(&a, true).unwrap();
+
+        let recent = store.recent_documents(10).unwrap();
+        // Pinned first, though opened earlier.
+        assert_eq!(recent[0].title.as_deref(), Some("Renamed"));
+        assert_eq!(recent[0].theme.as_deref(), Some("sepia"));
+        assert!(recent[0].pinned);
+        assert_eq!(recent[1].title, None);
+        assert!(!recent[1].pinned);
+
+        store.forget_document(&a).unwrap();
+        let recent = store.recent_documents(10).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(store.memory(&a).unwrap(), DocumentMemory::default());
     }
 
     #[test]

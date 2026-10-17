@@ -3,7 +3,7 @@
 //! Payload types here are mirrored in TypeScript in `ui/src/lib/types.ts`;
 //! keep the two in sync.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::Context;
@@ -201,6 +201,17 @@ pub async fn open_document(
     }
 
     let opened = finish_open(&window, &registry, &store, &themes, doc, memory, false)?;
+    // For the start screen's recent list; never worth failing the open over.
+    if let Err(error) = store.set_document_display(
+        &path,
+        Some(&document_title(&opened.document)),
+        Some(&opened.theme.id),
+    ) {
+        tracing::warn!(
+            error = format!("{error:#}"),
+            "could not store the document's title"
+        );
+    }
     let mut opened = send_model(&sessions, window.label(), opened, true);
     opened.recovered = sessions
         .orphaned_recoveries(Some(&path))
@@ -293,12 +304,15 @@ fn set_window_title(
     doc: &DocumentModel,
     dirty: bool,
 ) -> tauri::Result<()> {
-    let title = doc
-        .front_matter
+    set_title_text(window, &document_title(doc), dirty)
+}
+
+/// The front matter's title, or one made from the file name.
+fn document_title(doc: &DocumentModel) -> String {
+    doc.front_matter
         .as_ref()
         .and_then(|fm| fm.title.clone())
-        .unwrap_or_else(|| scrald_core::title_from_path(&doc.path));
-    set_title_text(window, &title, dirty)
+        .unwrap_or_else(|| scrald_core::title_from_path(&doc.path))
 }
 
 fn set_title_text(window: &tauri::WebviewWindow, title: &str, dirty: bool) -> tauri::Result<()> {
@@ -500,6 +514,7 @@ pub async fn step_history(
 pub fn save_document(
     window: tauri::WebviewWindow,
     sessions: tauri::State<'_, Sessions>,
+    store: tauri::State<'_, StateStore>,
 ) -> Result<SaveOutcome, CommandError> {
     let outcome = sessions.save(window.label())?;
     // Rust note: a "let chain" mixes a plain condition with `let` patterns;
@@ -509,7 +524,14 @@ pub fn save_document(
         && let Some((text, _)) = sessions.text(window.label())
     {
         // Only the marker changes; the title comes from the front matter.
-        set_title_text(&window, &title_from_text(&path, &text), false)?;
+        let title = title_from_text(&path, &text);
+        set_title_text(&window, &title, false)?;
+        if let Err(error) = store.set_document_display(&path, Some(&title), None) {
+            tracing::warn!(
+                error = format!("{error:#}"),
+                "could not store the document's title"
+            );
+        }
     }
     Ok(outcome)
 }
@@ -805,7 +827,13 @@ pub fn set_document_theme(
     path: PathBuf,
     id: Option<String>,
 ) -> Result<(), CommandError> {
-    Ok(store.set_document_theme(&path, id.as_deref())?)
+    store.set_document_theme(&path, id.as_deref())?;
+    // The start screen's swatch follows a theme chosen here. (Returning to
+    // the default is picked up at the next open.)
+    if let Some(id) = &id {
+        store.set_document_display(&path, None, Some(id))?;
+    }
+    Ok(())
 }
 
 /// Sets the global default theme.
@@ -862,13 +890,91 @@ pub fn set_remote_images(
     Ok(store.set_remote_images(&path, allowed)?)
 }
 
-/// Recently opened documents, newest first (pinned first). For the start screen.
+/// Recently opened documents for the start screen: pinned first, then
+/// newest first, each marked if its file is gone.
 #[tauri::command]
-pub fn recent_documents(
+pub async fn recent_documents(
     store: tauri::State<'_, StateStore>,
     limit: usize,
 ) -> Result<Vec<RecentDocument>, CommandError> {
-    Ok(store.recent_documents(limit)?)
+    let mut recent = store.recent_documents(limit)?;
+    // Checking a file on a disconnected network drive can take seconds, so
+    // it happens on a worker thread.
+    let recent = tauri::async_runtime::spawn_blocking(move || {
+        for document in &mut recent {
+            document.exists = Path::new(&document.path).is_file();
+        }
+        recent
+    })
+    .await
+    .context("checking recent documents failed")?;
+    Ok(recent)
+}
+
+/// Pins a document to the top of the start screen, or unpins it.
+#[tauri::command]
+pub fn set_document_pinned(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+    pinned: bool,
+) -> Result<(), CommandError> {
+    Ok(store.set_pinned(&path, pinned)?)
+}
+
+/// "Remove from list": forgets everything remembered about a document.
+#[tauri::command]
+pub fn forget_document(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+) -> Result<(), CommandError> {
+    Ok(store.forget_document(&path)?)
+}
+
+/// Asks for a Markdown file to open; `None` if the user cancelled. Starts
+/// in `near`'s folder when given (the open document). Runs in Rust so the
+/// frontend needs no file dialog permission.
+#[tauri::command]
+pub async fn pick_document(
+    app: tauri::AppHandle,
+    near: Option<PathBuf>,
+) -> Result<Option<PathBuf>, CommandError> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app
+            .dialog()
+            .file()
+            .set_title("Open")
+            .add_filter("Markdown", MARKDOWN_EXTENSIONS)
+            .add_filter("All files", &["*"]);
+        // Rust note: builder methods take `self` by value and return it, so
+        // an optional step reassigns the variable (hence `let mut`).
+        if let Some(folder) = near.as_deref().and_then(Path::parent) {
+            dialog = dialog.set_directory(folder);
+        }
+        dialog.blocking_pick_file()
+    })
+    .await
+    .context("file picker failed")?;
+    Ok(picked.and_then(|p| p.into_path().ok()))
+}
+
+/// File extensions Scrald opens as Markdown (dialogs, drag and drop).
+pub const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown", "mdown", "mkd", "mkdn", "txt"];
+
+/// The theme for a window without a document (the start screen): the
+/// global default, else the built-in one for the system's light or dark mode.
+#[tauri::command]
+pub fn start_theme(
+    window: tauri::WebviewWindow,
+    store: tauri::State<'_, StateStore>,
+    themes: tauri::State<'_, ThemeService>,
+) -> ResolvedTheme {
+    let default = store.get_setting::<String>(DEFAULT_THEME).ok().flatten();
+    let system_dark = matches!(window.theme(), Ok(tauri::Theme::Dark));
+    let (id, source) = themes.with_library(|library| {
+        resolve_theme(library, None, None, None, default.as_deref(), system_dark)
+    });
+    ResolvedTheme { id, source }
 }
 
 /// Classifies a link clicked in the document at `document`.
