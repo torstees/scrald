@@ -249,9 +249,15 @@ export interface ThemeStyle {
 /** Mirrors `RecentDocument` (crates/scrald-app/src/state.rs). */
 export interface RecentDocument {
   path: string;
+  /** The title it had when last opened or saved (null for older entries). */
+  title: string | null;
+  /** The theme it was last shown in, for the swatch. */
+  theme: string | null;
   /** Unix time in milliseconds. */
   lastOpened: number;
   pinned: boolean;
+  /** Whether the file is still there. */
+  exists: boolean;
 }
 
 /** Mirrors `OpenedDocument` (crates/scrald-app/src/commands.rs). */

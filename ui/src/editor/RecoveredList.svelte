@@ -1,7 +1,7 @@
 <script lang="ts">
   // Shown when Scrald starts without a document: every set of unsaved
   // changes left behind by a run that stopped before saving them
-  // (DESIGN.md §9.3). Moves to the start screen when that exists.
+  // (DESIGN.md §9.3). Part of the start screen.
   import type { RecoveredChanges } from "../lib/types";
   import { savedWhen } from "./recovered";
 

@@ -18,6 +18,11 @@
     userThemeFolder,
     onThemesChanged,
     propertiesOpen as propertiesOpenSetting,
+    recentDocuments,
+    setDocumentPinned,
+    forgetDocument,
+    pickDocument,
+    startTheme,
     setPropertiesOpen,
     reparseDocument,
     editFrontMatter,
@@ -45,6 +50,7 @@
   import { launchMessage } from "./lib/launch";
   import type {
     DocumentModel,
+    RecentDocument,
     Flavor,
     OpenedDocument,
     PropertyChange,
@@ -66,6 +72,9 @@
   import ConflictBanner from "./editor/ConflictBanner.svelte";
   import RecoveryBanner from "./editor/RecoveryBanner.svelte";
   import RecoveredList from "./editor/RecoveredList.svelte";
+  import StartScreen from "./start/StartScreen.svelte";
+  import { isMarkdownPath } from "./start/recent";
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { AUTOSAVE_DELAY_MS, Autosaver } from "./editor/autosave";
   import TocSidebar from "./toc/TocSidebar.svelte";
   import { entryForHeadingBlock } from "./toc/tree";
@@ -683,6 +692,17 @@
       .then(applyAutosave)
       .catch(() => {});
     const unlistenAutosave = onAutosaveChanged(applyAutosave);
+    // Drag and drop (DESIGN.md §11): Tauri hands over the dropped files'
+    // paths; the page itself never sees the files.
+    const unlistenDrop = getCurrentWebview().onDragDropEvent((event) => {
+      const payload = event.payload;
+      if (payload.type === "enter" || payload.type === "over") dropping = true;
+      else if (payload.type === "leave") dropping = false;
+      else {
+        dropping = false;
+        void openDropped(payload.paths);
+      }
+    });
     void typography.loadDefaults().then(start);
     // Live reload (DESIGN.md §9.3), unless it's our own save or there are
     // unsaved edits.
@@ -693,6 +713,7 @@
     const unlistenThemes = onThemesChanged(() => {
       if (theme && !switcherOpen) void showTheme(theme.id);
       if (switcherOpen) void refreshThemeList();
+      if (!doc) void showStartScreen();
     });
     // Ctrl+wheel and trackpad pinch zoom the text, not the whole webview.
     const onWheel = (event: WheelEvent) => {
@@ -706,16 +727,87 @@
       void unlistenClose.then((stop) => stop());
       void unlistenThemes.then((stop) => stop());
       void unlistenAutosave.then((stop) => stop());
+      void unlistenDrop.then((stop) => stop());
       window.removeEventListener("wheel", onWheel);
     };
   });
+
+  // The start screen (DESIGN.md §11), shown while no document is open.
+  const RECENT_LIMIT = 50;
+  let recentList = $state<RecentDocument[]>([]);
+  let dropping = $state(false);
+
+  /** Fills the start screen: its theme, recent documents, recovered changes. */
+  async function showStartScreen(): Promise<void> {
+    try {
+      const [resolved, recent, themes, recoveredNow] = await Promise.all([
+        startTheme(),
+        recentDocuments(RECENT_LIMIT),
+        listThemes(),
+        recoveredChanges().catch(() => []),
+      ]);
+      await showTheme(resolved.id, false);
+      recentList = recent;
+      themeList = themes;
+      recoveredList = recoveredNow;
+    } catch (e) {
+      message = `Could not list recent documents: ${String(e)}`;
+    }
+  }
+
+  /** "Open…" (Ctrl+O): a file dialog, starting in the open document's folder. */
+  async function pickAndOpen(): Promise<void> {
+    try {
+      const path = await pickDocument(doc?.path ?? null);
+      if (path) await navigate(path);
+    } catch (e) {
+      report(`Could not open: ${String(e)}`);
+    }
+  }
+
+  /** Opens the first Markdown file among dropped files. */
+  async function openDropped(paths: string[]): Promise<void> {
+    const path = paths.find(isMarkdownPath);
+    if (path) await navigate(path);
+    else if (paths.length > 0) report("Scrald opens Markdown files (.md, .markdown, .mdown, .txt).");
+  }
+
+  async function openRecent(item: RecentDocument): Promise<void> {
+    await navigate(item.path);
+    // Opening can fail (say, the file just went away); show the list as it is now.
+    if (!doc) await showStartScreen();
+  }
+
+  async function pinRecent(item: RecentDocument, pinned: boolean): Promise<void> {
+    try {
+      await setDocumentPinned(item.path, pinned);
+      recentList = await recentDocuments(RECENT_LIMIT);
+    } catch (e) {
+      message = `Could not change the pin: ${String(e)}`;
+    }
+  }
+
+  async function forgetRecent(item: RecentDocument): Promise<void> {
+    try {
+      await forgetDocument(item.path);
+      recentList = await recentDocuments(RECENT_LIMIT);
+    } catch (e) {
+      message = `Could not remove it from the list: ${String(e)}`;
+    }
+  }
+
+  /** A notice in the status bar, or the start screen's message line. */
+  function report(text: string): void {
+    if (doc) showNotice(text);
+    else message = text;
+  }
 
   async function start(): Promise<void> {
     try {
       const info = await launchInfo();
       if (info.path === null || !info.exists) {
         message = launchMessage(info);
-        recoveredList = await recoveredChanges().catch(() => []);
+        await showStartScreen();
         return;
       }
       await navigate(info.path);
@@ -993,6 +1085,11 @@
 
   function onKeydown(event: KeyboardEvent): void {
     if (switcherOpen || unsavedPrompt) return;
+    if (event.ctrlKey && !event.shiftKey && (event.key === "o" || event.key === "O")) {
+      event.preventDefault();
+      void pickAndOpen();
+      return;
+    }
     if (event.ctrlKey && (event.key === "s" || event.key === "S")) {
       event.preventDefault();
       // Commit a property or block being edited first: both commit on blur,
@@ -1199,19 +1296,30 @@
       <UnsavedDialog title={unsavedPrompt.title} action={unsavedPrompt.action} onchoose={unsavedPrompt.resolve} />
     {/if}
   {:else}
-    <main class="sk-main sk-message">
-      <h1>Scrald</h1>
-      {#if message}<p>{message}</p>{/if}
-      {#if recoveredList.length > 0}
-        <RecoveredList
-          items={recoveredList}
-          busy={recoveryBusy}
-          onrestore={restoreFromList}
-          oncopy={(item) => copyRecovered(item.id)}
-          ondiscard={(item) => discardRecovery(item.id)}
-        />
-      {/if}
+    <main class="sk-main">
+      <StartScreen
+        documents={recentList}
+        themes={themeList}
+        {message}
+        onpick={pickAndOpen}
+        onopen={openRecent}
+        onpin={pinRecent}
+        onforget={forgetRecent}
+      >
+        {#if recoveredList.length > 0}
+          <RecoveredList
+            items={recoveredList}
+            busy={recoveryBusy}
+            onrestore={restoreFromList}
+            oncopy={(item) => copyRecovered(item.id)}
+            ondiscard={(item) => discardRecovery(item.id)}
+          />
+        {/if}
+      </StartScreen>
     </main>
+  {/if}
+  {#if dropping}
+    <div class="sk-drop" aria-hidden="true"><span>Drop to open</span></div>
   {/if}
 </div>
 
@@ -1244,16 +1352,22 @@
     min-height: 0;
   }
 
-  .sk-message {
-    max-width: calc(var(--sk-measure) * 1ch);
-    margin: 0 auto;
-    padding: 3rem 1.5rem;
+  /* Shown while files are dragged over the window. */
+  .sk-drop {
+    position: fixed;
+    inset: 0.5rem;
+    display: grid;
+    place-items: center;
+    border: 2px dashed var(--sk-color-accent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--sk-color-background) 80%, transparent);
+    pointer-events: none;
+    z-index: 100;
   }
 
-  .sk-message p {
-    color: var(--sk-color-muted);
+  .sk-drop span {
     font-family: var(--sk-font-ui);
-    font-size: 0.9rem;
-    overflow-wrap: anywhere;
+    font-size: 1.2rem;
+    color: var(--sk-color-foreground);
   }
 </style>
