@@ -715,6 +715,11 @@
       if (switcherOpen) void refreshThemeList();
       if (!doc) void showStartScreen();
     });
+    // Other windows open, close and recover documents meanwhile, so the start
+    // screen re-reads its lists whenever its window comes to the front.
+    const unlistenFocus = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused && !doc) void refreshStartLists();
+    });
     // Ctrl+wheel and trackpad pinch zoom the text, not the whole webview.
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey || !doc) return;
@@ -728,6 +733,7 @@
       void unlistenThemes.then((stop) => stop());
       void unlistenAutosave.then((stop) => stop());
       void unlistenDrop.then((stop) => stop());
+      void unlistenFocus.then((stop) => stop());
       window.removeEventListener("wheel", onWheel);
     };
   });
@@ -752,6 +758,22 @@
       recoveredList = recoveredNow;
     } catch (e) {
       message = `Could not list recent documents: ${String(e)}`;
+    }
+  }
+
+  /** Re-reads the start screen's recent documents and recovered changes. */
+  async function refreshStartLists(): Promise<void> {
+    try {
+      const [recent, recoveredNow] = await Promise.all([
+        recentDocuments(RECENT_LIMIT),
+        recoveredChanges().catch(() => []),
+      ]);
+      // A document may have opened while the lists were read.
+      if (doc) return;
+      recentList = recent;
+      recoveredList = recoveredNow;
+    } catch {
+      // The lists shown stay as they were.
     }
   }
 

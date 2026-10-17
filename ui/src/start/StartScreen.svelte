@@ -23,8 +23,11 @@
 
   const groups = $derived(splitPinned(documents));
   const themesById = $derived(new Map(themes.map((t) => [t.id, t])));
-  // Read once: "5 minutes ago" needn't tick while the screen is open.
-  const now = Date.now();
+  // Read when the list arrives: "5 minutes ago" needn't tick while it's shown.
+  const now = $derived.by(() => {
+    void documents;
+    return Date.now();
+  });
 </script>
 
 {#snippet list(docs: RecentDocument[])}

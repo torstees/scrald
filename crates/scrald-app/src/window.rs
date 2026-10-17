@@ -1,13 +1,112 @@
-//! Window geometry: remembering it, and restoring it onto a monitor that is
-//! actually connected (DESIGN.md §11).
+//! Windows: opening one per document, and remembering their geometry and
+//! restoring it onto a monitor that is actually connected (DESIGN.md §11).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use tauri::{PhysicalPosition, PhysicalSize, Window};
+use anyhow::Context;
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindowBuilder, Window};
 
-use crate::state::WindowGeometry;
+use crate::commands::{LaunchInfo, Launches};
+use crate::state::{StateStore, WindowGeometry, document_key};
+
+/// Numbers the windows opened after the first ("main"): `window-1`, ...
+// Rust note: an atomic integer can be changed through a shared reference from
+// any thread without a lock, like `std::atomic<uint32_t>` in C++.
+static NEXT_WINDOW: AtomicU32 = AtomicU32::new(1);
+
+/// Opens `launch` (a file, or the start screen) in a new window, or, if that
+/// file is already open, brings its window to the front instead, so the same
+/// document isn't edited in two windows.
+pub fn open_window(app: &AppHandle, launch: LaunchInfo) -> anyhow::Result<()> {
+    if let Some(path) = launch.path.as_deref().filter(|_| launch.exists)
+        && let Some(label) = app.state::<WindowTracker>().window_showing(path)
+        && let Some(existing) = app.get_webview_window(&label)
+    {
+        tracing::info!(window = label, "document already open; focusing its window");
+        existing.unminimize()?;
+        existing.set_focus()?;
+        return Ok(());
+    }
+
+    // Same settings as the first window in tauri.conf.json, under a new label.
+    let mut config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .context("no window in tauri.conf.json")?;
+    config.label = format!("window-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
+    // The page asks for its launch info as soon as it loads.
+    app.state::<Launches>().set(&config.label, launch.clone());
+    let webview_window = WebviewWindowBuilder::from_config(app, &config)?.build()?;
+    let window = webview_window.as_ref().window();
+    // Keep it off the windows that are already open.
+    let open: Vec<(i32, i32)> = app
+        .webview_windows()
+        .values()
+        .filter(|w| w.label() != config.label)
+        .filter_map(|w| w.outer_position().ok())
+        .map(|p| (p.x, p.y))
+        .collect();
+    tracing::info!(window = config.label, path = ?launch.path, "opening a new window");
+    show_placed(&window, &launch, &open)
+}
+
+/// Titles a new (hidden) window, moves it to where its document's window was
+/// last (or the last window's size and place), and shows it. `open` lists
+/// the positions of the other windows, which it steps away from.
+pub fn show_placed(
+    window: &Window,
+    launch: &LaunchInfo,
+    open: &[(i32, i32)],
+) -> anyhow::Result<()> {
+    window.set_title(&launch.window_title())?;
+    let path = launch.path.as_deref().filter(|_| launch.exists);
+    // The store is managed after the first window is placed, so it may be missing here.
+    let remembered = match window.try_state::<StateStore>() {
+        Some(store) => store.window_for(path),
+        None => Ok(None),
+    };
+    match remembered {
+        Ok(Some(mut geometry)) => {
+            let rect = cascade(rect_of(&geometry), open);
+            geometry.x = rect.x;
+            geometry.y = rect.y;
+            apply_geometry(window, geometry)?;
+        }
+        Ok(None) => {}
+        Err(error) => tracing::warn!(error = format!("{error:#}"), "could not read window state"),
+    }
+    window.show()?;
+    window.set_focus()?;
+    Ok(())
+}
+
+/// How far a new window is moved, right and down, from an open window that
+/// is at the same place.
+const CASCADE_STEP: i32 = 32;
+
+/// Moves `wanted` a step down and right while its top-left corner is at an
+/// open window's (within a step), so a new window never hides an open one
+/// exactly. Gives up after a few steps; the monitor clamp still applies.
+pub fn cascade(wanted: Rect, open: &[(i32, i32)]) -> Rect {
+    let mut rect = wanted;
+    for _ in 0..10 {
+        let covers = open
+            .iter()
+            .any(|&(x, y)| (rect.x - x).abs() < CASCADE_STEP && (rect.y - y).abs() < CASCADE_STEP);
+        if !covers {
+            break;
+        }
+        rect.x += CASCADE_STEP;
+        rect.y += CASCADE_STEP;
+    }
+    rect
+}
 
 /// A rectangle in physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +213,19 @@ impl WindowTracker {
         self.lock().remove(window);
     }
 
+    /// The window showing the document at `path`, if any. Paths are compared
+    /// in their canonical form, so `doc.md` and `.\doc.md` are the same file.
+    pub fn window_showing(&self, path: &Path) -> Option<String> {
+        let key = document_key(path);
+        // Rust note: `find_map` stops at the first item the closure turns
+        // into `Some`, like a loop that returns from the first match;
+        // `cond.then(|| x)` is `Some(x)` if `cond` is true, else `None`.
+        self.lock().iter().find_map(|(label, tracked)| {
+            let shown = tracked.document.as_deref()?;
+            (document_key(shown) == key).then(|| label.clone())
+        })
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Tracked>> {
         self.inner
             .lock()
@@ -147,19 +259,22 @@ pub fn apply_geometry(window: &Window, geometry: WindowGeometry) -> tauri::Resul
             monitors.push(rect);
         }
     }
-    let wanted = Rect {
-        x: geometry.x,
-        y: geometry.y,
-        width: geometry.width,
-        height: geometry.height,
-    };
-    let rect = clamp_to_monitors(wanted, &monitors);
+    let rect = clamp_to_monitors(rect_of(&geometry), &monitors);
     window.set_size(PhysicalSize::new(rect.width, rect.height))?;
     window.set_position(PhysicalPosition::new(rect.x, rect.y))?;
     if geometry.maximized {
         window.maximize()?;
     }
     Ok(())
+}
+
+fn rect_of(geometry: &WindowGeometry) -> Rect {
+    Rect {
+        x: geometry.x,
+        y: geometry.y,
+        width: geometry.width,
+        height: geometry.height,
+    }
 }
 
 fn monitor_rect(monitor: &tauri::Monitor) -> Rect {
@@ -254,6 +369,35 @@ mod tests {
             height: 3000,
         };
         assert_eq!(clamp_to_monitors(huge, &[PRIMARY]), PRIMARY);
+    }
+
+    #[test]
+    fn new_window_steps_off_open_windows() {
+        // Nothing at its place: unchanged.
+        assert_eq!(cascade(window(100, 100), &[(500, 500)]), window(100, 100));
+        // One window there: a step down and right.
+        assert_eq!(cascade(window(100, 100), &[(100, 100)]), window(132, 132));
+        // Two, one step apart (a cascade already open): past both.
+        assert_eq!(
+            cascade(window(100, 100), &[(100, 100), (132, 132)]),
+            window(164, 164)
+        );
+        // Nearly the same place counts too.
+        assert_eq!(cascade(window(100, 100), &[(110, 95)]), window(132, 132));
+    }
+
+    #[test]
+    fn window_showing_finds_the_document_by_its_canonical_path() {
+        let tracker = WindowTracker::default();
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        tracker.set_document("main", &crate_dir.join("Cargo.toml"));
+        assert_eq!(
+            tracker.window_showing(&crate_dir.join("src").join("..").join("Cargo.toml")),
+            Some("main".to_string())
+        );
+        assert_eq!(tracker.window_showing(&crate_dir.join("build.rs")), None);
+        tracker.forget("main");
+        assert_eq!(tracker.window_showing(&crate_dir.join("Cargo.toml")), None);
     }
 
     #[test]
