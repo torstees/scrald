@@ -649,14 +649,17 @@ pub fn check_disk(window: tauri::WebviewWindow, sessions: tauri::State<'_, Sessi
 /// permission.
 #[tauri::command]
 pub async fn pick_assets_folder(
-    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     document: PathBuf,
 ) -> Result<Option<String>, CommandError> {
     use tauri_plugin_dialog::DialogExt;
     let doc_dir = document.parent().map(PathBuf::from).unwrap_or_default();
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
+        // Owned by the window: modal to it, and focus returns to it after.
+        window
+            .dialog()
             .file()
+            .set_parent(&window)
             .set_directory(&doc_dir)
             .set_title("Folder for this document's images")
             .blocking_pick_folder()
@@ -854,6 +857,72 @@ pub fn duplicate_theme(
     Ok(themes.duplicate(&id)?)
 }
 
+/// A terminal theme file the user picked, and the schemes in it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalThemeFile {
+    pub path: PathBuf,
+    pub names: Vec<String>,
+}
+
+/// Terminal theme files are a few KB; anything far bigger isn't one.
+const TERMINAL_THEME_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+fn read_terminal_theme(path: &Path) -> anyhow::Result<String> {
+    let size = std::fs::metadata(path)
+        .with_context(|| format!("could not read {}", path.display()))?
+        .len();
+    anyhow::ensure!(
+        size <= TERMINAL_THEME_MAX_BYTES,
+        "{} is too large to be a terminal theme",
+        path.display()
+    );
+    std::fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))
+}
+
+/// Asks for a terminal color scheme file (DESIGN.md §7.3) and lists the
+/// schemes in it; `None` if the user cancelled. Fails if the file holds no
+/// schemes Scrald can read.
+#[tauri::command]
+pub async fn pick_terminal_theme(
+    window: tauri::WebviewWindow,
+) -> Result<Option<TerminalThemeFile>, CommandError> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        window
+            .dialog()
+            .file()
+            .set_parent(&window)
+            .set_title("Import a terminal theme")
+            .add_filter("Windows Terminal schemes or settings", &["json"])
+            .add_filter("All files", &["*"])
+            .blocking_pick_file()
+    })
+    .await
+    .context("file picker failed")?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    let text = read_terminal_theme(&path)?;
+    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+    let (schemes, _) = scrald_core::theme::import::read_schemes(&text)
+        .map_err(|e| anyhow::anyhow!("{file_name}: {e}"))?;
+    let names = schemes.into_iter().map(|s| s.name).collect();
+    Ok(Some(TerminalThemeFile { path, names }))
+}
+
+/// Creates a theme for each scheme named in `names` from the terminal theme
+/// file at `path` (chosen with `pick_terminal_theme`). Returns the new ids.
+#[tauri::command]
+pub fn import_terminal_theme(
+    themes: tauri::State<'_, ThemeService>,
+    path: PathBuf,
+    names: Vec<String>,
+) -> Result<Vec<String>, CommandError> {
+    let text = read_terminal_theme(&path)?;
+    Ok(themes.import_terminal(&text, &names)?)
+}
+
 /// Where user themes live, to show in the switcher.
 #[tauri::command]
 pub fn user_theme_folder(themes: tauri::State<'_, ThemeService>) -> Option<String> {
@@ -935,14 +1004,15 @@ pub fn forget_document(
 /// frontend needs no file dialog permission.
 #[tauri::command]
 pub async fn pick_document(
-    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     near: Option<PathBuf>,
 ) -> Result<Option<PathBuf>, CommandError> {
     use tauri_plugin_dialog::DialogExt;
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        let mut dialog = app
+        let mut dialog = window
             .dialog()
             .file()
+            .set_parent(&window)
             .set_title("Open")
             .add_filter("Markdown", MARKDOWN_EXTENSIONS)
             .add_filter("All files", &["*"]);

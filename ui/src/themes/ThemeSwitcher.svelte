@@ -2,7 +2,7 @@
   // Theme switcher (DESIGN.md §7.6): Ctrl+T. Arrow keys preview themes live
   // on the current document; Enter keeps the selection for this document,
   // Escape puts the original theme back.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import type { ResolvedTheme, ThemeSummary } from "../lib/types";
   import { describeSource, stepIndex } from "./apply";
 
@@ -18,6 +18,10 @@
     /** Clear the per-document choice. */
     onreset: () => void;
     onduplicate: (id: string) => void;
+    /** Create themes from a terminal color scheme file. */
+    onimport: () => void;
+    /** A theme to select and preview once it's in the list (a new import). */
+    highlight: string | null;
     /** Write `id` into the document's front matter (`scrald-theme`). */
     onsavetodocument: (id: string) => void;
     /** Close without choosing (the caller reverts the preview). */
@@ -33,6 +37,8 @@
     onmakedefault,
     onreset,
     onduplicate,
+    onimport,
+    highlight,
     onsavetodocument,
     oncancel,
   }: Props = $props();
@@ -47,6 +53,17 @@
       0,
       usable.findIndex((t) => t.id === current.id),
     );
+    list?.focus();
+  });
+
+  // Select a newly imported theme when it appears, once: the list is
+  // refreshed again by the folder watcher, which mustn't undo later moves.
+  let highlighted: string | null = null;
+  $effect(() => {
+    const index = usable.findIndex((t) => t.id === highlight);
+    if (highlight === null || highlight === highlighted || index < 0) return;
+    highlighted = highlight;
+    untrack(() => select(index));
     list?.focus();
   });
 
@@ -135,6 +152,9 @@
         >
         <button onclick={() => act(onmakedefault)}>Make default</button>
         <button onclick={() => act(onduplicate)}>Duplicate to customize</button>
+        <button onclick={onimport} title="Create a theme from a Windows Terminal color scheme"
+          >Import terminal theme…</button
+        >
         {#if current.source === "document"}
           <button onclick={onreset}>Reset to document default</button>
         {/if}

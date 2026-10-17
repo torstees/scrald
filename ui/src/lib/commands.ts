@@ -16,6 +16,7 @@ import type {
   RecentDocument,
   ResolvedTheme,
   RecoveredChanges,
+  TerminalThemeFile,
   ThemeStyle,
   ThemeSummary,
   TypographyDefaults,
@@ -189,6 +190,16 @@ export function setDefaultTheme(id: string): Promise<void> {
 /** Copies a theme into the user theme folder; resolves to the new theme's id. */
 export function duplicateTheme(id: string): Promise<string> {
   return invoke<string>("duplicate_theme", { id });
+}
+
+/** Asks for a terminal theme file and lists its schemes; null if cancelled. */
+export function pickTerminalTheme(): Promise<TerminalThemeFile | null> {
+  return invoke<TerminalThemeFile | null>("pick_terminal_theme");
+}
+
+/** Creates a theme for each named scheme in the file; returns the new ids. */
+export function importTerminalTheme(path: string, names: string[]): Promise<string[]> {
+  return invoke<string[]>("import_terminal_theme", { path, names });
 }
 
 /** Where user themes live, or null if there's no such folder. */
