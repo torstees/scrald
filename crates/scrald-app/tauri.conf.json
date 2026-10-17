@@ -30,7 +30,7 @@
     "active": true,
     "targets": ["nsis"],
     "useLocalToolsDir": true,
-    "publisher": "torstees",
+    "publisher": "Eric Torstenson",
     "shortDescription": "A Markdown reader with light editing",
     "category": "Productivity",
     "windows": {
