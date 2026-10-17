@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 
 use comrak::nodes::{Node, NodeLink, NodeValue};
 
-use crate::assets::{self, AssetContext, ImageCollector, Resolved};
+use crate::assets::{self, AssetContext, IMAGE_EXTENSIONS, ImageCollector, Resolved};
 use crate::render::{self, escape_text};
 use crate::toc::slugify;
 
@@ -527,8 +527,6 @@ fn trailing_block_ref(text: &str) -> Option<(&str, &str)> {
 }
 
 /// File extensions embedded as images (`![[pic.png]]`).
-const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"];
-
 /// `300` -> (300, none); `300x200` -> (300, 200).
 fn parse_size(options: &str) -> Option<(u32, Option<u32>)> {
     match options.split_once('x') {

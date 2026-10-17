@@ -21,6 +21,7 @@ front_matter: {
   "assets": null,
   "theme": null,
   "flavor": "pandoc",
+  "cover": null,
   "extra": {},
   "keys": {
     "title": "title",

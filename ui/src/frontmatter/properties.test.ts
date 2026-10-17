@@ -14,6 +14,7 @@ function frontMatter(overrides: Partial<FrontMatter>): FrontMatter {
     assets: null,
     theme: null,
     flavor: null,
+    cover: null,
     extra: {},
     keys: {
       title: null,

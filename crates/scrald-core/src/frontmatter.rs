@@ -71,6 +71,10 @@ pub struct FrontMatter {
     pub theme: Option<String>,
     /// `scrald-flavor` (or nested `scrald.flavor`).
     pub flavor: Option<String>,
+    /// A cover image (`cover`, `image`, `heroImage`, ...) as written, with
+    /// Obsidian's `[[...]]` removed. Its key also stays in `extra`, since the
+    /// properties panel doesn't treat it specially.
+    pub cover: Option<String>,
     /// Every key not consumed above, in file order, so nothing is hidden.
     pub extra: Map<String, Value>,
     /// The key each property above was read from (`author` or `authors`,
@@ -102,13 +106,34 @@ pub struct PropertyKeys {
 /// aliases are present, the first one listed wins and the rest stay in `extra`.
 const TITLE: &[&str] = &["title"];
 const AUTHORS: &[&str] = &["author", "authors"];
-const SUMMARY: &[&str] = &["summary", "synopsis", "description", "abstract"];
+const SUMMARY: &[&str] = &["summary", "synopsis", "description", "abstract", "excerpt"];
 const TAGS: &[&str] = &["tags", "tag", "keywords"];
 const NOTES: &[&str] = &["notes"];
 const SOURCE: &[&str] = &["source", "url"];
 const ASSETS: &[&str] = &["assets", "asset_dir", "attachments"];
 const THEME: &[&str] = &["scrald-theme"];
 const FLAVOR: &[&str] = &["scrald-flavor"];
+
+/// Keys that name a cover image in common tools: Obsidian's Banners plugin
+/// (`banner`), Hugo and Jekyll themes, Ghost (`feature_image`), Astro
+/// (`heroImage`), and others. The first one present wins.
+const COVER: &[&str] = &[
+    "cover",
+    "cover_image",
+    "cover-image",
+    "coverImage",
+    "image",
+    "banner",
+    "feature_image",
+    "featured_image",
+    "featureImage",
+    "featuredImage",
+    "hero_image",
+    "heroImage",
+    "hero",
+    "thumbnail",
+    "images",
+];
 
 /// Parses the YAML text of a front matter block. `range` is the block's
 /// position in the original file, and `yaml_start` the YAML's, so field
@@ -181,8 +206,39 @@ pub fn parse(yaml: &str, range: SourceRange, yaml_start: usize) -> FrontMatter {
         }
     }
 
+    // Rust note: `find_map` calls the closure on each item and returns the
+    // first `Some` it gives: a loop that returns the first non-None `f(x)`.
+    fm.cover = COVER
+        .iter()
+        .find_map(|key| map.get(*key).and_then(cover_path));
+
     fm.extra = map;
     fm
+}
+
+/// The image path in a cover value: a string, the first item of a list
+/// (Hugo's `images`), or a map's `image`, `src`, `url`, or `path` (Hugo's
+/// `cover: { image: ... }`). Obsidian writes links to vault files as
+/// `"[[pic.png]]"`, so the brackets (and any `|alias`) are removed.
+fn cover_path(value: &Value) -> Option<String> {
+    let text = match value {
+        Value::String(s) => s.clone(),
+        Value::Array(items) => return items.first().and_then(cover_path),
+        Value::Object(map) => {
+            return ["image", "src", "url", "path"]
+                .iter()
+                .find_map(|key| map.get(*key).and_then(cover_path));
+        }
+        _ => return None,
+    };
+    let text = text.trim();
+    let text = text.strip_prefix('!').unwrap_or(text);
+    let text = match text.strip_prefix("[[").and_then(|t| t.strip_suffix("]]")) {
+        Some(inner) => inner.split('|').next().unwrap_or_default(),
+        None => text,
+    };
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// Removes and returns the first alias holding a scalar, and that alias. A
@@ -300,6 +356,33 @@ mod tests {
         assert_eq!(fm.assets.as_deref(), Some("../img"));
         assert!(fm.extra.is_empty());
         assert_eq!(fm.error, None);
+    }
+
+    #[test]
+    fn cover_images_in_their_common_forms() {
+        let cover = |yaml: &str| parse_str(yaml).cover;
+        assert_eq!(cover("cover: pics/a.jpg\n"), Some("pics/a.jpg".into()));
+        assert_eq!(cover("heroImage: ./hero.png\n"), Some("./hero.png".into()));
+        assert_eq!(cover("banner: \"![[b.png|wide]]\"\n"), Some("b.png".into()));
+        assert_eq!(cover("cover: \"[[c.png]]\"\n"), Some("c.png".into()));
+        assert_eq!(
+            cover("images: [one.png, two.png]\n"),
+            Some("one.png".into())
+        );
+        assert_eq!(
+            cover("cover:\n  image: d.png\n  alt: D\n"),
+            Some("d.png".into())
+        );
+        // The first key in the list wins; an empty value is no cover.
+        assert_eq!(cover("image: x.png\ncover: y.png\n"), Some("y.png".into()));
+        assert_eq!(cover("cover: \"\"\n"), None);
+        assert_eq!(cover("title: T\n"), None);
+        // The key stays visible as an ordinary property.
+        assert!(parse_str("cover: a.jpg\n").extra.contains_key("cover"));
+        assert_eq!(
+            parse_str("excerpt: Short.\n").summary,
+            Some("Short.".into())
+        );
     }
 
     #[test]

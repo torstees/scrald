@@ -53,6 +53,13 @@ impl AssetRegistry {
         token
     }
 
+    /// Registers the cover images the start screen in `window` shows, kept
+    /// apart from the window's document, so a list read while a document
+    /// opens can't revoke that document's images. Returns their token.
+    pub fn register_covers(&self, window: &str, files: Vec<PathBuf>) -> u64 {
+        self.register(&covers_key(window), files)
+    }
+
     /// The file for `token` and `id`, if that document is still open.
     pub fn lookup(&self, token: u64, id: usize) -> Option<PathBuf> {
         let inner = self
@@ -73,7 +80,14 @@ impl AssetRegistry {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.by_window.remove(window);
+        inner.by_window.remove(&covers_key(window));
     }
+}
+
+/// The registry entry for a window's start-screen covers. Window labels
+/// never contain `#`, so it can't collide with a window's own entry.
+fn covers_key(window: &str) -> String {
+    format!("{window}#covers")
 }
 
 /// Parses a request path like `/12-3` into (token 12, id 3).

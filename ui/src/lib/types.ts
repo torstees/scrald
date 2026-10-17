@@ -86,6 +86,8 @@ export interface FrontMatter {
   assets: string | null;
   theme: string | null;
   flavor: string | null;
+  /** A cover image path as written (`cover`, `image`, `heroImage`, ...); its key is also in `extra`. */
+  cover: string | null;
   /** Unrecognized keys, in file order. Values are arbitrary YAML data. */
   extra: Record<string, unknown>;
   /** The key each property was read from (`author` or `authors`, ...). */
@@ -316,6 +318,10 @@ export interface RecentDocument {
   title: string | null;
   /** The theme it was last shown in, for the swatch. */
   theme: string | null;
+  /** The front matter's summary, on one line. */
+  summary: string | null;
+  /** The cover image, served at the asset URL for `${token}-${id}`; null if none. */
+  cover: { token: number; id: number } | null;
   /** Unix time in milliseconds. */
   lastOpened: number;
   pinned: boolean;

@@ -19,6 +19,7 @@ front_matter: {
   "assets": null,
   "theme": null,
   "flavor": null,
+  "cover": null,
   "extra": {},
   "keys": {
     "title": "title",
