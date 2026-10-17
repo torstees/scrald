@@ -81,7 +81,7 @@ bench:
 build:
     npm run tauri -- build --no-bundle
 
-# Build the app and its installers
+# Build the app and its Windows installer (target/release/bundle/nsis/)
 bundle:
     npm run tauri build
 
@@ -90,5 +90,5 @@ run-release file='' $SCRALD_LOG_FILE="target/scrald.log": build
     {{ release_exe }} {{ if file != '' { '"' + absolute_path(file) + '"' } else { '' } }}
 
 # Run the release build from previous build, logging to a file (release builds have no console on Windows)
-run-exe $SCRALD_LOG_FILE="target/scrald.log":
-    {{ release_exe }}
+run-exe file='' $SCRALD_LOG_FILE="target/scrald.log":
+    {{ release_exe }} {{ if file != '' { '"' + absolute_path(file) + '"' } else { '' } }}
