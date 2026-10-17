@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod fonts;
 mod protocol;
 mod session;
 mod state;
@@ -73,6 +74,15 @@ fn main() -> anyhow::Result<()> {
         .register_asynchronous_uri_scheme_protocol(themes::SCHEME, |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             std::thread::spawn(move || {
+                // Downloaded Google Fonts live under their own first segment.
+                let path = scrald_core::assets::percent_decode(request.uri().path());
+                let font_prefix = format!("/{}/", fonts::URL_PREFIX);
+                if let Some(relative) = path.strip_prefix(&font_prefix)
+                    && let Some(cache) = app.try_state::<fonts::FontCache>()
+                {
+                    responder.respond(cache.respond(relative));
+                    return;
+                }
                 let response = match app.try_state::<themes::ThemeService>() {
                     Some(service) => service.respond(&request),
                     None => tauri::http::Response::builder()
@@ -168,6 +178,7 @@ fn main() -> anyhow::Result<()> {
                 );
             }
             app.manage(theme_service);
+            app.manage(fonts::FontCache::new(font_cache_dir(app.handle())));
 
             start_crash_recovery(app.handle());
             Ok(())
@@ -259,6 +270,15 @@ fn user_theme_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
             .app_config_dir()
             .ok()
             .map(|dir| dir.join("themes")),
+    }
+}
+
+/// Where downloaded Google Fonts go: `fonts/` in the app cache folder (or
+/// under `SCRALD_DATA_DIR`, for tests).
+fn font_cache_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    match std::env::var_os("SCRALD_DATA_DIR") {
+        Some(dir) => Some(PathBuf::from(dir).join("cache").join("fonts")),
+        None => app.path().app_cache_dir().ok().map(|dir| dir.join("fonts")),
     }
 }
 
