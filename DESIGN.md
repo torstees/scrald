@@ -412,6 +412,16 @@ Scrald can create a new theme from a terminal color scheme. Supported import for
 
 The importer maps the 16 ANSI colors into `[palette]`, maps foreground/background/selection/cursor directly, and derives the remaining semantic colors (`muted`, `accent`, `link`, `code_bg`, `quote_bar`) with simple rules: for example, `muted` blends foreground toward background, and `link` uses blue. The user can then adjust the result. The output is a normal theme folder, so imported themes need no special handling afterwards.
 
+As implemented (`crates/scrald-core/src/theme/import/`), Windows Terminal so far:
+- **Reading.** A file can be a whole `settings.json` (its `schemes` list; comments and trailing commas are allowed, as the Terminal writes them), a single scheme object, or a list of schemes. Windows Terminal's `purple` is magenta. A JSON file with none of these says it holds no color schemes.
+- **Deriving colors (WCAG contrast).** Light or dark comes from whether white or black text reads better on the background.
+  - Link and accent take the normal or the bright blue (yellow) variant, each first darkened or lightened until it has 4.5:1 (links) or 3:1 (accent) against the background. Then the more colorful of the two wins, since some schemes, like Solarized, keep grays in the bright slots.
+  - Muted text is the text color moved up to 45% toward the background, keeping 4.5:1, or three quarters of the text's own contrast when the scheme's text is below that.
+  - The selection is the scheme's selection color, then a tint of the accent, then of the text: the first that can be made solid with text still readable on it while still standing out from the page. Terminals draw selections translucently, and many schemes use plain white.
+  - The other colors (border, code background, quote bar, highlight, chrome) use the same derivation as any theme that leaves them out. On a near-black page, the chrome is lightened slightly rather than darkened, since it can't get darker.
+  - All of them are written out in the new `theme.toml`, under a comment saying they were derived.
+- **In the app.** The switcher has **Import terminal theme…**, which opens the file dialog in Rust. A file with several schemes asks which to import, with checkboxes. Each becomes a folder in the user theme directory, named from the scheme (`one-half-dark`, `-2` if taken), and a name already in the list gets a number ("Tango Dark 2"). The first new theme is then selected and previewed in the switcher.
+
 ### 7.4 Line length, narrow windows, and zoom
 
 The text column is `max-width: min(var(--sk-measure) * 1ch, 100%)`, centered. The default measure is **66 characters**, the classic typographic ideal within the 45–75 range. When the window is narrower than the measure, the column narrows to fit the window and the text rewraps, the way most readers behave.

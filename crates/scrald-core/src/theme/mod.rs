@@ -3,6 +3,7 @@
 
 pub mod color;
 pub mod css;
+pub mod import;
 pub mod schema;
 
 use std::path::{Path, PathBuf};
@@ -180,12 +181,7 @@ impl ThemeLibrary {
     /// returns the new theme's id. The copy is named "<name> (copy)".
     pub fn duplicate(&self, id: &str, user_dir: &Path) -> Result<String, String> {
         let theme = self.get(id).ok_or_else(|| format!("no theme named {id}"))?;
-        let mut new_id = format!("{id}-copy");
-        let mut n = 2;
-        while user_dir.join(&new_id).exists() || self.contains(&new_id) {
-            new_id = format!("{id}-copy-{n}");
-            n += 1;
-        }
+        let new_id = self.unused_id(&format!("{id}-copy"), user_dir);
         let target = user_dir.join(&new_id);
         let io = |e: std::io::Error| format!("could not create {}: {e}", target.display());
         match &theme.origin {
@@ -205,6 +201,48 @@ impl ThemeLibrary {
         let renamed = rename_in_toml(&text, &format!("{} (copy)", theme.file.meta.name));
         std::fs::write(&toml_path, renamed).map_err(io)?;
         Ok(new_id)
+    }
+
+    /// Writes `scheme` into `user_dir` as a new theme (DESIGN.md §7.3) and
+    /// returns its id, made from its name. `format` says where it came from.
+    /// A name already in the list gets a number ("Tango Dark 2"), so two
+    /// imports of one scheme can be told apart in the switcher.
+    pub fn import(
+        &self,
+        scheme: &import::TerminalScheme,
+        format: &str,
+        user_dir: &Path,
+    ) -> Result<String, String> {
+        let taken = |name: &str| self.themes.iter().any(|t| t.file.meta.name == name);
+        let mut scheme = scheme.clone();
+        let base_name = scheme.name.clone();
+        let mut n = 2;
+        while taken(&scheme.name) {
+            scheme.name = format!("{base_name} {n}");
+            n += 1;
+        }
+        let new_id = self.unused_id(&import::theme_id(&scheme.name), user_dir);
+        let target = user_dir.join(&new_id);
+        let io = |e: std::io::Error| format!("could not create {}: {e}", target.display());
+        std::fs::create_dir_all(&target).map_err(io)?;
+        std::fs::write(
+            target.join("theme.toml"),
+            import::theme_toml(&scheme, format),
+        )
+        .map_err(io)?;
+        Ok(new_id)
+    }
+
+    /// `base`, or `base-2`, `base-3`, ...: the first that is neither a theme
+    /// nor a folder in `user_dir`.
+    fn unused_id(&self, base: &str, user_dir: &Path) -> String {
+        let mut id = base.to_string();
+        let mut n = 2;
+        while user_dir.join(&id).exists() || self.contains(&id) {
+            id = format!("{base}-{n}");
+            n += 1;
+        }
+        id
     }
 }
 
@@ -401,6 +439,34 @@ mod tests {
 
         let library = ThemeLibrary::load(Some(&dir));
         assert_eq!(library.duplicate("sepia", &dir).unwrap(), "sepia-copy-2");
+    }
+
+    #[test]
+    fn imported_scheme_becomes_a_user_theme() {
+        let dir = temp_dir("import");
+        let json = r##"{"name": "Sepia", "background": "#fbf0d9", "foreground": "#5f4b32",
+            "black": "#000000", "red": "#aa0000", "green": "#00aa00", "yellow": "#aa5500",
+            "blue": "#0000aa", "purple": "#aa00aa", "cyan": "#00aaaa", "white": "#aaaaaa",
+            "brightBlack": "#555555", "brightRed": "#ff5555", "brightGreen": "#55ff55",
+            "brightYellow": "#ffff55", "brightBlue": "#5555ff", "brightPurple": "#ff55ff",
+            "brightCyan": "#55ffff", "brightWhite": "#ffffff"}"##;
+        let scheme = &import::windows_terminal::parse(json).unwrap()[0];
+        let library = ThemeLibrary::load(Some(&dir));
+        // "sepia" is a bundled theme, so the import gets the next free id.
+        let id = library
+            .import(scheme, import::windows_terminal::FORMAT, &dir)
+            .unwrap();
+        assert_eq!(id, "sepia-2");
+        let library = ThemeLibrary::load(Some(&dir));
+        let theme = library.get("sepia-2").expect("imported theme loads");
+        // The bundled Sepia has the name, so the import is numbered.
+        assert_eq!(theme.file.meta.name, "Sepia 2");
+        assert_eq!(theme.file.meta.appearance, Appearance::Light);
+        assert_eq!(
+            library.import(scheme, "x", &dir).unwrap(),
+            "sepia-3",
+            "a second import doesn't overwrite the first"
+        );
     }
 
     #[test]

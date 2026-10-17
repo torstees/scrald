@@ -499,10 +499,14 @@ impl ThemeFile {
             quote_bar: pick(&c.quote_bar, background.mix(accent, 0.5)),
             highlight_bg: pick(&c.highlight_bg, accent.with_alpha(0.27)),
             // Chrome sits a little darker than the page in dark themes, a
-            // little toward the text color in light ones.
+            // little toward the text color in light ones. A page that is
+            // already (nearly) black can't get darker, so its chrome is a
+            // touch lighter instead.
             ui_background: pick(
                 &c.ui_background,
-                if dark {
+                if dark && background.luminance() < 0.01 {
+                    background.mix(foreground, 0.06)
+                } else if dark {
                     background.mix(Color::rgb(0, 0, 0), 0.18)
                 } else {
                     background.mix(foreground, 0.03)
@@ -573,6 +577,18 @@ mod tests {
         assert_eq!(theme.elements.blockquote.style, BlockquoteStyle::Bar);
         let colors = theme.resolved_colors();
         assert_eq!(colors.background, Color::rgb(0xfb, 0xf8, 0xf1));
+    }
+
+    #[test]
+    fn chrome_stands_apart_from_a_black_page() {
+        let black = "[meta]\nname = \"B\"\nschema = 1\nappearance = \"dark\"\n\
+                     [colors]\nbackground = \"#000000\"\nforeground = \"#d3d7cf\"\n";
+        let colors = ThemeFile::parse(black).unwrap().resolved_colors();
+        assert_ne!(colors.ui_background, colors.background);
+        // An ordinary dark page still gets darker chrome.
+        let grey = black.replace("#000000", "#2e3440");
+        let colors = ThemeFile::parse(&grey).unwrap().resolved_colors();
+        assert!(colors.ui_background.luminance() < colors.background.luminance());
     }
 
     #[test]

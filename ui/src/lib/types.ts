@@ -222,6 +222,13 @@ export interface ResolvedTheme {
   source: ThemeSource;
 }
 
+/** Mirrors `TerminalThemeFile` (crates/scrald-app/src/commands.rs). */
+export interface TerminalThemeFile {
+  path: string;
+  /** The color schemes in the file, in file order. */
+  names: string[];
+}
+
 /** Mirrors `ThemeSummary` (crates/scrald-core/src/theme/mod.rs). */
 export interface ThemeSummary {
   id: string;

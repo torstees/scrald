@@ -55,6 +55,27 @@ impl Color {
         }
     }
 
+    /// Relative luminance as WCAG defines it: 0.0 for black, 1.0 for white.
+    /// Alpha is ignored.
+    pub fn luminance(self) -> f32 {
+        let linear = |c: u8| {
+            let c = f32::from(c) / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(self.r) + 0.7152 * linear(self.g) + 0.0722 * linear(self.b)
+    }
+
+    /// WCAG contrast ratio between two colors, from 1.0 (the same) to 21.0
+    /// (black on white). Body text wants 4.5 or more.
+    pub fn contrast(self, other: Color) -> f32 {
+        let (a, b) = (self.luminance(), other.luminance());
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
     /// The same color with a different alpha (0.0..=1.0).
     pub fn with_alpha(self, alpha: f32) -> Color {
         Color {
@@ -102,5 +123,16 @@ mod tests {
         assert_eq!(black.mix(white, 0.5).to_string(), "#808080");
         assert_eq!(black.mix(white, 2.0), white);
         assert_eq!(white.with_alpha(0.5).to_string(), "#ffffff80");
+    }
+
+    #[test]
+    fn contrast_follows_wcag() {
+        let black = Color::rgb(0, 0, 0);
+        let white = Color::rgb(255, 255, 255);
+        assert!((black.contrast(white) - 21.0).abs() < 0.01);
+        assert!((white.contrast(white) - 1.0).abs() < 0.01);
+        // #767676 is the classic lightest gray that passes 4.5:1 on white.
+        let gray = Color::rgb(0x76, 0x76, 0x76);
+        assert!((gray.contrast(white) - 4.54).abs() < 0.02);
     }
 }

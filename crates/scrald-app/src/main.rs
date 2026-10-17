@@ -134,6 +134,8 @@ fn main() -> anyhow::Result<()> {
             commands::set_document_theme,
             commands::set_default_theme,
             commands::duplicate_theme,
+            commands::pick_terminal_theme,
+            commands::import_terminal_theme,
             commands::user_theme_folder,
             commands::system_fonts,
             commands::set_document_typography,

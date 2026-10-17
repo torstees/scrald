@@ -15,6 +15,8 @@
     setDocumentTheme,
     setDefaultTheme,
     duplicateTheme,
+    pickTerminalTheme,
+    importTerminalTheme,
     userThemeFolder,
     onThemesChanged,
     propertiesOpen as propertiesOpenSetting,
@@ -56,8 +58,10 @@
     PropertyChange,
     RecoveredChanges,
     ResolvedTheme,
+    TerminalThemeFile,
     ThemeSummary,
   } from "./lib/types";
+  import SchemeChooser from "./themes/SchemeChooser.svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import UnsavedDialog, { type UnsavedChoice } from "./editor/UnsavedDialog.svelte";
   import type { PropertyEditor } from "./frontmatter/properties";
@@ -1035,6 +1039,8 @@
 
   function closeSwitcher(): void {
     switcherOpen = false;
+    // Next time, the switcher opens on the document's theme, not the import.
+    importedTheme = null;
   }
 
   /** Keeps `id` as this document's theme. */
@@ -1091,6 +1097,37 @@
       showNotice(`Created theme "${newId}"${themeFolder ? ` in ${themeFolder}` : ""}`);
     } catch (e) {
       showNotice(`Could not duplicate theme: ${String(e)}`);
+    }
+  }
+
+  // Importing terminal themes (DESIGN.md §7.3): a file with several schemes
+  // asks which ones; the first new theme is then selected and previewed.
+  let schemeChoice = $state<TerminalThemeFile | null>(null);
+  let importedTheme = $state<string | null>(null);
+
+  async function importTerminal(): Promise<void> {
+    try {
+      const file = await pickTerminalTheme();
+      if (!file) return;
+      if (file.names.length === 1) await finishImport(file.path, file.names);
+      else schemeChoice = file;
+    } catch (e) {
+      showNotice(`Could not import: ${String(e)}`);
+    }
+  }
+
+  async function finishImport(path: string, names: string[]): Promise<void> {
+    schemeChoice = null;
+    try {
+      const ids = await importTerminalTheme(path, names);
+      await refreshThemeList();
+      importedTheme = ids[0] ?? null;
+      // Named after the new theme, which may be numbered ("Tango Dark 2").
+      const first = themeList.find((t) => t.id === ids[0])?.name ?? names[0];
+      const what = ids.length === 1 ? `"${first}"` : `${ids.length} themes`;
+      showNotice(`Imported ${what}${themeFolder ? ` into ${themeFolder}` : ""}`);
+    } catch (e) {
+      showNotice(`Could not import: ${String(e)}`);
     }
   }
 
@@ -1310,8 +1347,18 @@
         onmakedefault={makeDefaultTheme}
         onreset={resetTheme}
         onduplicate={duplicate}
+        onimport={importTerminal}
+        highlight={importedTheme}
         onsavetodocument={saveThemeToDocument}
         oncancel={cancelSwitcher}
+      />
+    {/if}
+    {#if schemeChoice}
+      <SchemeChooser
+        path={schemeChoice.path}
+        names={schemeChoice.names}
+        onimport={(names) => schemeChoice && void finishImport(schemeChoice.path, names)}
+        oncancel={() => (schemeChoice = null)}
       />
     {/if}
     {#if unsavedPrompt}

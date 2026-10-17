@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
+use scrald_core::theme::import::read_schemes;
 use scrald_core::theme::{Theme, ThemeLibrary, ThemeOrigin, ThemeSummary};
 use tauri::http::{Request, Response, StatusCode, header};
 use tauri::{AppHandle, Emitter};
@@ -94,6 +95,33 @@ impl ThemeService {
             .map_err(anyhow::Error::msg)?;
         self.reload();
         Ok(new_id)
+    }
+
+    /// Creates a theme in the user theme folder for each scheme named in
+    /// `names` from the terminal theme file `text` (DESIGN.md §7.3). Returns
+    /// the new themes' ids.
+    pub fn import_terminal(&self, text: &str, names: &[String]) -> anyhow::Result<Vec<String>> {
+        let dir = self
+            .user_dir
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("no user theme folder"))?;
+        let (schemes, format) = read_schemes(text).map_err(anyhow::Error::msg)?;
+        let mut ids = Vec::new();
+        for name in names {
+            let scheme = schemes
+                .iter()
+                .find(|s| &s.name == name)
+                .ok_or_else(|| anyhow::anyhow!("the file has no scheme named \"{name}\""))?;
+            // Each import is a folder that the next one's id must avoid, so
+            // the library is reloaded in between.
+            let id = self
+                .library()
+                .import(scheme, format, dir)
+                .map_err(anyhow::Error::msg)?;
+            self.reload();
+            ids.push(id);
+        }
+        Ok(ids)
     }
 
     /// Watches the user theme folder and tells every window when it changes.
@@ -260,6 +288,42 @@ mod tests {
         let id = service.duplicate("technical").unwrap();
         assert!(service.get(&id).is_some());
         assert!(dir.join(&id).join("theme.toml").is_file());
+    }
+
+    #[test]
+    fn import_terminal_schemes_by_name() {
+        let dir = temp_dir("import");
+        let service = ThemeService::new(Some(dir.clone()));
+        let scheme = |name: &str| {
+            format!(
+                r##"{{"name": "{name}", "background": "#1d1f21", "foreground": "#c5c8c6",
+                "black": "#1d1f21", "red": "#cc6666", "green": "#b5bd68", "yellow": "#f0c674",
+                "blue": "#81a2be", "purple": "#b294bb", "cyan": "#8abeb7", "white": "#c5c8c6",
+                "brightBlack": "#969896", "brightRed": "#cc6666", "brightGreen": "#b5bd68",
+                "brightYellow": "#f0c674", "brightBlue": "#81a2be", "brightPurple": "#b294bb",
+                "brightCyan": "#8abeb7", "brightWhite": "#ffffff"}}"##
+            )
+        };
+        let settings = format!(
+            "{{ \"schemes\": [{}, {}, {}] }}",
+            scheme("Night"),
+            scheme("Night"),
+            scheme("Other")
+        );
+        // Two picks of the same name get two themes; the unnamed one, none.
+        let ids = service
+            .import_terminal(&settings, &["Night".to_string(), "Night".to_string()])
+            .unwrap();
+        assert_eq!(ids, ["night", "night-2"]);
+        assert_eq!(service.get("night-2").unwrap().file.meta.name, "Night 2");
+        assert!(service.get("other").is_none());
+        let missing = service.import_terminal(&settings, &["Day".to_string()]);
+        assert!(
+            missing
+                .unwrap_err()
+                .to_string()
+                .contains("no scheme named \"Day\"")
+        );
     }
 
     #[test]
