@@ -25,6 +25,7 @@ section 1: heading=Some(10) level=2 blocks=10..13
 --- block 4 Paragraph @172..188 section=0
 <p><span class="sk-image-placeholder sk-image-missing" title="Image not found: missing.png
 Tried:
+<vault>/missing.png
 <vault>/(anywhere in the vault)/missing.png">missing.png</span></p>
 
 --- block 5 BlockQuote @190..242 section=0

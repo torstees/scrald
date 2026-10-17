@@ -280,6 +280,8 @@ For a relative image path, Scrald tries in order:
 
 The same resolution applies to `src` on raw HTML `<img>` tags, which become `data-asset` references like Markdown images.
 
+As implemented (`assets::resolve_path`), the document's own directory is tried before the vault (step 3 before step 2), so a file next to the document wins over one with the same name elsewhere in the vault. Obsidian image embeds (`![[pic.png]]`, `![[images/pic.png|300]]`) use the same order. Before 2026-10-17 they only searched the vault index, which outside a vault is just the document's folder (not its subfolders), so `assets:` and paths into a subfolder were ignored for them.
+
 Absolute paths and `file://` URLs are used directly. Remote `http(s)` images are **blocked by default** with a per-document "load remote images" toggle, for privacy.
 
 Missing images render as a placeholder showing the filename, with the attempted paths in a tooltip.

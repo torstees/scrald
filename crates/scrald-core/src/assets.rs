@@ -93,14 +93,20 @@ pub fn resolve(src: &str, ctx: &AssetContext) -> Resolved {
     // Drop any `#fragment` or `?query`, then undo URL percent-encoding
     // (comrak encodes spaces in link destinations as %20).
     let path_part = src.split(['#', '?']).next().unwrap_or_default();
-    let relative = PathBuf::from(percent_decode(path_part));
+    resolve_path(Path::new(&percent_decode(path_part)), ctx)
+}
+
+/// Resolves a file path as written (not a URL): absolute paths as they are,
+/// relative ones in the search directories, then anywhere in the vault.
+/// Obsidian embeds (`![[pic.png]]`) use this directly.
+pub fn resolve_path(relative: &Path, ctx: &AssetContext) -> Resolved {
     if relative.is_absolute() {
-        return check_exists(relative);
+        return check_exists(relative.to_path_buf());
     }
 
     let mut attempted = Vec::new();
     for dir in &ctx.search_dirs {
-        let candidate = dir.join(&relative);
+        let candidate = dir.join(relative);
         if candidate.is_file() {
             return Resolved::Local(candidate);
         }

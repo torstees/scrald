@@ -345,6 +345,7 @@ pub fn parse_document_cached(
                 let link_ctx = obsidian::LinkContext {
                     doc_path: &path,
                     vault,
+                    assets: &asset_ctx,
                 };
                 obsidian::transform_links(&arena, node, &link_ctx, &mut images);
             }
@@ -1004,6 +1005,28 @@ mod tests {
         let b = parse("one\n\nTWO\n");
         assert_eq!(a.blocks[0].hash, b.blocks[0].hash);
         assert_ne!(a.blocks[1].hash, b.blocks[1].hash);
+    }
+
+    #[test]
+    fn obsidian_embeds_use_assets_folder_and_paths_outside_a_vault() {
+        let dir = std::env::temp_dir().join(format!("scrald-embeds-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("pics/sub")).unwrap();
+        std::fs::write(dir.join("pics/sub/a.jpg"), "x").unwrap();
+        std::fs::write(dir.join("pics/sub/b.jpg"), "x").unwrap();
+        let text = "---\nassets: pics/sub\n---\n\nBare ![[a.jpg]], by path ![[pics/sub/b.jpg|200]], gone ![[c.jpg]]\n";
+        let doc = parse_document(dir.join("doc.md"), text.as_bytes()).unwrap();
+        let found: Vec<PathBuf> = doc.images.iter().map(|i| i.path.clone()).collect();
+        assert_eq!(
+            found,
+            [dir.join("pics/sub/a.jpg"), dir.join("pics/sub/b.jpg")]
+        );
+        let html = &doc.blocks[0].html;
+        assert!(
+            html.contains("sk-image-missing") && html.contains("c.jpg"),
+            "{html}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
