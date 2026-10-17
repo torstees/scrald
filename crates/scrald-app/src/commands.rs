@@ -42,6 +42,10 @@ impl<E: Into<anyhow::Error>> From<E> for CommandError {
 }
 
 /// A parsed document plus the token its images are served under.
+///
+/// After the first model for a document, blocks the window already shows
+/// are sent without their HTML (DESIGN.md §9.1): `htmlFrom[i]` names the
+/// block in model `base` to copy block `i`'s HTML from.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenedDocument {
@@ -57,6 +61,14 @@ pub struct OpenedDocument {
     /// Unsaved changes to this document left behind when Scrald stopped
     /// before saving them (only when opening; the newest, if several).
     pub recovered: Option<RecoveredChanges>,
+    /// This model's number.
+    pub model: u64,
+    /// The model the window must be showing to fill in left-out HTML;
+    /// `None` when every block has its HTML.
+    pub base: Option<u64>,
+    /// For each block, the block in `base` whose HTML it has, or `None` if
+    /// its HTML is included. Empty when `base` is `None`.
+    pub html_from: Vec<Option<u32>>,
 }
 
 /// Unsaved changes found in a recovery file (DESIGN.md §9.3).
@@ -165,7 +177,15 @@ pub async fn open_document(
 
     // The window's session keeps the text (and later, unsaved edits).
     let bytes = sessions.open(window.label(), &path)?;
-    let doc = parse_in_background(path.clone(), bytes, &memory, &vaults).await?;
+    let doc = parse_in_background(
+        &sessions,
+        window.label(),
+        path.clone(),
+        bytes,
+        &memory,
+        &vaults,
+    )
+    .await?;
     tracing::info!(
         path = %path.display(),
         blocks = doc.blocks.len(),
@@ -180,7 +200,8 @@ pub async fn open_document(
         tracing::warn!(error = format!("{error:#}"), "live reload unavailable");
     }
 
-    let mut opened = finish_open(&window, &registry, &store, &themes, doc, memory, false)?;
+    let opened = finish_open(&window, &registry, &store, &themes, doc, memory, false)?;
+    let mut opened = send_model(&sessions, window.label(), opened, true);
     opened.recovered = sessions
         .orphaned_recoveries(Some(&path))
         .first()
@@ -189,8 +210,12 @@ pub async fn open_document(
 }
 
 /// Parses document bytes on a background thread so the window stays
-/// responsive, with the options remembered for the document.
+/// responsive, with the options remembered for the document. Rendering
+/// results from the window's last parse are reused (`RenderCache`), so after
+/// an edit only changed blocks are sanitized and highlighted again.
 async fn parse_in_background(
+    sessions: &Sessions,
+    window: &str,
     path: PathBuf,
     bytes: Vec<u8>,
     memory: &DocumentMemory,
@@ -199,21 +224,39 @@ async fn parse_in_background(
     let allow_remote_images = memory.remote_images;
     let flavor = memory.flavor;
     let vaults = vaults.clone();
+    let mut cache = sessions.take_render_cache(window);
     // Rust note: `move` makes the closure take ownership of `path`, `bytes`,
-    // and the cache handle, so it can run on another thread after this
-    // function's locals are gone. The double `?` unwraps two layers: the thread's
-    // result, then the parse's.
-    let doc = tauri::async_runtime::spawn_blocking(move || {
+    // the cache, and the vault handle, so it can run on another thread after
+    // this function's locals are gone. It hands the cache back with the
+    // result, as a tuple.
+    let (doc, cache) = tauri::async_runtime::spawn_blocking(move || {
         let options = ParseOptions {
             allow_remote_images,
             flavor,
             vault: vaults.for_document(&path),
         };
-        scrald_core::parse_document_with(path, &bytes, &options)
+        let doc = scrald_core::parse_document_cached(path, &bytes, &options, &mut cache);
+        (doc, cache)
     })
     .await
-    .context("document parsing task failed")??;
-    Ok(doc)
+    .context("document parsing task failed")?;
+    sessions.put_render_cache(window, cache);
+    Ok(doc?)
+}
+
+/// Leaves out the HTML the window already shows (unless `full`) and
+/// records what it will show. Opening a document always sends it whole.
+fn send_model(
+    sessions: &Sessions,
+    window: &str,
+    mut opened: OpenedDocument,
+    full: bool,
+) -> OpenedDocument {
+    let sent = sessions.send_blocks(window, &mut opened.document.blocks, full);
+    opened.model = sent.model;
+    opened.base = sent.base;
+    opened.html_from = sent.html_from;
+    opened
 }
 
 /// The steps shared by opening, re-parsing, and editing: window title,
@@ -238,6 +281,9 @@ fn finish_open(
         theme,
         dirty,
         recovered: None,
+        model: 0,
+        base: None,
+        html_from: Vec::new(),
     })
 }
 
@@ -321,7 +367,11 @@ pub fn set_document_text(
 }
 
 /// Parses the window's document again from its text in memory (keeping
-/// unsaved edits), after its flavor or remote-image setting changed.
+/// unsaved edits), after its flavor or remote-image setting changed. With
+/// `full`, every block's HTML is sent, for a window that can't fill in
+/// left-out HTML (it isn't showing the `base` model).
+// Most arguments are app state that Tauri injects; the frontend passes one.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn reparse_document(
     window: tauri::WebviewWindow,
@@ -330,14 +380,16 @@ pub async fn reparse_document(
     themes: tauri::State<'_, ThemeService>,
     sessions: tauri::State<'_, Sessions>,
     vaults: tauri::State<'_, VaultCache>,
+    full: bool,
 ) -> Result<OpenedDocument, CommandError> {
     let (path, bytes) = sessions
         .current(window.label())
         .context("no document is open in this window")?;
-    let memory = store.record_open(&path).unwrap_or_default();
-    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let memory = store.memory(&path).unwrap_or_default();
+    let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
-    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+    let opened = finish_open(&window, &registry, &store, &themes, doc, memory, dirty)?;
+    Ok(send_model(&sessions, window.label(), opened, full))
 }
 
 /// Changes one front matter key in the window's document (in memory; the
@@ -366,10 +418,11 @@ pub async fn edit_front_matter(
         "scrald-flavor" => store.set_document_flavor(&path, None)?,
         _ => {}
     }
-    let memory = store.record_open(&path).unwrap_or_default();
-    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let memory = store.memory(&path).unwrap_or_default();
+    let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
-    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+    let opened = finish_open(&window, &registry, &store, &themes, doc, memory, dirty)?;
+    Ok(send_model(&sessions, window.label(), opened, false))
 }
 
 /// The Markdown source of a block, for the block editor (DESIGN.md §9.1).
@@ -409,10 +462,11 @@ pub async fn edit_block(
     let (path, bytes) = sessions.edit(window.label(), |current| {
         scrald_core::edit::splice_block(current, range, bom_len, &original, &text)
     })?;
-    let memory = store.record_open(&path).unwrap_or_default();
-    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let memory = store.memory(&path).unwrap_or_default();
+    let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
-    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+    let opened = finish_open(&window, &registry, &store, &themes, doc, memory, dirty)?;
+    Ok(send_model(&sessions, window.label(), opened, false))
 }
 
 /// Undoes the last edit (block, properties) in the window's document, or
@@ -431,12 +485,11 @@ pub async fn step_history(
     let Some((path, bytes)) = sessions.step(window.label(), step)? else {
         return Ok(None);
     };
-    let memory = store.record_open(&path).unwrap_or_default();
-    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let memory = store.memory(&path).unwrap_or_default();
+    let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
-    Ok(Some(finish_open(
-        &window, &registry, &store, &themes, doc, memory, dirty,
-    )?))
+    let opened = finish_open(&window, &registry, &store, &themes, doc, memory, dirty)?;
+    Ok(Some(send_model(&sessions, window.label(), opened, false)))
 }
 
 /// Saves the window's document to disk (atomically, keeping its BOM and
@@ -452,11 +505,11 @@ pub fn save_document(
     // Rust note: a "let chain" mixes a plain condition with `let` patterns;
     // the body runs only if all of them hold.
     if outcome == SaveOutcome::Saved
-        && let Some((path, bytes)) = sessions.current(window.label())
-        // Only the title changes; a parse failure here can't lose anything.
-        && let Ok(doc) = scrald_core::parse_document(path, &bytes)
+        && let Some((path, _)) = sessions.current(window.label())
+        && let Some((text, _)) = sessions.text(window.label())
     {
-        set_window_title(&window, &doc, false)?;
+        // Only the marker changes; the title comes from the front matter.
+        set_title_text(&window, &title_from_text(&path, &text), false)?;
     }
     Ok(outcome)
 }
@@ -489,10 +542,11 @@ pub async fn load_disk_version(
     vaults: tauri::State<'_, VaultCache>,
 ) -> Result<OpenedDocument, CommandError> {
     let (path, bytes) = sessions.load_disk_version(window.label())?;
-    let memory = store.record_open(&path).unwrap_or_default();
-    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let memory = store.memory(&path).unwrap_or_default();
+    let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
-    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+    let opened = finish_open(&window, &registry, &store, &themes, doc, memory, dirty)?;
+    Ok(send_model(&sessions, window.label(), opened, false))
 }
 
 /// Every set of unsaved changes left behind when Scrald stopped before they
@@ -522,10 +576,11 @@ pub async fn restore_recovered(
 ) -> Result<OpenedDocument, CommandError> {
     let (path, bytes) = sessions.restore_recovery(window.label(), &id)?;
     tracing::info!(path = %path.display(), "restored recovered changes");
-    let memory = store.record_open(&path).unwrap_or_default();
-    let doc = parse_in_background(path, bytes, &memory, &vaults).await?;
+    let memory = store.memory(&path).unwrap_or_default();
+    let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
     let dirty = sessions.is_dirty(window.label());
-    finish_open(&window, &registry, &store, &themes, doc, memory, dirty)
+    let opened = finish_open(&window, &registry, &store, &themes, doc, memory, dirty)?;
+    Ok(send_model(&sessions, window.label(), opened, false))
 }
 
 /// Deletes recovered changes the user chose not to restore.

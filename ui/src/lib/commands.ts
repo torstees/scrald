@@ -21,6 +21,20 @@ import type {
   Flavor,
 } from "./types";
 import type { TextSizing } from "../typography/typography";
+import { ModelTracker } from "./models";
+
+// The document model this window shows, so the app can leave out the HTML
+// of blocks that didn't change.
+const models = new ModelTracker();
+
+/** Fills in block HTML the app left out (fetching the whole model if needed). */
+async function complete(opened: OpenedDocument): Promise<OpenedDocument> {
+  const filled = models.receive(opened);
+  if (filled) return filled;
+  // It builds on a model this window doesn't have: ask for every block.
+  const full = await invoke<OpenedDocument>("reparse_document", { full: true });
+  return models.receive(full) ?? full;
+}
 
 export function launchInfo(): Promise<LaunchInfo> {
   return invoke<LaunchInfo>("launch_info");
@@ -30,18 +44,18 @@ export function launchInfo(): Promise<LaunchInfo> {
  * Reads and parses a document, with what Scrald remembers about it (reading
  * position, remote images choice). Rejects with an error message string.
  */
-export function openDocument(path: string): Promise<OpenedDocument> {
-  return invoke<OpenedDocument>("open_document", { path });
+export async function openDocument(path: string): Promise<OpenedDocument> {
+  return complete(await invoke<OpenedDocument>("open_document", { path }));
 }
 
 /** Parses the window's document again from memory, keeping unsaved edits. */
-export function reparseDocument(): Promise<OpenedDocument> {
-  return invoke<OpenedDocument>("reparse_document");
+export async function reparseDocument(): Promise<OpenedDocument> {
+  return complete(await invoke<OpenedDocument>("reparse_document", { full: false }));
 }
 
 /** Changes one front matter key in memory; the file changes on save. */
-export function editFrontMatter(key: string, change: PropertyChange): Promise<OpenedDocument> {
-  return invoke<OpenedDocument>("edit_front_matter", { key, change });
+export async function editFrontMatter(key: string, change: PropertyChange): Promise<OpenedDocument> {
+  return complete(await invoke<OpenedDocument>("edit_front_matter", { key, change }));
 }
 
 /** A block's Markdown source (its `source` range), for the block editor. */
@@ -50,13 +64,14 @@ export function blockSource(start: number, end: number): Promise<string> {
 }
 
 /** Replaces a block's source in memory; refused if the document changed since `original` was read. */
-export function editBlock(start: number, end: number, original: string, text: string): Promise<OpenedDocument> {
-  return invoke<OpenedDocument>("edit_block", { start, end, original, text });
+export async function editBlock(start: number, end: number, original: string, text: string): Promise<OpenedDocument> {
+  return complete(await invoke<OpenedDocument>("edit_block", { start, end, original, text }));
 }
 
 /** Undoes (or with `redo`, redoes) one edit; null if there's nothing to do. */
-export function stepHistory(redo: boolean): Promise<OpenedDocument | null> {
-  return invoke<OpenedDocument | null>("step_history", { redo });
+export async function stepHistory(redo: boolean): Promise<OpenedDocument | null> {
+  const opened = await invoke<OpenedDocument | null>("step_history", { redo });
+  return opened && complete(opened);
 }
 
 /** The whole document text and its version, for raw mode. */
@@ -85,8 +100,8 @@ export function keepLocalVersion(): Promise<void> {
 }
 
 /** "Load disk version": replaces the text with it (undoable), re-parsed. */
-export function loadDiskVersion(): Promise<OpenedDocument> {
-  return invoke<OpenedDocument>("load_disk_version");
+export async function loadDiskVersion(): Promise<OpenedDocument> {
+  return complete(await invoke<OpenedDocument>("load_disk_version"));
 }
 
 /** Whether documents save themselves after a pause in editing. */
@@ -110,8 +125,8 @@ export function recoveredChanges(): Promise<RecoveredChanges[]> {
 }
 
 /** Restores recovered changes into the open document (undoable), re-parsed. */
-export function restoreRecovered(id: string): Promise<OpenedDocument> {
-  return invoke<OpenedDocument>("restore_recovered", { id });
+export async function restoreRecovered(id: string): Promise<OpenedDocument> {
+  return complete(await invoke<OpenedDocument>("restore_recovered", { id }));
 }
 
 /** Deletes recovered changes the user chose not to restore. */

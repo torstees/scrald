@@ -2,6 +2,8 @@
 
 use comrak::nodes::{Node, NodeHtmlBlock, NodeValue};
 
+use crate::cache::RenderCache;
+
 /// Prefix for every HTML `id` that comes from document content, so a heading
 /// called "App" (or raw HTML with `id="app"`) can't clash with the app's own
 /// elements. Links keep the bare form (`#app`, `#fn-1`); the reader adds the
@@ -9,12 +11,14 @@ use comrak::nodes::{Node, NodeHtmlBlock, NodeValue};
 pub const ID_PREFIX: &str = "user-content-";
 
 /// Renders single top-level blocks to sanitized HTML. Build one per document
-/// (or reuse it): setting up the sanitizer allowlist isn't free.
+/// (or reuse it): setting up the sanitizer allowlist isn't free. Sanitized
+/// HTML and highlighted code are kept in its `RenderCache`.
 pub struct Renderer {
     // Rust note: `ammonia::Builder<'static>` has a lifetime parameter because
     // it can borrow its allowlists; `'static` means ours are string literals
     // that live for the whole program, so the struct needs no lifetime itself.
     sanitizer: ammonia::Builder<'static>,
+    cache: RenderCache,
 }
 
 impl Default for Renderer {
@@ -27,6 +31,13 @@ impl Renderer {
     /// `allow_remote_images` lets `<img src="http(s)://...">` through; it is
     /// off unless the user allowed remote images for this document (§6.1).
     pub fn new(allow_remote_images: bool) -> Self {
+        Self::with_cache(allow_remote_images, RenderCache::default())
+    }
+
+    /// Like `new`, reusing the results in `cache` from an earlier parse of
+    /// the same document. `into_cache` gives it back afterwards.
+    pub fn with_cache(allow_remote_images: bool, mut cache: RenderCache) -> Self {
+        cache.start(allow_remote_images);
         let mut sanitizer = ammonia::Builder::default();
         sanitizer
             // Task list checkboxes. They render disabled; reading never edits.
@@ -66,29 +77,42 @@ impl Renderer {
             .attribute_filter(move |element, attribute, value| {
                 filter_attribute(element, attribute, value, allow_remote_images).map(Into::into)
             });
-        Renderer { sanitizer }
+        Renderer { sanitizer, cache }
+    }
+
+    /// Ends the parse and returns the cache, holding what this parse used.
+    pub fn into_cache(mut self) -> RenderCache {
+        self.cache.finish();
+        self.cache
+    }
+
+    /// Highlighted HTML for a code block (see `highlight::highlight`).
+    pub fn highlight(&mut self, code: &str, language: &str) -> Option<String> {
+        self.cache.highlighted(code, language, || {
+            crate::highlight::highlight(code, language)
+        })
     }
 
     /// Renders one block (and its children) to sanitized HTML.
-    pub fn render(&self, node: Node<'_>, options: &comrak::Options) -> String {
+    pub fn render(&mut self, node: Node<'_>, options: &comrak::Options) -> String {
         self.render_group(&[node], options)
     }
 
     /// Renders several consecutive blocks and sanitizes them as one piece of
     /// HTML, so a container opened in the first can wrap the rest.
-    pub fn render_group(&self, nodes: &[Node<'_>], options: &comrak::Options) -> String {
+    pub fn render_group(&mut self, nodes: &[Node<'_>], options: &comrak::Options) -> String {
         let mut html = String::new();
         for &node in nodes {
             self.format_into(node, options, &mut html);
         }
-        self.sanitize(&html)
+        self.sanitize_cached(&html)
     }
 
     /// Like `render_group`, with HTML written before and after each node
     /// (`wraps[i]` for `nodes[i]`), all sanitized together: how fenced divs
     /// wrap the blocks inside them.
     pub fn render_group_wrapped(
-        &self,
+        &mut self,
         nodes: &[Node<'_>],
         options: &comrak::Options,
         wraps: &[(String, String)],
@@ -100,7 +124,7 @@ impl Renderer {
             self.format_into(node, options, &mut html);
             html.push_str(&after);
         }
-        self.sanitize(&html)
+        self.sanitize_cached(&html)
     }
 
     fn format_into(&self, node: Node<'_>, options: &comrak::Options, html: &mut String) {
@@ -119,6 +143,16 @@ impl Renderer {
 
     pub fn sanitize(&self, html: &str) -> String {
         self.sanitizer.clean(html).to_string()
+    }
+
+    /// `sanitize`, reusing the result for HTML seen in the last parse.
+    fn sanitize_cached(&mut self, html: &str) -> String {
+        // Rust note: the closure borrows `self.sanitizer` while `self.cache`
+        // is borrowed mutably; that's allowed because they're different
+        // fields (a closure using `self` itself would not be).
+        let sanitizer = &self.sanitizer;
+        self.cache
+            .sanitized(html, || sanitizer.clean(html).to_string())
     }
 }
 
