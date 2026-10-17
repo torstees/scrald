@@ -17,6 +17,9 @@ import type {
   ResolvedTheme,
   RecoveredChanges,
   TerminalThemeFile,
+  ThemeChange,
+  ThemeDetails,
+  ThemeEditPreview,
   ThemeStyle,
   ThemeSummary,
   TypographyDefaults,
@@ -190,6 +193,26 @@ export function setDefaultTheme(id: string): Promise<void> {
 /** Copies a theme into the user theme folder; resolves to the new theme's id. */
 export function duplicateTheme(id: string): Promise<string> {
   return invoke<string>("duplicate_theme", { id });
+}
+
+/** What the theme editor shows for theme `id`. */
+export function themeDetails(id: string): Promise<ThemeDetails> {
+  return invoke<ThemeDetails>("theme_details", { id });
+}
+
+/** Theme `id` as it would look with `changes`, without saving. */
+export function previewThemeEdit(id: string, changes: ThemeChange[]): Promise<ThemeEditPreview> {
+  return invoke<ThemeEditPreview>("preview_theme_edit", { id, changes });
+}
+
+/** Saves `changes` into theme `id`'s theme.toml. */
+export function saveThemeEdit(id: string, changes: ThemeChange[]): Promise<void> {
+  return invoke<void>("save_theme_edit", { id, changes });
+}
+
+/** Installed font family names, sorted. */
+export function systemFonts(): Promise<string[]> {
+  return invoke<string[]>("system_fonts");
 }
 
 /** Asks for a terminal theme file and lists its schemes; null if cancelled. */

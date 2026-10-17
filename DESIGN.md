@@ -400,6 +400,12 @@ Schema notes (as implemented, `crates/scrald-core/src/theme/`): unknown keys are
 
 Tokens become CSS custom properties (`--sk-color-background`, `--sk-font-body`, `--sk-measure`, and so on). Bundled themes and user themes go through the same path, so a theme can be built entirely from TOML, and `theme.css` exists only for things tokens can't express.
 
+**Theme editor** (as implemented: `crates/scrald-core/src/theme/edit.rs`, `ui/src/themes/ThemeEditor.svelte`). **Edit…** in the theme switcher opens a panel at the right of the window for one of the user's themes; built-in themes are read-only and are duplicated first.
+- **What it edits:** the name and appearance; the eleven semantic colors (a color picker and a hex field each; empty means derived, and the derived value is shown as the placeholder and updates as other colors change); the four font slots (family with installed fonts suggested, system or Google source, Google weights and italics, fallbacks; an empty family removes the slot); line length, text size, line height, paragraph gap, and text sizing; quote style and italics, divider style and ornament, heading numbers, and the rule under the title. Fonts from the theme's folder and image dividers are shown but left to `theme.toml`.
+- **Preview, then save.** Each change is previewed on the document at once: the app applies the pending changes to the file's text in memory and returns the CSS, nothing is written. Problems (such as a line length out of range) are shown and block Save. Cancel or `Esc` puts the document's own theme back; Save (or `Ctrl+Enter`) writes the file.
+- **Minimal edits.** Changes are applied with `toml_edit`, so only the changed keys are touched: comments, order, spacing, and a value's trailing comment stay. A missing section is added (font slots as inline tables, like the bundled themes; others as `[section]`, without empty parent headers). Only the keys above can be changed, and the edited text must load as a theme before it's written, to a temporary file renamed over `theme.toml`.
+- The document makes room for the panel while it's open.
+
 ### 7.3 Importing terminal themes
 
 Scrald can create a new theme from a terminal color scheme. Supported import formats, in order of priority:

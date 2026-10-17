@@ -727,11 +727,87 @@ pub fn theme_style(
     let theme = themes
         .get(&id)
         .ok_or_else(|| anyhow::anyhow!("no theme named {id}"))?;
+    Ok(style_for(&app, &fonts, theme))
+}
+
+/// What the theme editor shows for a theme (DESIGN.md §7.2).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeDetails {
+    pub id: String,
+    /// Only themes in the user folder can be edited.
+    pub editable: bool,
+    /// The theme's folder, for user themes.
+    pub folder: Option<String>,
+    pub values: scrald_core::theme::edit::EditorValues,
+}
+
+#[tauri::command]
+pub fn theme_details(
+    themes: tauri::State<'_, ThemeService>,
+    id: String,
+) -> Result<ThemeDetails, CommandError> {
+    let theme = themes
+        .get(&id)
+        .ok_or_else(|| anyhow::anyhow!("no theme named {id}"))?;
+    let folder = match &theme.origin {
+        scrald_core::theme::ThemeOrigin::User { dir } => Some(dir.display().to_string()),
+        scrald_core::theme::ThemeOrigin::Bundled => None,
+    };
+    Ok(ThemeDetails {
+        editable: folder.is_some(),
+        values: scrald_core::theme::edit::EditorValues::from_theme(&theme.file),
+        id: theme.id,
+        folder,
+    })
+}
+
+/// A theme as it would be with the editor's changes: its styles, and the
+/// editor's values for it (derived colors follow the edited ones).
+#[derive(Debug, Clone, Serialize)]
+pub struct ThemeEditPreview {
+    pub style: ThemeStyle,
+    pub values: scrald_core::theme::edit::EditorValues,
+}
+
+/// Theme `id` as it would look with the editor's `changes`, without saving.
+/// Fails with the problems the edited theme would have.
+#[tauri::command]
+pub fn preview_theme_edit(
+    app: tauri::AppHandle,
+    themes: tauri::State<'_, ThemeService>,
+    fonts: tauri::State<'_, crate::fonts::FontCache>,
+    id: String,
+    changes: Vec<scrald_core::theme::edit::ThemeChange>,
+) -> Result<ThemeEditPreview, CommandError> {
+    let (theme, _) = themes.edited(&id, &changes)?;
+    let values = scrald_core::theme::edit::EditorValues::from_theme(&theme.file);
+    Ok(ThemeEditPreview {
+        style: style_for(&app, &fonts, theme),
+        values,
+    })
+}
+
+/// Saves the editor's `changes` into theme `id`'s `theme.toml`.
+#[tauri::command]
+pub fn save_theme_edit(
+    themes: tauri::State<'_, ThemeService>,
+    id: String,
+    changes: Vec<scrald_core::theme::edit::ThemeChange>,
+) -> Result<(), CommandError> {
+    Ok(themes.save_edit(&id, &changes)?)
+}
+
+fn style_for(
+    app: &tauri::AppHandle,
+    fonts: &crate::fonts::FontCache,
+    theme: scrald_core::theme::Theme,
+) -> ThemeStyle {
     // Google Fonts the theme uses: rules for downloaded ones, and downloads
     // started for the others (DESIGN.md §7.5).
-    let mut css = fonts.css_for(&app, &theme.file);
+    let mut css = fonts.css_for(app, &theme.file);
     css.push_str(&theme.css(&crate::themes::asset_base(&theme.id)));
-    Ok(ThemeStyle {
+    ThemeStyle {
         css,
         name: theme.file.meta.name.clone(),
         appearance: theme.file.meta.appearance,
@@ -744,7 +820,7 @@ pub fn theme_style(
             text_sizing: theme.file.layout.text_sizing,
         },
         id: theme.id,
-    })
+    }
 }
 
 /// Sets a document's text sizing mode and zoom; `null` clears either, so the
