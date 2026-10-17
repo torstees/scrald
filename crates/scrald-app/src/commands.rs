@@ -719,14 +719,20 @@ pub fn list_themes(themes: tauri::State<'_, ThemeService>) -> Vec<ThemeSummary> 
 /// The CSS and details for one theme.
 #[tauri::command]
 pub fn theme_style(
+    app: tauri::AppHandle,
     themes: tauri::State<'_, ThemeService>,
+    fonts: tauri::State<'_, crate::fonts::FontCache>,
     id: String,
 ) -> Result<ThemeStyle, CommandError> {
     let theme = themes
         .get(&id)
         .ok_or_else(|| anyhow::anyhow!("no theme named {id}"))?;
+    // Google Fonts the theme uses: rules for downloaded ones, and downloads
+    // started for the others (DESIGN.md §7.5).
+    let mut css = fonts.css_for(&app, &theme.file);
+    css.push_str(&theme.css(&crate::themes::asset_base(&theme.id)));
     Ok(ThemeStyle {
-        css: theme.css(&crate::themes::asset_base(&theme.id)),
+        css,
         name: theme.file.meta.name.clone(),
         appearance: theme.file.meta.appearance,
         numbering: theme.file.elements.headings.numbering,

@@ -32,6 +32,7 @@ notify-debouncer-mini = "0.7.0"
 tauri-plugin-opener = "2.7.0"
 tauri-plugin-dialog = "2.8.1"
 tauri-plugin-single-instance = "2.5.4"
+ureq = "3.4.2"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 # Lints shared by every crate (each crate opts in with `[lints] workspace = true`).

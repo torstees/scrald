@@ -3,6 +3,7 @@
 
 pub mod color;
 pub mod css;
+pub mod google_fonts;
 pub mod import;
 pub mod schema;
 

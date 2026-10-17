@@ -45,6 +45,14 @@ const MIGRATIONS: &[&str] = &[
     // 2: what the start screen shows for each document (DESIGN.md §11).
     "ALTER TABLE documents ADD COLUMN title TEXT;        -- as in the window title
     ALTER TABLE documents ADD COLUMN shown_theme TEXT;  -- theme id it was last shown in",
+    // 3: downloaded Google Fonts (DESIGN.md §7.5); the files are in the cache folder.
+    "CREATE TABLE font_cache (
+        family  TEXT NOT NULL,
+        variant TEXT NOT NULL,              -- the styles requested, e.g. wght@400;700
+        faces   TEXT NOT NULL,              -- JSON list of faces and their file names
+        fetched INTEGER NOT NULL,           -- Unix time, milliseconds
+        PRIMARY KEY (family, variant)
+    );",
 ];
 
 /// Setting key for the most recently used window size (DESIGN.md §11).
@@ -405,6 +413,38 @@ impl StateStore {
     /// Reads a JSON-encoded setting; `None` if unset or unreadable.
     // Rust note: `T: DeserializeOwned` means "any type serde can build from
     // data without borrowing it", so callers choose the type: `get_setting::<f64>`.
+    /// The downloaded faces of a Google font family in `variant`, if any.
+    pub fn cached_font(
+        &self,
+        family: &str,
+        variant: &str,
+    ) -> anyhow::Result<Option<Vec<scrald_core::theme::google_fonts::CachedFace>>> {
+        let raw: Option<String> = self
+            .conn()
+            .query_row(
+                "SELECT faces FROM font_cache WHERE family = ?1 AND variant = ?2",
+                [family, variant],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(raw.and_then(|json| serde_json::from_str(&json).ok()))
+    }
+
+    /// Records a downloaded Google font family.
+    pub fn save_font(
+        &self,
+        family: &str,
+        variant: &str,
+        faces: &[scrald_core::theme::google_fonts::CachedFace],
+    ) -> anyhow::Result<()> {
+        self.conn().execute(
+            "INSERT INTO font_cache (family, variant, faces, fetched) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (family, variant) DO UPDATE SET faces = excluded.faces, fetched = excluded.fetched",
+            params![family, variant, serde_json::to_string(faces)?, now_millis()],
+        )?;
+        Ok(())
+    }
+
     pub fn get_setting<T: DeserializeOwned>(&self, key: &str) -> anyhow::Result<Option<T>> {
         let raw: Option<String> = self
             .conn()
@@ -797,6 +837,31 @@ mod tests {
             })
             .collect();
         assert_eq!(names, ["three.md", "two.md"]);
+    }
+
+    #[test]
+    fn downloaded_fonts_are_remembered_per_variant() {
+        use scrald_core::theme::google_fonts::CachedFace;
+        let store = StateStore::in_memory().unwrap();
+        assert_eq!(store.cached_font("Literata", "wght@400").unwrap(), None);
+        let faces = vec![CachedFace {
+            style: "normal".to_string(),
+            weight: "400".to_string(),
+            unicode_range: Some("U+0000-00FF".to_string()),
+            file: "0.woff2".to_string(),
+        }];
+        store.save_font("Literata", "wght@400", &faces).unwrap();
+        assert_eq!(
+            store.cached_font("Literata", "wght@400").unwrap(),
+            Some(faces.clone())
+        );
+        assert_eq!(store.cached_font("Literata", "wght@700").unwrap(), None);
+        // Saving again replaces the record.
+        store.save_font("Literata", "wght@400", &[]).unwrap();
+        assert_eq!(
+            store.cached_font("Literata", "wght@400").unwrap(),
+            Some(Vec::new())
+        );
     }
 
     #[test]

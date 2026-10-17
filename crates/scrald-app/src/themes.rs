@@ -180,6 +180,8 @@ impl ThemeService {
             Some(file) => match std::fs::read(&file) {
                 Ok(bytes) => Response::builder()
                     .header(header::CONTENT_TYPE, crate::protocol::mime_for(&file))
+                    // Theme fonts load across origins (see fonts.rs).
+                    .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
                     .body(bytes)
                     .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR)),
                 Err(_) => status(StatusCode::NOT_FOUND),
@@ -198,7 +200,7 @@ impl ThemeService {
 
 /// `dir/relative`, if it exists and (after resolving links and `..`) is
 /// inside `dir`.
-fn confined_file(dir: &Path, relative: &str) -> Option<PathBuf> {
+pub(crate) fn confined_file(dir: &Path, relative: &str) -> Option<PathBuf> {
     let root = std::fs::canonicalize(dir).ok()?;
     let file = std::fs::canonicalize(dir.join(relative)).ok()?;
     (file.starts_with(&root) && file.is_file()).then_some(file)
