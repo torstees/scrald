@@ -8,8 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use rusqlite::{Connection, OptionalExtension, params};
-use scrald_core::Flavor;
 use scrald_core::theme::TextSizing;
+use scrald_core::{DocumentPreview, Flavor};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +53,9 @@ const MIGRATIONS: &[&str] = &[
         fetched INTEGER NOT NULL,           -- Unix time, milliseconds
         PRIMARY KEY (family, variant)
     );",
+    // 4: a summary line and cover image for the start screen (DESIGN.md §11).
+    "ALTER TABLE documents ADD COLUMN summary TEXT;      -- one line, from the front matter
+    ALTER TABLE documents ADD COLUMN cover TEXT;        -- path of the cover image file",
 ];
 
 /// Setting key for the most recently used window size (DESIGN.md §11).
@@ -139,12 +142,28 @@ pub struct RecentDocument {
     pub title: Option<String>,
     /// The theme it was last shown in, for the swatch.
     pub theme: Option<String>,
+    /// The front matter's summary, on one line.
+    pub summary: Option<String>,
+    /// The cover image's file, as stored; never sent to the page.
+    #[serde(skip)]
+    pub cover_path: Option<String>,
+    /// How the page loads the cover (filled in by the command, only for a
+    /// cover file that still exists).
+    pub cover: Option<CoverImage>,
     /// Unix time in milliseconds.
     pub last_opened: i64,
     pub pinned: bool,
     /// Whether the file is still there (filled in by the command, which
     /// checks off the main thread).
     pub exists: bool,
+}
+
+/// A cover image served through the `scrald-asset` scheme: the URL is
+/// `<token>-<id>`, like a document's images (DESIGN.md §6.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct CoverImage {
+    pub token: u64,
+    pub id: usize,
 }
 
 /// The state database. All access goes through one connection behind a lock.
@@ -357,7 +376,7 @@ impl StateStore {
     pub fn recent_documents(&self, limit: usize) -> anyhow::Result<Vec<RecentDocument>> {
         let conn = self.conn();
         let mut statement = conn.prepare(
-            "SELECT path, title, shown_theme, last_opened, pinned FROM documents
+            "SELECT path, title, shown_theme, last_opened, pinned, summary, cover FROM documents
              ORDER BY pinned DESC, last_opened DESC LIMIT ?1",
         )?;
         let rows = statement.query_map([limit as i64], |row| {
@@ -367,6 +386,9 @@ impl StateStore {
                 theme: row.get(2)?,
                 last_opened: row.get(3)?,
                 pinned: row.get(4)?,
+                summary: row.get(5)?,
+                cover_path: row.get(6)?,
+                cover: None,
                 exists: true,
             })
         })?;
@@ -388,6 +410,25 @@ impl StateStore {
             "UPDATE documents SET title = COALESCE(?2, title), shown_theme = COALESCE(?3, shown_theme)
              WHERE path = ?1",
             params![document_key(path), title, theme],
+        )?;
+        Ok(())
+    }
+
+    /// Remembers a document's title, summary, and cover for the start screen,
+    /// as read when it was opened or saved. A summary or cover the document
+    /// no longer has is cleared.
+    pub fn set_document_preview(
+        &self,
+        path: &Path,
+        preview: &DocumentPreview,
+    ) -> anyhow::Result<()> {
+        let cover = preview
+            .cover
+            .as_deref()
+            .map(|cover| cover.to_string_lossy().into_owned());
+        self.conn().execute(
+            "UPDATE documents SET title = ?2, summary = ?3, cover = ?4 WHERE path = ?1",
+            params![document_key(path), preview.title, preview.summary, cover],
         )?;
         Ok(())
     }
@@ -890,6 +931,30 @@ mod tests {
         assert!(recent[0].pinned);
         assert_eq!(recent[1].title, None);
         assert!(!recent[1].pinned);
+
+        let preview = DocumentPreview {
+            title: "With a cover".into(),
+            summary: Some("A hard season.".into()),
+            cover: Some(dir.join("cover.jpg")),
+        };
+        store.set_document_preview(&b, &preview).unwrap();
+        let recent = store.recent_documents(10).unwrap();
+        assert_eq!(recent[1].title.as_deref(), Some("With a cover"));
+        assert_eq!(recent[1].summary.as_deref(), Some("A hard season."));
+        let stored = recent[1].cover_path.clone().map(PathBuf::from);
+        assert_eq!(stored, Some(dir.join("cover.jpg")));
+        // A later save without them clears them.
+        let plain = DocumentPreview {
+            title: "b".into(),
+            summary: None,
+            cover: None,
+        };
+        store.set_document_preview(&b, &plain).unwrap();
+        let recent = store.recent_documents(10).unwrap();
+        assert_eq!(
+            (recent[1].summary.clone(), recent[1].cover_path.clone()),
+            (None, None)
+        );
 
         store.forget_document(&a).unwrap();
         let recent = store.recent_documents(10).unwrap();

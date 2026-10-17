@@ -1,9 +1,12 @@
 <script lang="ts">
   // Shown when Scrald starts without a document (DESIGN.md §11): an Open
-  // button, pinned and recent documents with a swatch of the theme each was
-  // last shown in, and anything else the app puts in `children` (recovered
-  // changes). Files can also be dropped anywhere on the window.
+  // button, pinned and recent documents with their cover image or a swatch
+  // of the theme each was last shown in, and anything else the app puts in
+  // `children` (recovered changes). Files can also be dropped anywhere on
+  // the window.
   import type { Snippet } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
+  import { assetUrl } from "../lib/commands";
   import type { RecentDocument, ThemeSummary } from "../lib/types";
   import { displayTitle, lastOpenedText, splitPinned } from "./recent";
 
@@ -23,6 +26,8 @@
 
   const groups = $derived(splitPinned(documents));
   const themesById = $derived(new Map(themes.map((t) => [t.id, t])));
+  // Covers that failed to load show the theme swatch instead.
+  const brokenCovers = new SvelteSet<string>();
   // Read when the list arrives: "5 minutes ago" needn't tick while it's shown.
   const now = $derived.by(() => {
     void documents;
@@ -41,17 +46,31 @@
           disabled={!doc.exists}
           title={doc.exists ? doc.path : `Not found: ${doc.path}`}
         >
-          <span
-            class="swatch"
-            class:themed={theme !== undefined}
-            style:--swatch-bg={theme?.background}
-            style:--swatch-fg={theme?.foreground}
-            style:--swatch-accent={theme?.accent}
-            title={theme?.name}
-            aria-hidden="true">Aa</span
-          >
+          {#if doc.cover && !brokenCovers.has(doc.path)}
+            <img
+              class="swatch cover"
+              class:themed={theme !== undefined}
+              style:--swatch-accent={theme?.accent}
+              src={assetUrl(doc.cover.token, doc.cover.id)}
+              alt=""
+              loading="lazy"
+              title={theme?.name}
+              onerror={() => brokenCovers.add(doc.path)}
+            />
+          {:else}
+            <span
+              class="swatch"
+              class:themed={theme !== undefined}
+              style:--swatch-bg={theme?.background}
+              style:--swatch-fg={theme?.foreground}
+              style:--swatch-accent={theme?.accent}
+              title={theme?.name}
+              aria-hidden="true">Aa</span
+            >
+          {/if}
           <span class="text">
             <span class="title">{displayTitle(doc)}</span>
+            {#if doc.summary}<span class="summary" title={doc.summary}>{doc.summary}</span>{/if}
             <span class="path">{doc.path}</span>
             <span class="when">
               {#if doc.exists}
@@ -210,6 +229,7 @@
   }
 
   li.missing .title,
+  li.missing .summary,
   li.missing .swatch {
     opacity: 0.55;
   }
@@ -236,6 +256,13 @@
     border-bottom-color: var(--swatch-accent);
   }
 
+  /* The cover fills the swatch's square, cropped; the theme's accent stays
+     as its bottom edge. */
+  img.cover {
+    object-fit: cover;
+    background: var(--sk-color-code-bg);
+  }
+
   .text {
     display: flex;
     flex-direction: column;
@@ -247,7 +274,8 @@
     font-size: 1.05em;
   }
 
-  .path {
+  .path,
+  .summary {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

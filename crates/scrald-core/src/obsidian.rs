@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 
 use comrak::nodes::{Node, NodeLink, NodeValue};
 
-use crate::assets::{self, ImageCollector};
+use crate::assets::{self, AssetContext, IMAGE_EXTENSIONS, ImageCollector, Resolved};
 use crate::render::{self, escape_text};
 use crate::toc::slugify;
 
@@ -527,8 +527,6 @@ fn trailing_block_ref(text: &str) -> Option<(&str, &str)> {
 }
 
 /// File extensions embedded as images (`![[pic.png]]`).
-const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"];
-
 /// `300` -> (300, none); `300x200` -> (300, 200).
 fn parse_size(options: &str) -> Option<(u32, Option<u32>)> {
     match options.split_once('x') {
@@ -559,6 +557,9 @@ fn display_label(target: &str) -> String {
 pub struct LinkContext<'c> {
     pub doc_path: &'c Path,
     pub vault: &'c VaultIndex,
+    /// Where images are looked up (front matter `assets:`, the document's
+    /// folder, then the vault), shared with Markdown images.
+    pub assets: &'c AssetContext,
 }
 
 /// Resolves wikilinks, renders embeds, and styles tags and block references
@@ -719,19 +720,15 @@ fn embed_html(
         .unwrap_or_default();
     if IMAGE_EXTENSIONS.contains(&extension.as_str()) {
         let size = options.and_then(parse_size);
-        return match ctx.vault.resolve_attachment(name, ctx.doc_path) {
-            Some(path) => {
+        // A path (`![[images/pic.png]]`) is tried as written first, like a
+        // Markdown image, so `assets:` and paths outside a vault work too.
+        return match assets::resolve_path(Path::new(name.trim()), ctx.assets) {
+            Resolved::Local(path) => {
                 let alt = options.filter(|_| size.is_none()).unwrap_or(name);
                 images.embed_html(path, alt, size.map(|(w, _)| w), size.and_then(|(_, h)| h))
             }
-            None => assets::missing_image_html(
-                name,
-                "",
-                &[ctx
-                    .vault
-                    .root
-                    .join(format!("(anywhere in the vault)/{name}"))],
-            ),
+            Resolved::Missing { attempted } => assets::missing_image_html(name, "", &attempted),
+            _ => assets::unsupported_image_html(name, ""),
         };
     }
     let label = options.unwrap_or(target);

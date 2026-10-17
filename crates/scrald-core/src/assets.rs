@@ -22,6 +22,10 @@ pub struct ImageAsset {
     pub height: Option<u32>,
 }
 
+/// File extensions treated as images: Obsidian embeds (`![[pic.png]]`) and
+/// cover images.
+pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"];
+
 /// Where relative image paths are looked up, in priority order.
 #[derive(Debug, Clone, Default)]
 pub struct AssetContext {
@@ -93,14 +97,20 @@ pub fn resolve(src: &str, ctx: &AssetContext) -> Resolved {
     // Drop any `#fragment` or `?query`, then undo URL percent-encoding
     // (comrak encodes spaces in link destinations as %20).
     let path_part = src.split(['#', '?']).next().unwrap_or_default();
-    let relative = PathBuf::from(percent_decode(path_part));
+    resolve_path(Path::new(&percent_decode(path_part)), ctx)
+}
+
+/// Resolves a file path as written (not a URL): absolute paths as they are,
+/// relative ones in the search directories, then anywhere in the vault.
+/// Obsidian embeds (`![[pic.png]]`) use this directly.
+pub fn resolve_path(relative: &Path, ctx: &AssetContext) -> Resolved {
     if relative.is_absolute() {
-        return check_exists(relative);
+        return check_exists(relative.to_path_buf());
     }
 
     let mut attempted = Vec::new();
     for dir in &ctx.search_dirs {
-        let candidate = dir.join(&relative);
+        let candidate = dir.join(relative);
         if candidate.is_file() {
             return Resolved::Local(candidate);
         }
@@ -114,6 +124,21 @@ pub fn resolve(src: &str, ctx: &AssetContext) -> Resolved {
         attempted.push(vault.root.join(format!("(anywhere in the vault)/{name}")));
     }
     Resolved::Missing { attempted }
+}
+
+/// The local image file a front matter cover (`FrontMatter::cover`) names,
+/// looked up like an image in the document. Remote covers aren't used, and
+/// only files with an image extension count.
+pub fn resolve_cover(src: &str, ctx: &AssetContext) -> Option<PathBuf> {
+    // Rust note: `let PATTERN = value else { ... }` binds `path` when the
+    // pattern matches and otherwise runs the block, which must return.
+    let Resolved::Local(path) = resolve(src, ctx) else {
+        return None;
+    };
+    let extension = path.extension()?.to_string_lossy().to_lowercase();
+    IMAGE_EXTENSIONS
+        .contains(&extension.as_str())
+        .then_some(path)
 }
 
 fn check_exists(path: PathBuf) -> Resolved {

@@ -9,7 +9,7 @@ use std::time::Instant;
 use anyhow::Context;
 use scrald_core::theme::{Appearance, TextSizing, ThemeSource, ThemeSummary, resolve_theme};
 use scrald_core::yaml_edit::Change;
-use scrald_core::{DocumentModel, Flavor, LinkTarget, ParseOptions};
+use scrald_core::{DocumentModel, DocumentPreview, Flavor, LinkTarget, ParseOptions};
 use serde::Serialize;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
@@ -17,7 +17,8 @@ use tauri_plugin_opener::OpenerExt;
 use crate::protocol::AssetRegistry;
 use crate::session::{DiskState, SaveOutcome, Sessions, Step};
 use crate::state::{
-    DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore, TypographyDefaults,
+    CoverImage, DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore,
+    TypographyDefaults,
 };
 use crate::themes::ThemeService;
 use crate::vaults::VaultCache;
@@ -202,11 +203,16 @@ pub async fn open_document(
 
     let opened = finish_open(&window, &registry, &store, &themes, doc, memory, false)?;
     // For the start screen's recent list; never worth failing the open over.
-    if let Err(error) = store.set_document_display(
+    // The vault index is the one the parse just used, so this rarely scans.
+    let preview = DocumentPreview::new(
         &path,
-        Some(&document_title(&opened.document)),
-        Some(&opened.theme.id),
-    ) {
+        opened.document.front_matter.as_ref(),
+        vaults.for_document(&path),
+    );
+    if let Err(error) = store
+        .set_document_preview(&path, &preview)
+        .and_then(|()| store.set_document_display(&path, None, Some(&opened.theme.id)))
+    {
         tracing::warn!(
             error = format!("{error:#}"),
             "could not store the document's title"
@@ -510,11 +516,15 @@ pub async fn step_history(
 /// line endings) and clears the unsaved marker. Returns `conflict` without
 /// writing if the file changed on disk and the user hasn't chosen what to
 /// keep (DESIGN.md §9.3).
+///
+/// Async so that finding a cover image in an Obsidian vault (which may scan
+/// it) doesn't run on the main thread.
 #[tauri::command]
-pub fn save_document(
+pub async fn save_document(
     window: tauri::WebviewWindow,
     sessions: tauri::State<'_, Sessions>,
     store: tauri::State<'_, StateStore>,
+    vaults: tauri::State<'_, VaultCache>,
 ) -> Result<SaveOutcome, CommandError> {
     let outcome = sessions.save(window.label())?;
     // Rust note: a "let chain" mixes a plain condition with `let` patterns;
@@ -524,9 +534,9 @@ pub fn save_document(
         && let Some((text, _)) = sessions.text(window.label())
     {
         // Only the marker changes; the title comes from the front matter.
-        let title = title_from_text(&path, &text);
-        set_title_text(&window, &title, false)?;
-        if let Err(error) = store.set_document_display(&path, Some(&title), None) {
+        let preview = DocumentPreview::from_text(&path, &text, vaults.for_document(&path));
+        set_title_text(&window, &preview.title, false)?;
+        if let Err(error) = store.set_document_preview(&path, &preview) {
             tracing::warn!(
                 error = format!("{error:#}"),
                 "could not store the document's title"
@@ -1048,22 +1058,40 @@ pub fn set_remote_images(
 
 /// Recently opened documents for the start screen: pinned first, then
 /// newest first, each marked if its file is gone.
+///
+/// Cover images that still exist are registered for this window, so the
+/// page can load them by token (DESIGN.md §6.2); only covers read from the
+/// front matter of documents the user opened are ever served.
 #[tauri::command]
 pub async fn recent_documents(
+    window: tauri::WebviewWindow,
     store: tauri::State<'_, StateStore>,
+    registry: tauri::State<'_, AssetRegistry>,
     limit: usize,
 ) -> Result<Vec<RecentDocument>, CommandError> {
     let mut recent = store.recent_documents(limit)?;
     // Checking a file on a disconnected network drive can take seconds, so
     // it happens on a worker thread.
-    let recent = tauri::async_runtime::spawn_blocking(move || {
-        for document in &mut recent {
+    let (mut recent, covers) = tauri::async_runtime::spawn_blocking(move || {
+        let mut covers: Vec<(usize, PathBuf)> = Vec::new();
+        for (row, document) in recent.iter_mut().enumerate() {
             document.exists = Path::new(&document.path).is_file();
+            if document.exists
+                && let Some(cover) = document.cover_path.as_deref().map(PathBuf::from)
+                && cover.is_file()
+            {
+                covers.push((row, cover));
+            }
         }
-        recent
+        (recent, covers)
     })
     .await
     .context("checking recent documents failed")?;
+    let files = covers.iter().map(|(_, file)| file.clone()).collect();
+    let token = registry.register_covers(window.label(), files);
+    for (id, (row, _)) in covers.iter().enumerate() {
+        recent[*row].cover = Some(CoverImage { token, id });
+    }
     Ok(recent)
 }
 

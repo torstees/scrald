@@ -10,7 +10,7 @@ use comrak::nodes::{Attributes, ListType, Node, NodeHtmlBlock, NodeValue};
 use serde::Serialize;
 
 use crate::DocumentError;
-use crate::assets::{AssetContext, ImageAsset, ImageCollector};
+use crate::assets::{self, AssetContext, ImageAsset, ImageCollector};
 use crate::cache::RenderCache;
 use crate::flavor::{self, Flavor, FlavorSource};
 use crate::frontmatter::{self, FrontMatter};
@@ -148,6 +148,70 @@ pub struct FeatureFlags {
     pub has_code: bool,
     /// ABC music notation in ```abc fences (rendered with abcjs).
     pub has_abc: bool,
+}
+
+/// What the start screen's recent list shows for a document besides its
+/// path (DESIGN.md §11): the title, a one-line summary, and a cover image.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentPreview {
+    pub title: String,
+    /// The front matter's summary on one line, cut at `PREVIEW_SUMMARY_CHARS`.
+    pub summary: Option<String>,
+    /// The cover image file, if the front matter names one that exists.
+    pub cover: Option<PathBuf>,
+}
+
+/// Longer summaries are cut here; the list shows at most a line of it.
+pub const PREVIEW_SUMMARY_CHARS: usize = 300;
+
+impl DocumentPreview {
+    /// The preview for a document at `path` with this front matter. `vault`
+    /// is its Obsidian vault, if it's in one, for `[[cover.png]]` covers.
+    pub fn new(
+        path: &Path,
+        front_matter: Option<&FrontMatter>,
+        vault: Option<Arc<VaultIndex>>,
+    ) -> Self {
+        let title = front_matter
+            .and_then(|fm| fm.title.clone())
+            .unwrap_or_else(|| crate::title_from_path(path));
+        let summary = front_matter
+            .and_then(|fm| fm.summary.as_deref())
+            .map(one_line)
+            .filter(|s| !s.is_empty());
+        let cover = front_matter
+            .and_then(|fm| fm.cover.as_deref())
+            .and_then(|cover| {
+                let assets_dir = front_matter.and_then(|fm| fm.assets.as_deref());
+                let mut ctx = AssetContext::for_document(path, assets_dir, false);
+                ctx.vault = vault;
+                assets::resolve_cover(cover, &ctx)
+            });
+        DocumentPreview {
+            title,
+            summary,
+            cover,
+        }
+    }
+
+    /// The preview from document text, reading only its front matter (for
+    /// saves, which don't parse the document).
+    pub fn from_text(path: &Path, text: &str, vault: Option<Arc<VaultIndex>>) -> Self {
+        let front_matter = frontmatter::split(text)
+            .map(|split| frontmatter::parse(&text[split.yaml.clone()], SourceRange::default(), 0));
+        Self::new(path, front_matter.as_ref(), vault)
+    }
+}
+
+/// Runs of whitespace (line breaks included) become one space, and the text
+/// is cut at `PREVIEW_SUMMARY_CHARS` characters with an ellipsis.
+fn one_line(text: &str) -> String {
+    let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if joined.chars().count() <= PREVIEW_SUMMARY_CHARS {
+        return joined;
+    }
+    let cut: String = joined.chars().take(PREVIEW_SUMMARY_CHARS).collect();
+    format!("{}\u{2026}", cut.trim_end())
 }
 
 /// Reads and parses a document from disk.
@@ -345,6 +409,7 @@ pub fn parse_document_cached(
                 let link_ctx = obsidian::LinkContext {
                     doc_path: &path,
                     vault,
+                    assets: &asset_ctx,
                 };
                 obsidian::transform_links(&arena, node, &link_ctx, &mut images);
             }
@@ -1004,6 +1069,67 @@ mod tests {
         let b = parse("one\n\nTWO\n");
         assert_eq!(a.blocks[0].hash, b.blocks[0].hash);
         assert_ne!(a.blocks[1].hash, b.blocks[1].hash);
+    }
+
+    #[test]
+    fn obsidian_embeds_use_assets_folder_and_paths_outside_a_vault() {
+        let dir = std::env::temp_dir().join(format!("scrald-embeds-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("pics/sub")).unwrap();
+        std::fs::write(dir.join("pics/sub/a.jpg"), "x").unwrap();
+        std::fs::write(dir.join("pics/sub/b.jpg"), "x").unwrap();
+        let text = "---\nassets: pics/sub\n---\n\nBare ![[a.jpg]], by path ![[pics/sub/b.jpg|200]], gone ![[c.jpg]]\n";
+        let doc = parse_document(dir.join("doc.md"), text.as_bytes()).unwrap();
+        let found: Vec<PathBuf> = doc.images.iter().map(|i| i.path.clone()).collect();
+        assert_eq!(
+            found,
+            [dir.join("pics/sub/a.jpg"), dir.join("pics/sub/b.jpg")]
+        );
+        let html = &doc.blocks[0].html;
+        assert!(
+            html.contains("sk-image-missing") && html.contains("c.jpg"),
+            "{html}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preview_reads_title_summary_and_cover() {
+        let dir = std::env::temp_dir().join(format!("scrald-preview-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("art")).unwrap();
+        std::fs::write(dir.join("art/cover.jpg"), "x").unwrap();
+        std::fs::write(dir.join("art/notes.txt"), "x").unwrap();
+        let path = dir.join("doc.md");
+
+        let text = "---\ntitle: Winter\nsynopsis: |\n  A hard\n  season.\nassets: art\ncover: cover.jpg\n---\nBody\n";
+        let preview = DocumentPreview::from_text(&path, text, None);
+        assert_eq!(preview.title, "Winter");
+        assert_eq!(preview.summary.as_deref(), Some("A hard season."));
+        assert_eq!(preview.cover, Some(dir.join("art").join("cover.jpg")));
+
+        // Not an image, missing, or remote: no cover. No front matter: the file name.
+        for cover in ["art/notes.txt", "gone.jpg", "https://e.com/a.jpg"] {
+            let text = format!("---\ncover: {cover}\n---\n");
+            assert_eq!(
+                DocumentPreview::from_text(&path, &text, None).cover,
+                None,
+                "{cover}"
+            );
+        }
+        let plain = DocumentPreview::from_text(&path, "# Hi\n", None);
+        assert_eq!(
+            (plain.title.as_str(), plain.summary, plain.cover),
+            ("doc", None, None)
+        );
+
+        let long = format!("---\nsummary: {}\n---\n", "word ".repeat(100));
+        let summary = DocumentPreview::from_text(&path, &long, None)
+            .summary
+            .unwrap();
+        assert_eq!(summary.chars().count(), PREVIEW_SUMMARY_CHARS);
+        assert!(summary.ends_with("word\u{2026}"), "{summary}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -3,7 +3,7 @@ import { displayTitle, isMarkdownPath, lastOpenedText, splitPinned } from "./rec
 import type { RecentDocument } from "../lib/types";
 
 function doc(path: string, extra: Partial<RecentDocument> = {}): RecentDocument {
-  return { path, title: null, theme: null, lastOpened: 0, pinned: false, exists: true, ...extra };
+  return { path, title: null, theme: null, summary: null, cover: null, lastOpened: 0, pinned: false, exists: true, ...extra };
 }
 
 describe("isMarkdownPath", () => {

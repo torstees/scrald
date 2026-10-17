@@ -32,8 +32,8 @@ use std::path::{Path, PathBuf};
 pub use assets::ImageAsset;
 pub use cache::RenderCache;
 pub use document::{
-    Block, BlockKind, DocumentModel, FeatureFlags, ParseOptions, Section, load_document,
-    parse_document, parse_document_cached, parse_document_with,
+    Block, BlockKind, DocumentModel, DocumentPreview, FeatureFlags, ParseOptions, Section,
+    load_document, parse_document, parse_document_cached, parse_document_with,
 };
 pub use flavor::{Flavor, FlavorSource};
 pub use frontmatter::FrontMatter;
