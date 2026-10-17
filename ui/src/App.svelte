@@ -24,6 +24,7 @@
     saveDocument,
     checkDisk,
     diskText,
+    fileText,
     keepLocalVersion,
     loadDiskVersion,
     recoveredChanges,
@@ -259,6 +260,11 @@
     rawMode = false;
     raw = null;
     comparing = false;
+    if (recoveryComparing) {
+      // Leaving the merge view keeps the text on the right, as Done does.
+      recoveryComparing = false;
+      recovered = null;
+    }
     try {
       const opened = await reparseDocument();
       await applyOpened(opened, { offset: top + bom, fraction: 0 });
@@ -375,6 +381,8 @@
       return;
     }
     if (dirty || conflict) {
+      // The conflict banner takes over; the restored changes stay.
+      if (recoveryComparing) await finishRecoveryCompare();
       conflict = state;
       // Changed again while comparing: compare with the new version.
       if (comparing) {
@@ -488,9 +496,9 @@
   }
 
   async function autosaveNow(): Promise<void> {
-    // A conflict waits for the user's decision; a "save changes?" prompt
-    // is already handling the unsaved changes.
-    if (!autosave || !doc || conflict || unsavedPrompt) return;
+    // A conflict or a comparison of recovered changes waits for the user's
+    // decision; a "save changes?" prompt is already handling the changes.
+    if (!autosave || !doc || conflict || recoveryComparing || unsavedPrompt) return;
     if (rawMode) await syncRaw();
     await pendingEdits;
     if (dirty) await save("Autosaved");
@@ -555,6 +563,77 @@
       recovered = doc === null ? null : (others.find((r) => r.path === doc?.path) ?? null);
     } catch (e) {
       showNotice(`Could not discard the changes: ${String(e)}`);
+    } finally {
+      recoveryBusy = false;
+    }
+  }
+
+  // Comparing recovered changes with the file: they're restored (an undoable
+  // edit, as with Restore) and shown in raw mode's merge view, with the file
+  // on the left as it is on disk now.
+  let recoveryComparing = $state(false);
+  let recoveryFileText = "";
+
+  async function compareRecovery(id: string): Promise<void> {
+    if (!doc) return;
+    recoveryBusy = true;
+    try {
+      if (rawMode) await syncRaw();
+      await pendingEdits;
+      const file = await fileText();
+      const bom = doc.hasBom ? 3 : 0;
+      const startByte =
+        rawMode && rawEditor ? rawEditor.topByte() : Math.max(0, (reader?.captureAnchor() ?? TOP_ANCHOR).offset - bom);
+      await queueEdit(async () => {
+        await applyEdit(await restoreRecovered(id));
+      });
+      const current = await documentText();
+      recoveryFileText = file;
+      raw = { ...current, startByte, resetKey: 0, compareWith: file, mount: (raw?.mount ?? 0) + 1 };
+      rawMode = true;
+      comparing = true;
+      recoveryComparing = true;
+    } catch (e) {
+      showNotice(`Could not compare the changes: ${String(e)}`);
+    } finally {
+      recoveryBusy = false;
+    }
+  }
+
+  /** "Done": the text on the right stays as unsaved changes, in raw mode. */
+  async function finishRecoveryCompare(): Promise<void> {
+    recoveryComparing = false;
+    recovered = null;
+    await stopComparing();
+  }
+
+  async function keepComparedRecovery(): Promise<void> {
+    recoveryBusy = true;
+    try {
+      await finishRecoveryCompare();
+      // Like an edit of the user's own: autosave may save it now.
+      noteEdit();
+      showNotice("Kept the recovered changes as unsaved changes. Ctrl+S saves them.");
+    } finally {
+      recoveryBusy = false;
+    }
+  }
+
+  /** "Use the file": back to the file's text, as an undoable edit. */
+  async function useFileOverRecovery(): Promise<void> {
+    recoveryBusy = true;
+    try {
+      await syncRaw();
+      await queueEdit(async () => {
+        if (!raw) return;
+        const result = await setDocumentText(raw.version, recoveryFileText);
+        raw.version = result.version;
+        dirty = result.dirty;
+      });
+      await finishRecoveryCompare();
+      showNotice("Back to the file's text. After Ctrl+E, Ctrl+Z brings the recovered changes back.");
+    } catch (e) {
+      showNotice(`Could not go back to the file: ${String(e)}`);
     } finally {
       recoveryBusy = false;
     }
@@ -659,6 +738,7 @@
       await applyOpened(opened, anchor);
       recovered = opened.recovered;
       conflict = null;
+      recoveryComparing = false;
       if (comparing) {
         comparing = false;
         rawMode = false;
@@ -1007,7 +1087,7 @@
       {#if conflict}
         <ConflictBanner
           state={conflict}
-          {comparing}
+          comparing={comparing && !recoveryComparing}
           busy={conflictBusy}
           onkeep={keepMine}
           onload={loadDisk}
@@ -1017,9 +1097,13 @@
       {#if recovered}
         <RecoveryBanner
           changes={recovered}
+          comparing={recoveryComparing}
           busy={recoveryBusy}
           onrestore={() => recovered && restoreRecovery(recovered.id)}
           ondiscard={() => recovered && discardRecovery(recovered.id)}
+          oncompare={() => recovered && compareRecovery(recovered.id)}
+          ondone={keepComparedRecovery}
+          onusefile={useFileOverRecovery}
         />
       {/if}
       {#if rawMode && raw}

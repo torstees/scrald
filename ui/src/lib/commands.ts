@@ -94,6 +94,11 @@ export function diskText(): Promise<string> {
   return invoke<string>("disk_text");
 }
 
+/** The file's text as it is on disk now, for comparing recovered changes with. */
+export function fileText(): Promise<string> {
+  return invoke<string>("file_text");
+}
+
 /** "Keep mine": the next save may replace the changed disk version. */
 export function keepLocalVersion(): Promise<void> {
   return invoke("keep_local_version");
