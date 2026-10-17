@@ -96,6 +96,7 @@ fn main() -> anyhow::Result<()> {
             commands::step_history,
             commands::check_disk,
             commands::disk_text,
+            commands::file_text,
             commands::keep_local_version,
             commands::load_disk_version,
             commands::recovered_changes,

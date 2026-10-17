@@ -506,6 +506,20 @@ impl Sessions {
         Ok(scrald_core::source::decode(&snapshot.bytes)?.text)
     }
 
+    /// The text of the file as it is on disk now (without BOM), to compare
+    /// recovered changes with.
+    pub fn file_text(&self, window: &str) -> anyhow::Result<String> {
+        let path = self
+            .lock()
+            .get(window)
+            .map(|s| s.path.clone())
+            .context("no document is open in this window")?;
+        // Read without holding the lock, as `disk_state` does.
+        let bytes =
+            std::fs::read(&path).with_context(|| format!("could not read {}", path.display()))?;
+        Ok(scrald_core::source::decode(&bytes)?.text)
+    }
+
     /// "Keep mine": the user has seen the changed disk version and chose
     /// their own text, so the next save may replace it.
     pub fn keep_local(&self, window: &str) {
@@ -937,6 +951,21 @@ Two.
         assert!(sessions.is_dirty("w"));
         // Nothing left to load.
         assert!(sessions.load_disk_version("w").is_err());
+    }
+
+    #[test]
+    fn file_text_reads_the_file_as_it_is_now() {
+        let path = temp_file("file-text.md", b"\xEF\xBB\xBFone\r\n");
+        let sessions = Sessions::default();
+        sessions.open("w", &path).unwrap();
+        sessions.edit("w", upper).unwrap();
+        // Not the edited text, and without the BOM.
+        assert_eq!(sessions.file_text("w").unwrap(), "one\r\n");
+        std::fs::write(&path, b"two\n").unwrap();
+        assert_eq!(sessions.file_text("w").unwrap(), "two\n");
+        std::fs::remove_file(&path).unwrap();
+        assert!(sessions.file_text("w").is_err());
+        assert!(sessions.file_text("other").is_err());
     }
 
     #[test]

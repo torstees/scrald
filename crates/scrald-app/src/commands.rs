@@ -524,6 +524,16 @@ pub fn disk_text(
     Ok(sessions.disk_text(window.label())?)
 }
 
+/// The text of the file as it is on disk now, for comparing recovered
+/// changes with it.
+#[tauri::command]
+pub fn file_text(
+    window: tauri::WebviewWindow,
+    sessions: tauri::State<'_, Sessions>,
+) -> Result<String, CommandError> {
+    Ok(sessions.file_text(window.label())?)
+}
+
 /// "Keep mine": the next save may replace the changed disk version.
 #[tauri::command]
 pub fn keep_local_version(window: tauri::WebviewWindow, sessions: tauri::State<'_, Sessions>) {
