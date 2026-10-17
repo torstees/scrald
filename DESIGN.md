@@ -412,8 +412,13 @@ Scrald can create a new theme from a terminal color scheme. Supported import for
 
 The importer maps the 16 ANSI colors into `[palette]`, maps foreground/background/selection/cursor directly, and derives the remaining semantic colors (`muted`, `accent`, `link`, `code_bg`, `quote_bar`) with simple rules: for example, `muted` blends foreground toward background, and `link` uses blue. The user can then adjust the result. The output is a normal theme folder, so imported themes need no special handling afterwards.
 
-As implemented (`crates/scrald-core/src/theme/import/`), Windows Terminal so far:
-- **Reading.** A file can be a whole `settings.json` (its `schemes` list; comments and trailing commas are allowed, as the Terminal writes them), a single scheme object, or a list of schemes. Windows Terminal's `purple` is magenta. A JSON file with none of these says it holds no color schemes.
+As implemented (`crates/scrald-core/src/theme/import/`, one module per format):
+- **Choosing the format.** The extension decides when it can (`.json` Windows Terminal, `.itermcolors` iTerm2, `.toml` Alacritty, `.yaml`/`.yml` base16), otherwise the text: Ghostty's theme files have no extension, and kitty and Ghostty both use `.conf` (Ghostty writes `key = value`, kitty `key value`). Formats without a name in the file use the file name.
+- **Windows Terminal.** A whole `settings.json` (its `schemes` list; comments and trailing commas are allowed, as the Terminal writes them), a single scheme object, or a list of schemes. `purple` is magenta. A JSON file with none of these says it holds no color schemes.
+- **iTerm2.** The XML property list is read by a small scanner (color dictionaries never nest), not a plist library; components are 0–1, color spaces are treated as sRGB. Binary plists aren't read.
+- **Alacritty.** The TOML format (`[colors.primary]`, `[colors.normal]`, `[colors.bright]`, cursor, selection); `CellForeground`-style values are skipped. The old YAML format isn't read.
+- **Ghostty and kitty.** Line formats; kitty-themes' `## name:` comment names the theme. Hex colors may be written with `#`, without, or as `0x…`.
+- **base16/base24.** The original format (top-level `scheme:` and `base00`…) and the current one (`name:` and `palette:`). ANSI colors follow base16-shell's mapping (red `base08`, yellow `base0A`, green `base0B`, cyan `base0C`, blue `base0D`, magenta `base0E`, bright black `base03`, bright white `base07`, other brights repeating the normal colors); base24's own brights (`base12`…`base17`) are used when present. Selection is `base02`.
 - **Deriving colors (WCAG contrast).** Light or dark comes from whether white or black text reads better on the background.
   - Link and accent take the normal or the bright blue (yellow) variant, each first darkened or lightened until it has 4.5:1 (links) or 3:1 (accent) against the background. Then the more colorful of the two wins, since some schemes, like Solarized, keep grays in the bright slots.
   - Muted text is the text color moved up to 45% toward the background, keeping 4.5:1, or three quarters of the text's own contrast when the scheme's text is below that.

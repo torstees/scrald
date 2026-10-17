@@ -100,12 +100,17 @@ impl ThemeService {
     /// Creates a theme in the user theme folder for each scheme named in
     /// `names` from the terminal theme file `text` (DESIGN.md §7.3). Returns
     /// the new themes' ids.
-    pub fn import_terminal(&self, text: &str, names: &[String]) -> anyhow::Result<Vec<String>> {
+    pub fn import_terminal(
+        &self,
+        text: &str,
+        file_name: &str,
+        names: &[String],
+    ) -> anyhow::Result<Vec<String>> {
         let dir = self
             .user_dir
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("no user theme folder"))?;
-        let (schemes, format) = read_schemes(text).map_err(anyhow::Error::msg)?;
+        let (schemes, format) = read_schemes(text, file_name).map_err(anyhow::Error::msg)?;
         let mut ids = Vec::new();
         for name in names {
             let scheme = schemes
@@ -116,7 +121,7 @@ impl ThemeService {
             // the library is reloaded in between.
             let id = self
                 .library()
-                .import(scheme, format, dir)
+                .import(scheme, format.description(), dir)
                 .map_err(anyhow::Error::msg)?;
             self.reload();
             ids.push(id);
@@ -312,12 +317,16 @@ mod tests {
         );
         // Two picks of the same name get two themes; the unnamed one, none.
         let ids = service
-            .import_terminal(&settings, &["Night".to_string(), "Night".to_string()])
+            .import_terminal(
+                &settings,
+                "settings.json",
+                &["Night".to_string(), "Night".to_string()],
+            )
             .unwrap();
         assert_eq!(ids, ["night", "night-2"]);
         assert_eq!(service.get("night-2").unwrap().file.meta.name, "Night 2");
         assert!(service.get("other").is_none());
-        let missing = service.import_terminal(&settings, &["Day".to_string()]);
+        let missing = service.import_terminal(&settings, "settings.json", &["Day".to_string()]);
         assert!(
             missing
                 .unwrap_err()

@@ -894,7 +894,11 @@ pub async fn pick_terminal_theme(
             .file()
             .set_parent(&window)
             .set_title("Import a terminal theme")
-            .add_filter("Windows Terminal schemes or settings", &["json"])
+            .add_filter(
+                "Terminal themes",
+                &["json", "itermcolors", "toml", "conf", "yaml", "yml"],
+            )
+            // Ghostty's theme files have no extension.
             .add_filter("All files", &["*"])
             .blocking_pick_file()
     })
@@ -905,7 +909,7 @@ pub async fn pick_terminal_theme(
     };
     let text = read_terminal_theme(&path)?;
     let file_name = path.file_name().unwrap_or_default().to_string_lossy();
-    let (schemes, _) = scrald_core::theme::import::read_schemes(&text)
+    let (schemes, _) = scrald_core::theme::import::read_schemes(&text, &file_name)
         .map_err(|e| anyhow::anyhow!("{file_name}: {e}"))?;
     let names = schemes.into_iter().map(|s| s.name).collect();
     Ok(Some(TerminalThemeFile { path, names }))
@@ -920,7 +924,8 @@ pub fn import_terminal_theme(
     names: Vec<String>,
 ) -> Result<Vec<String>, CommandError> {
     let text = read_terminal_theme(&path)?;
-    Ok(themes.import_terminal(&text, &names)?)
+    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+    Ok(themes.import_terminal(&text, &file_name, &names)?)
 }
 
 /// Where user themes live, to show in the switcher.
