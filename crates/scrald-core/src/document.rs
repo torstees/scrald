@@ -127,14 +127,15 @@ pub enum BlockKind {
     Other,
 }
 
-/// A run of blocks starting at a heading (or the start of the document).
+/// A run of blocks starting at a heading, a block with headings inside (a
+/// fenced div or HTML container), or the start of the document.
 /// The reader gives each section its own containment box (DESIGN.md §4).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Section {
     pub id: u32,
-    /// The heading block that starts this section; `None` for text before
-    /// the first heading.
+    /// The block that starts this section (a heading, or a block with
+    /// headings inside); `None` for text before the first heading.
     pub heading_block: Option<u32>,
     /// Heading level, or 0 for the preamble.
     pub level: u8,
@@ -326,8 +327,9 @@ pub fn parse_document_cached(
     let mut toc = Vec::new();
     let mut word_count = 0;
     let mut features = FeatureFlags::default();
-    // Headings marked `{-}` or `{.unnumbered}` (Pandoc) get no outline number.
-    let mut unnumbered: Vec<u32> = Vec::new();
+    // Headings marked `{-}` or `{.unnumbered}` (Pandoc) get no outline
+    // number. Indices into `toc`, since one block can hold several headings.
+    let mut unnumbered: Vec<usize> = Vec::new();
 
     // comrak moves footnote definitions to the end of the document. Put
     // blocks back in source order so ranges tile the file and edits splice
@@ -405,6 +407,17 @@ pub fn parse_document_cached(
             [only] if pandoc && heading_text.is_some() => pandoc::attributes_of(only),
             _ => None,
         };
+        // Headings inside a fenced div or an HTML container: the block isn't
+        // a heading itself, but they still get TOC entries (read before the
+        // passes below, like `heading_text`).
+        let inner_headings: Vec<InnerHeading> = if heading_text.is_some() {
+            Vec::new()
+        } else {
+            group
+                .iter()
+                .filter_map(|&node| inner_heading(node, pandoc, &index))
+                .collect()
+        };
         let mut words = 0;
         for &node in group {
             words += count_words(node);
@@ -430,6 +443,32 @@ pub fn parse_document_cached(
                 obsidian::transform_callouts(node, &options);
             }
         }
+        // Ids go on inner headings before rendering (see `heading_as_html`).
+        for heading in &inner_headings {
+            let slug = match &heading.attrs.id {
+                Some(id) => id.clone(),
+                None => slugger.slug(&heading.text),
+            };
+            let attrs = Attributes {
+                id: Some(slug.clone()),
+                classes: heading.attrs.classes.clone(),
+                ..Attributes::default()
+            };
+            let attrs_html = pandoc::attribute_html(&attrs, None, "");
+            render::heading_as_html(heading.node, heading.level, &attrs_html, &options);
+            if heading.attrs.classes.iter().any(|c| c == "unnumbered") {
+                unnumbered.push(toc.len());
+            }
+            toc.push(TocEntry {
+                level: heading.level,
+                text: heading.text.clone(),
+                slug,
+                block_id: id,
+                offset: heading.offset,
+                number: None,
+            });
+        }
+
         let mut html = if outer_div.is_some() {
             let wraps = div_wraps(group, &divs, &index);
             renderer.render_group_wrapped(group, &options, &wraps)
@@ -472,7 +511,7 @@ pub fn parse_document_cached(
                 ..Attributes::default()
             };
             if classes.classes.iter().any(|c| c == "unnumbered") {
-                unnumbered.push(id);
+                unnumbered.push(toc.len());
             }
             html = pandoc::add_to_first_tag(&html, &classes);
             toc.push(TocEntry {
@@ -480,12 +519,24 @@ pub fn parse_document_cached(
                 text: heading,
                 slug,
                 block_id: id,
+                offset: source.start,
                 number: None,
             });
             sections.push(Section {
                 id: sections.len() as u32,
                 heading_block: Some(id),
                 level,
+                first_block: id,
+                block_count: 0,
+            });
+        } else if let Some(first) = inner_headings.first() {
+            // A block with headings inside starts a section too, so a book
+            // whose chapters are `::: chapter` divs still gets one
+            // containment box per chapter.
+            sections.push(Section {
+                id: sections.len() as u32,
+                heading_block: Some(id),
+                level: first.level,
                 first_block: id,
                 block_count: 0,
             });
@@ -538,15 +589,18 @@ pub fn parse_document_cached(
     // loop below can update the entries it numbers.
     let levels: Vec<u8> = toc
         .iter()
-        .filter(|entry| !unnumbered.contains(&entry.block_id))
-        .map(|entry| entry.level)
+        .enumerate()
+        .filter(|(i, _)| !unnumbered.contains(i))
+        .map(|(_, entry)| entry.level)
         .collect();
     let numbered = toc
         .iter_mut()
-        .filter(|entry| !unnumbered.contains(&entry.block_id));
+        .enumerate()
+        .filter(|(i, _)| !unnumbered.contains(i))
+        .map(|(_, entry)| entry);
     for (entry, number) in numbered.zip(toc::number_headings(&levels)) {
         if let (Some(n), Some(block)) = (&number, blocks.get_mut(entry.block_id as usize)) {
-            block.html = render::add_heading_number(&block.html, entry.level, n);
+            block.html = render::add_heading_number(&block.html, entry.level, &entry.slug, n);
         }
         entry.number = number;
     }
@@ -583,6 +637,42 @@ pub fn parse_document_cached(
         flavor,
         flavor_source,
         footnotes,
+    })
+}
+
+/// A heading inside a block that groups several nodes (a fenced div or an
+/// HTML container), read before the block is rendered.
+struct InnerHeading<'a> {
+    node: Node<'a>,
+    level: u8,
+    text: String,
+    /// Pandoc `{#id .class}` attributes; empty otherwise.
+    attrs: Attributes,
+    /// Where the heading starts in the file.
+    offset: usize,
+}
+
+/// `node` as an `InnerHeading`, if it's a heading.
+// Rust note: `InnerHeading<'a>` holds a `Node<'a>`, a reference into the
+// comrak arena, so the struct carries the arena's lifetime `'a`, and this
+// function says its result lives as long as the node passed in.
+fn inner_heading<'a>(node: Node<'a>, pandoc: bool, index: &LineIndex) -> Option<InnerHeading<'a>> {
+    let level = match &node.data().value {
+        NodeValue::Heading(heading) => heading.level,
+        _ => return None,
+    };
+    let attrs = if pandoc {
+        pandoc::take_heading_attributes(node);
+        pandoc::attributes_of(node).unwrap_or_default()
+    } else {
+        Attributes::default()
+    };
+    Some(InnerHeading {
+        node,
+        level,
+        text: plain_text(node),
+        attrs,
+        offset: block_range(node, index).start,
     })
 }
 
@@ -1030,6 +1120,69 @@ mod tests {
         assert!(html.contains("<strong>text</strong>"));
         assert!(html.trim_end().ends_with("</details>"));
         assert_eq!(doc.blocks[1].kind, BlockKind::Paragraph);
+    }
+
+    #[test]
+    fn headings_in_an_html_container_get_toc_entries() {
+        let text =
+            "# Top\n\n<details>\n<summary>More</summary>\n\n## Inside\n\nText.\n\n</details>\n";
+        let doc = parse(text);
+        let toc: Vec<(&str, &str, u32, usize)> = doc
+            .toc
+            .iter()
+            .map(|t| (t.text.as_str(), t.slug.as_str(), t.block_id, t.offset))
+            .collect();
+        let inside = text.find("## Inside").unwrap();
+        assert_eq!(toc, [("Top", "top", 0, 0), ("Inside", "inside", 1, inside)]);
+        assert!(
+            doc.blocks[1]
+                .html
+                .contains("<h2 data-number=\"1\" id=\"user-content-inside\">Inside</h2>")
+        );
+        // The container starts a section of its own.
+        let s: Vec<(Option<u32>, u8)> = doc
+            .sections
+            .iter()
+            .map(|s| (s.heading_block, s.level))
+            .collect();
+        assert_eq!(s, [(Some(0), 1), (Some(1), 2)]);
+    }
+
+    #[test]
+    fn headings_in_fenced_divs_get_ids_numbers_and_attributes() {
+        let text = "---\nscrald-flavor: pandoc\n---\n\
+            ::: chapter\n# One\n\nText.\n\n## Aside {#aside .unnumbered}\n\n## Part\n:::\n\n\
+            ::: chapter\n# Two\n:::\n";
+        let doc = parse(text);
+        let toc: Vec<(&str, &str, u32, Option<&str>)> = doc
+            .toc
+            .iter()
+            .map(|t| {
+                (
+                    t.text.as_str(),
+                    t.slug.as_str(),
+                    t.block_id,
+                    t.number.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            toc,
+            [
+                ("One", "one", 0, Some("1")),
+                ("Aside", "aside", 0, None),
+                ("Part", "part", 0, Some("1.1")),
+                ("Two", "two", 1, Some("2")),
+            ]
+        );
+        assert_eq!(doc.toc[0].offset, text.find("# One").unwrap());
+        let html = &doc.blocks[0].html;
+        assert!(html.contains("<h1 data-number=\"1\" id=\"user-content-one\">One</h1>"));
+        assert!(html.contains("<h2 id=\"user-content-aside\" class=\"unnumbered\">Aside</h2>"));
+        assert!(html.contains("<h2 data-number=\"1.1\" id=\"user-content-part\">Part</h2>"));
+        // Each chapter is its own section.
+        let s: Vec<Option<u32>> = doc.sections.iter().map(|s| s.heading_block).collect();
+        assert_eq!(s, [Some(0), Some(1)]);
     }
 
     #[test]

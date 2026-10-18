@@ -3,7 +3,7 @@ source: crates/scrald-core/tests/snapshots.rs
 expression: describe(&doc)
 input_file: crates/scrald-core/tests/fixtures/pandoc.md
 ---
-bom: false  line_ending: Lf  words: 67  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true, has_abc: false }
+bom: false  line_ending: Lf  words: 69  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: true, has_abc: false }
 flavor: Pandoc (Detected)
 front_matter: {
   "range": {
@@ -53,9 +53,11 @@ front_matter: {
 toc: Chemistry #chemistry (block 0)
 toc:   Attributes #attrs (block 4)
 toc:   Divs #divs (block 11)
+toc:     Sidebar heading #sidebar-heading (block 13)
 section 0: heading=Some(0) level=1 blocks=0..4
 section 1: heading=Some(4) level=2 blocks=4..11
-section 2: heading=Some(11) level=2 blocks=11..18
+section 2: heading=Some(11) level=2 blocks=11..13
+section 3: heading=Some(13) level=3 blocks=13..18
 footnote 1 __inline_1 (block None): <p>Einstein, 1905.</p>
 footnote 2 long (block Some(17)): <p>A long footnote with a <a href="https://example.com" rel="noopener noreferrer">link</a>.</p>
 
@@ -112,15 +114,16 @@ pic.png">x</span> in text.</p>
 <p>A warning div.</p>
 </div>
 
---- block 13 Other @600..661 section=2
+--- block 13 Other @600..682 section=3
 <div id="user-content-outer" class="sk-div sidebar">
 <p>Outer.</p>
+<h3 data-number="1.1" id="user-content-sidebar-heading">Sidebar heading</h3>
 <div class="sk-div inner">
 <p>Inner.</p>
 </div>
 </div>
 
---- block 14 Table @663..767 section=2
+--- block 14 Table @684..788 section=3
 <div class="sk-table center"><table id="user-content-isotopes"><caption>Hydrogen <em>isotopes</em></caption>
 <thead>
 <tr>
@@ -136,7 +139,7 @@ pic.png">x</span> in text.</p>
 </tbody>
 </table></div>
 
---- block 15 Table @769..803 section=2
+--- block 15 Table @790..824 section=3
 <div class="sk-table"><table><caption>Short caption</caption>
 <thead>
 <tr>
@@ -150,10 +153,10 @@ pic.png">x</span> in text.</p>
 </tbody>
 </table></div>
 
---- block 16 Paragraph @805..825 section=2
+--- block 16 Paragraph @826..846 section=3
 <p>Closing note.<sup class="footnote-ref"><a href="#fn-long" id="user-content-fnref-long" data-footnote-ref="" rel="noopener noreferrer">2</a></sup></p>
 
---- block 17 FootnoteDefinition @827..887 section=2
+--- block 17 FootnoteDefinition @848..908 section=3
 
 <ol>
 <li id="user-content-fn-long">

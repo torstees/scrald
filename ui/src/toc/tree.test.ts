@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { TocEntry } from "../lib/types";
-import { entryForHeadingBlock, hasChildren, nearestVisible, visibleEntries } from "./tree";
+import { currentEntryAt, hasChildren, nearestVisible, visibleEntries } from "./tree";
 
 function e(level: number, blockId: number): TocEntry {
-  return { level, text: `h${blockId}`, slug: `h${blockId}`, blockId, number: null };
+  return { level, text: `h${blockId}`, slug: `h${blockId}`, blockId, offset: blockId * 10, number: null };
 }
 
 // 0: H1, 1: H2, 2: H3, 3: H2, 4: H1, 5: H2
@@ -28,10 +28,22 @@ describe("toc tree", () => {
     expect(visibleEntries(toc, 6, new Set([1]))).toEqual([0, 1, 3, 4, 5]);
   });
 
-  it("finds the entry for a section heading", () => {
-    expect(entryForHeadingBlock(toc, 12)).toBe(3);
-    expect(entryForHeadingBlock(toc, null)).toBeNull();
-    expect(entryForHeadingBlock(toc, 999)).toBeNull();
+  it("finds the entry for the reading position", () => {
+    const always = () => true;
+    expect(currentEntryAt(toc, 3, always)).toBe(0);
+    expect(currentEntryAt(toc, 12, always)).toBe(3);
+    expect(currentEntryAt(toc, 15, always)).toBe(3);
+    expect(currentEntryAt(toc, 999, always)).toBe(5);
+    // Text before the first heading has no entry.
+    expect(currentEntryAt([e(1, 4)], 2, always)).toBeNull();
+  });
+
+  it("counts headings inside the top block only once they're reached", () => {
+    // Block 7 is a fenced div holding three headings; the first two are reached.
+    const inner = [e(1, 0), e(2, 7), e(2, 7), e(2, 7), e(1, 9)];
+    expect(currentEntryAt(inner, 7, (i) => i <= 2)).toBe(2);
+    expect(currentEntryAt(inner, 7, () => false)).toBe(0);
+    expect(currentEntryAt(inner, 8, () => false)).toBe(3);
   });
 
   it("highlights the nearest visible ancestor when the current entry is hidden", () => {

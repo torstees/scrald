@@ -216,19 +216,56 @@ fn filter_attribute<'v>(
 pub fn add_heading_id(html: &str, level: u8, slug: &str) -> String {
     let open = format!("<h{level}>");
     match html.strip_prefix(&open) {
-        Some(rest) => format!("<h{level} id=\"{ID_PREFIX}{slug}\">{rest}"),
+        Some(rest) => format!("<h{level} id=\"{ID_PREFIX}{}\">{rest}", escape_text(slug)),
         None => html.to_string(),
     }
 }
 
-/// Adds `data-number="2.1"` to a heading that already has its id (see
-/// `add_heading_id`) and any classes. Themes that number headings show it with CSS.
-pub fn add_heading_number(html: &str, level: u8, number: &str) -> String {
-    let open = format!("<h{level} ");
-    match html.strip_prefix(&open) {
-        Some(rest) => format!("<h{level} data-number=\"{}\" {rest}", escape_text(number)),
+/// Adds `data-number="2.1"` to the heading with id `slug` (see
+/// `add_heading_id`), wherever it is in the block: a heading inside a fenced
+/// div or HTML container isn't at the start. Themes that number headings
+/// show it with CSS.
+pub fn add_heading_number(html: &str, level: u8, slug: &str, number: &str) -> String {
+    let id = format!(" id=\"{ID_PREFIX}{}\"", escape_text(slug));
+    let open = format!("<h{level}");
+    let tag = html.find(&id).and_then(|at| {
+        let start = html[..at].rfind(&open)?;
+        // The id must be in that heading's own opening tag.
+        (!html[start..at].contains('>')).then_some(start + open.len())
+    });
+    match tag {
+        Some(at) => format!(
+            "{} data-number=\"{}\"{}",
+            &html[..at],
+            escape_text(number),
+            &html[at..]
+        ),
         None => html.to_string(),
     }
+}
+
+/// Replaces a heading node with an HTML block holding the same heading,
+/// with `attrs` (an id and classes, from `pandoc::attribute_html`) in its
+/// opening tag. For headings inside a fenced div or HTML container: the
+/// group is sanitized as one piece, so the id goes in before sanitizing,
+/// which adds `ID_PREFIX` to it. Run it after every other pass on the heading.
+pub fn heading_as_html(node: Node<'_>, level: u8, attrs: &str, options: &comrak::Options) {
+    let mut html = String::new();
+    if comrak::format_html(node, options, &mut html).is_err() {
+        return;
+    }
+    let Some(rest) = html.strip_prefix(&format!("<h{level}>")) else {
+        return;
+    };
+    let literal = format!("<h{level}{attrs}>{rest}");
+    let children: Vec<Node<'_>> = node.children().collect();
+    for child in children {
+        child.detach();
+    }
+    node.data_mut().value = NodeValue::HtmlBlock(NodeHtmlBlock {
+        block_type: 0,
+        literal,
+    });
 }
 
 /// Escapes text for use inside HTML.
