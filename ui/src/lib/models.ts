@@ -13,6 +13,11 @@ export class ModelTracker {
    * this window shows. Null if it builds on a model this window doesn't
    * have (then ask for the whole model).
    */
+  /** The number of the model this window shows (0 before the first). */
+  get current(): number {
+    return this.model;
+  }
+
   receive(opened: OpenedDocument): OpenedDocument | null {
     if (opened.base !== null) {
       if (opened.base !== this.model) return null;

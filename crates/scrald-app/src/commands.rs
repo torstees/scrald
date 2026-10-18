@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::Context;
+use scrald_core::search::{SearchIndex, SearchOptions, SearchResults};
 use scrald_core::theme::{Appearance, TextSizing, ThemeSource, ThemeSummary, resolve_theme};
 use scrald_core::yaml_edit::Change;
 use scrald_core::{DocumentModel, DocumentPreview, Flavor, LinkTarget, ParseOptions};
@@ -269,6 +270,8 @@ fn send_model(
     mut opened: OpenedDocument,
     full: bool,
 ) -> OpenedDocument {
+    // Before `send_blocks` leaves the window's HTML out of the blocks.
+    sessions.set_search(window, SearchIndex::new(&opened.document));
     let sent = sessions.send_blocks(window, &mut opened.document.blocks, full);
     opened.model = sent.model;
     opened.base = sent.base;
@@ -384,6 +387,47 @@ pub fn set_document_text(
         set_title_text(&window, &title, dirty)?;
     }
     Ok(RawSync { version, dirty })
+}
+
+/// Matches of a search in the model numbered `model` (DESIGN.md §10).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchReply {
+    pub model: u64,
+    // Rust note: `flatten` writes the inner struct's fields at this level
+    // in the JSON, as if they were declared here.
+    #[serde(flatten)]
+    pub results: SearchResults,
+}
+
+/// Searches the text of the document the window shows. `None` while
+/// another search of this window is running, or with no document open:
+/// the frontend runs one search at a time, so it then asks again.
+#[tauri::command]
+pub async fn search_document(
+    window: tauri::WebviewWindow,
+    sessions: tauri::State<'_, Sessions>,
+    query: String,
+    match_case: bool,
+    whole_word: bool,
+) -> Result<Option<SearchReply>, CommandError> {
+    let Some((model, mut index)) = sessions.take_search(window.label()) else {
+        return Ok(None);
+    };
+    let options = SearchOptions {
+        match_case,
+        whole_word,
+    };
+    // The first search reads every block's text out of its HTML (about
+    // 70 ms for 500K words), so it runs off the main thread.
+    let (results, index) = tauri::async_runtime::spawn_blocking(move || {
+        let results = index.search(&query, options);
+        (results, index)
+    })
+    .await
+    .context("search task failed")?;
+    sessions.put_search(window.label(), model, index);
+    Ok(Some(SearchReply { model, results }))
 }
 
 /// Parses the window's document again from its text in memory (keeping

@@ -329,6 +329,23 @@ export interface RecentDocument {
   exists: boolean;
 }
 
+/** Mirrors `Hits` (crates/scrald-core/src/search.rs): matches in one block or footnote. */
+export interface SearchHits {
+  /** Block id, or index in `DocumentModel.footnotes`. */
+  index: number;
+  count: number;
+}
+
+/** Mirrors `SearchReply` (crates/scrald-app/src/commands.rs): matches in model `model`. */
+export interface SearchReply {
+  model: number;
+  total: number;
+  /** Blocks with matches, in order. */
+  blocks: SearchHits[];
+  /** Footnotes with matches, in order (shown as endnotes after the last block). */
+  footnotes: SearchHits[];
+}
+
 /** Mirrors `OpenedDocument` (crates/scrald-app/src/commands.rs). */
 export interface OpenedDocument {
   /** Image `id` is served at the asset URL for `${assetToken}-${id}`. */

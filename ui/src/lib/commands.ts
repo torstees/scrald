@@ -16,6 +16,7 @@ import type {
   RecentDocument,
   ResolvedTheme,
   RecoveredChanges,
+  SearchReply,
   TerminalThemeFile,
   ThemeChange,
   ThemeDetails,
@@ -56,6 +57,16 @@ export async function openDocument(path: string): Promise<OpenedDocument> {
 /** Parses the window's document again from memory, keeping unsaved edits. */
 export async function reparseDocument(): Promise<OpenedDocument> {
   return complete(await invoke<OpenedDocument>("reparse_document", { full: false }));
+}
+
+/**
+ * Searches the document the window shows (DESIGN.md §10). Null while
+ * another search of this window is running, or if the matches are for a
+ * model other than the one shown (a newer one arrived): ask again.
+ */
+export async function searchDocument(query: string, matchCase: boolean, wholeWord: boolean): Promise<SearchReply | null> {
+  const reply = await invoke<SearchReply | null>("search_document", { query, matchCase, wholeWord });
+  return reply && reply.model === models.current ? reply : null;
 }
 
 /** Changes one front matter key in memory; the file changes on save. */

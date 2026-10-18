@@ -561,3 +561,15 @@ body {
   border-radius: 6px;
   box-shadow: 0 6px 24px color-mix(in srgb, var(--sk-color-foreground) 18%, transparent);
 }
+
+/* In-document search matches (DESIGN.md §10), painted with the CSS Custom
+   Highlight API. The underline tells them apart from ==highlights==. */
+::highlight(sk-search) {
+  background-color: var(--sk-color-highlight-bg);
+  text-decoration: underline 2px var(--sk-color-accent);
+}
+
+::highlight(sk-search-current) {
+  background-color: var(--sk-color-accent);
+  color: var(--sk-color-background);
+}

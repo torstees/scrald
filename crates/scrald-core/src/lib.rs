@@ -20,6 +20,7 @@ pub mod pandoc;
 pub mod recovery;
 pub mod render;
 pub mod save;
+pub mod search;
 pub mod source;
 pub mod theme;
 pub mod toc;
