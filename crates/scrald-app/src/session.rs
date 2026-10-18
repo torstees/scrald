@@ -16,6 +16,7 @@ use anyhow::Context;
 use scrald_core::delta::{self, ShownBlocks};
 use scrald_core::edit::TextDiff;
 use scrald_core::recovery::{self, RecoveryEntry, RecoveryHeader};
+use scrald_core::search::SearchIndex;
 use scrald_core::{Block, RenderCache};
 use serde::Serialize;
 
@@ -55,6 +56,9 @@ struct Session {
     /// next model can leave out the HTML the window already has.
     shown_blocks: ShownBlocks,
     shown_model: u64,
+    /// The text of the model last sent, for searching it (DESIGN.md §10).
+    /// `None` while a search has it.
+    search: Option<SearchIndex>,
 }
 
 /// A model about to be sent to a window (see `Sessions::send_blocks`).
@@ -240,6 +244,7 @@ impl Sessions {
                 render_cache: RenderCache::default(),
                 shown_blocks: ShownBlocks::new(),
                 shown_model: 0,
+                search: None,
             },
         );
         if let Some(previous) = previous {
@@ -417,6 +422,35 @@ impl Sessions {
             model,
             base,
             html_from,
+        }
+    }
+
+    /// Keeps `index` for searching the model about to be sent (call before
+    /// `send_blocks`, which leaves HTML out of the blocks).
+    pub fn set_search(&self, window: &str, index: SearchIndex) {
+        if let Some(session) = self.lock().get_mut(window) {
+            session.search = Some(index);
+        }
+    }
+
+    /// Takes the search index of the model the window shows, with that
+    /// model's number, so a search can run without holding the lock;
+    /// `put_search` gives it back. `None` while another search has it.
+    pub fn take_search(&self, window: &str) -> Option<(u64, SearchIndex)> {
+        let mut sessions = self.lock();
+        let session = sessions.get_mut(window)?;
+        let index = session.search.take()?;
+        Some((session.shown_model, index))
+    }
+
+    /// Gives back an index from `take_search`, unless a newer model has
+    /// been sent meanwhile (it has its own index).
+    pub fn put_search(&self, window: &str, model: u64, index: SearchIndex) {
+        if let Some(session) = self.lock().get_mut(window)
+            && session.shown_model == model
+            && session.search.is_none()
+        {
+            session.search = Some(index);
         }
     }
 
@@ -747,6 +781,45 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"\xEF\xBB\xBFHELLO\r\n");
         // Our own save doesn't count as an external change.
         assert_eq!(sessions.disk_state("main"), DiskState::Unchanged);
+    }
+
+    #[test]
+    fn a_search_index_is_given_back_only_to_its_own_model() {
+        use scrald_core::search::SearchOptions;
+        let path = temp_file(
+            "search.md",
+            b"Saga text.
+",
+        );
+        let sessions = Sessions::default();
+        sessions.open("main", &path).unwrap();
+        let send = |text: &str| {
+            let mut doc = scrald_core::parse_document(path.clone(), text.as_bytes()).unwrap();
+            sessions.set_search("main", SearchIndex::new(&doc));
+            sessions.send_blocks("main", &mut doc.blocks, false).model
+        };
+        let first = send(
+            "Saga text.
+",
+        );
+
+        let (model, mut index) = sessions.take_search("main").unwrap();
+        assert_eq!(model, first);
+        assert_eq!(index.search("saga", SearchOptions::default()).total, 1);
+        // Only one search at a time.
+        assert!(sessions.take_search("main").is_none());
+        sessions.put_search("main", model, index);
+
+        // A newer model arrives while a search of the old one runs: the old
+        // index isn't put back over the new one.
+        let (old, index) = sessions.take_search("main").unwrap();
+        send(
+            "Saga, saga.
+",
+        );
+        sessions.put_search("main", old, index);
+        let (_, mut index) = sessions.take_search("main").unwrap();
+        assert_eq!(index.search("saga", SearchOptions::default()).total, 2);
     }
 
     #[test]

@@ -115,6 +115,7 @@ fn main() -> anyhow::Result<()> {
             commands::launch_info,
             commands::open_document,
             commands::reparse_document,
+            commands::search_document,
             commands::edit_front_matter,
             commands::save_document,
             commands::block_source,

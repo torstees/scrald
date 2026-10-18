@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import {
     launchInfo,
     onDocumentChanged,
@@ -93,6 +93,8 @@
   import StatusBar from "./status/StatusBar.svelte";
   import { TypographyController } from "./typography/controller.svelte";
   import TypographyPanel from "./typography/TypographyPanel.svelte";
+  import SearchBar from "./search/SearchBar.svelte";
+  import { SearchController } from "./search/controller.svelte";
 
   let doc = $state<DocumentModel | null>(null);
   let assetToken = $state(0);
@@ -102,6 +104,8 @@
   let tocVisible = $state(true);
   let currentSection = $state(0);
   let reader: Reader | undefined = $state();
+  const search = new SearchController(() => reader);
+  let searchBar: SearchBar | undefined = $state();
   let canGoBack = $state(false);
   let canGoForward = $state(false);
 
@@ -259,6 +263,8 @@
    */
   async function enterRawMode(atOffset?: number): Promise<void> {
     if (!doc || rawMode) return;
+    // Raw mode has its own search (CodeMirror's, on the same keys).
+    search.close();
     await pendingEdits;
     const offset = atOffset ?? (reader?.captureAnchor() ?? TOP_ANCHOR).offset;
     try {
@@ -1192,8 +1198,41 @@
     noticeTimer = window.setTimeout(() => (notice = null), 6000);
   }
 
+  /** `Ctrl+F`: opens the find bar, with the selected text if it's short and on one line. */
+  function openSearch(): void {
+    const selected = window.getSelection()?.toString().trim() ?? "";
+    const text = selected !== "" && selected.length <= 200 && !selected.includes("\n") ? selected : null;
+    search.show(text);
+    void tick().then(() => searchBar?.focus());
+  }
+
+  // Search again when the reader shows a new model: after an edit (same
+  // path), keeping the current match; for another document, from the top.
+  let searchedPath: string | null = null;
+  $effect(() => {
+    const current = doc;
+    untrack(() => {
+      if (!current) {
+        search.close();
+      } else {
+        search.documentChanged(searchedPath !== null && searchedPath !== current.path);
+      }
+      searchedPath = current?.path ?? null;
+    });
+  });
+
   function onKeydown(event: KeyboardEvent): void {
     if (switcherOpen || unsavedPrompt) return;
+    if (event.ctrlKey && !event.shiftKey && doc && !rawMode && (event.key === "f" || event.key === "F")) {
+      event.preventDefault();
+      openSearch();
+      return;
+    }
+    if (event.key === "F3" && search.open) {
+      event.preventDefault();
+      search.step(event.shiftKey ? -1 : 1);
+      return;
+    }
     if (event.ctrlKey && !event.shiftKey && (event.key === "o" || event.key === "O")) {
       event.preventDefault();
       void pickAndOpen();
@@ -1290,6 +1329,20 @@
       <TocSidebar toc={doc.toc} current={currentEntry} onselect={selectTocEntry} {numbering} />
     {/if}
     <main class="sk-main" class:sk-beside-editor={themeEditing !== null} bind:this={mainElement}>
+      {#if search.open && !rawMode}
+        <SearchBar
+          bind:this={searchBar}
+          query={search.query}
+          matchCase={search.matchCase}
+          wholeWord={search.wholeWord}
+          label={search.label}
+          hasMatches={(search.results?.total ?? 0) > 0}
+          onchange={(query, matchCase, wholeWord) => search.change(query, matchCase, wholeWord)}
+          onnext={() => search.step(1)}
+          onprevious={() => search.step(-1)}
+          onclose={() => search.close()}
+        />
+      {/if}
       {#if conflict}
         <ConflictBanner
           state={conflict}
@@ -1474,6 +1527,8 @@
   }
 
   .sk-main {
+    /* The find bar floats over the top right of the reader. */
+    position: relative;
     min-width: 0;
     min-height: 0;
     /* The conflict banner, when shown, sits above the reader or editor. */

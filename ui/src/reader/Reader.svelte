@@ -4,7 +4,7 @@
   // browser skips layout and paint for off-screen sections. Sections are
   // mounted outward from the initial position, the rest in idle time.
   import { onDestroy, tick, untrack } from "svelte";
-  import type { Block, DocumentModel } from "../lib/types";
+  import type { Block, DocumentModel, SearchReply } from "../lib/types";
   import BlockEditor from "../editor/BlockEditor.svelte";
   import type { BlockEditing } from "../editor/blocks";
   import { assetUrl } from "../lib/commands";
@@ -15,6 +15,9 @@
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
   import { batchByBlocks, blockKeys, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
   import { blockIndexAtOffset, firstBoxBelow, fractionInto, TOP_ANCHOR, type ScrollAnchor } from "./anchor";
+  import { clearMatches, matchRanges, paintMatches, revealNode } from "../search/highlight";
+  import type { SearchOptions } from "../search/matcher";
+  import { blocksInRange, locateMatch, type MatchLocation } from "../search/results";
 
   interface Props {
     doc: DocumentModel;
@@ -89,7 +92,10 @@
   let scrollFrame = 0;
 
   const keys = $derived(blockKeys(doc));
-  onDestroy(() => cancelIdle?.());
+  onDestroy(() => {
+    cancelIdle?.();
+    clearMatches();
+  });
   let shownPath: string | null = null;
 
   // (Re)start mounting whenever the document changes, or for an edit of the
@@ -339,10 +345,115 @@
   // restoring this one keeps the reader's place (DESIGN.md §7.4).
   let lastAnchor: ScrollAnchor | null = null;
 
-  /** Refreshes the current section and the recorded reading position. */
+  /** Refreshes the current section, the recorded reading position, and search highlights. */
   function noteScrolled(): void {
     updateCurrentSection();
     lastAnchor = captureAnchor();
+    paintSearch();
+  }
+
+  /** The id of the block at the top of the viewport. */
+  export function topBlockId(): number {
+    const anchor = captureAnchor();
+    return doc.blocks[blockIndexAtOffset(doc.blocks, anchor.offset)]?.id ?? 0;
+  }
+
+  // In-document search (DESIGN.md §10). Matches are highlighted in the
+  // blocks within a screen of the viewport, found again as the reader
+  // scrolls; each block's ranges are kept until the next search.
+  let search: { needle: string; options: SearchOptions; results: SearchReply; current: number } | null = null;
+  let searchRanges = new Map<string, Range[]>();
+
+  /** Shows the matches of a search (`needle` as normalized for it), or none. */
+  export function showSearch(next: { needle: string; options: SearchOptions; results: SearchReply } | null): void {
+    search = next && { ...next, current: -1 };
+    searchRanges = new Map();
+    paintSearch();
+  }
+
+  /** The element holding a block's or footnote's text, if it's mounted. */
+  function matchElement(where: Pick<MatchLocation, "kind" | "index">): Element | null {
+    if (where.kind === "footnote") return endnotes?.querySelectorAll(":scope > ol > li")[where.index] ?? null;
+    return scroller?.querySelector(`.sk-section > .sk-block[data-block="${where.index}"]`) ?? null;
+  }
+
+  function rangesIn(where: Pick<MatchLocation, "kind" | "index">): Range[] {
+    if (!search) return [];
+    const key = `${where.kind}-${where.index}`;
+    const known = searchRanges.get(key);
+    if (known) return known;
+    const el = matchElement(where);
+    // Not mounted yet: look again on the next paint.
+    if (!el) return [];
+    const ranges = matchRanges(el, search.needle, search.options);
+    searchRanges.set(key, ranges);
+    return ranges;
+  }
+
+  function currentRange(): Range | null {
+    const where = search && locateMatch(search.results, search.current);
+    if (!where) return null;
+    const ranges = rangesIn(where);
+    // If the page shows fewer matches than core counted, use the last.
+    return ranges[Math.min(where.nth, ranges.length - 1)] ?? null;
+  }
+
+  function paintSearch(): void {
+    if (!search || !scroller) {
+      clearMatches();
+      return;
+    }
+    const view = scroller.getBoundingClientRect();
+    const first = blockAt(view.top - view.height)?.blockId ?? 0;
+    const last = blockAt(view.bottom + view.height)?.blockId ?? doc.blocks.length - 1;
+    const ranges: Range[] = [];
+    for (const hit of blocksInRange(search.results, first, last)) {
+      ranges.push(...rangesIn({ kind: "block", index: hit.index }));
+    }
+    const notes = endnotes?.getBoundingClientRect();
+    if (notes && notes.bottom > view.top - view.height && notes.top < view.bottom + view.height) {
+      for (const hit of search.results.footnotes) ranges.push(...rangesIn({ kind: "footnote", index: hit.index }));
+    }
+    paintMatches(ranges, currentRange());
+  }
+
+  /** Makes match number `i` the current one and, unless `scroll` is false, scrolls it into view. */
+  export async function revealMatch(i: number, scroll = true): Promise<void> {
+    if (!search || !scroller) return;
+    search.current = i;
+    const where = locateMatch(search.results, i);
+    if (!where || !scroll) {
+      paintSearch();
+      return;
+    }
+    if (where.kind === "block") {
+      const block = doc.blocks[where.index];
+      if (block && !mounted[block.section]) {
+        mounted[block.section] = true;
+        await tick();
+      }
+    }
+    let range = currentRange();
+    if (range) revealNode(range.startContainer);
+    const inView = (r: Range) => {
+      const rect = r.getBoundingClientRect();
+      const view = scroller!.getBoundingClientRect();
+      return rect.height > 0 && rect.top >= view.top + 8 && rect.bottom <= view.bottom - 8;
+    };
+    if (!range || !inView(range)) {
+      // Bring the block near first: an off-screen section isn't laid out
+      // (content-visibility), so the match's own position isn't known yet.
+      if (where.kind === "block") await scrollToBlock(where.index);
+      else matchElement(where)?.scrollIntoView({ block: "center" });
+      await afterPaint();
+      range = currentRange();
+      if (range && !inView(range)) {
+        const rect = range.getBoundingClientRect();
+        const view = scroller.getBoundingClientRect();
+        scroller.scrollTop += rect.top - (view.top + view.height / 3);
+      }
+    }
+    noteScrolled();
   }
 
   /** The reading position as of the last scroll or jump (not re-measured now). */
