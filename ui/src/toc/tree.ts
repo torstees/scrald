@@ -27,11 +27,21 @@ export function visibleEntries(toc: TocEntry[], maxLevel: number, collapsed: Rea
   return visible;
 }
 
-/** Index of the TOC entry for the heading that starts `blockId`'s section. */
-export function entryForHeadingBlock(toc: TocEntry[], headingBlock: number | null): number | null {
-  if (headingBlock === null) return null;
-  const index = toc.findIndex((e) => e.blockId === headingBlock);
-  return index >= 0 ? index : null;
+/**
+ * Index of the entry for the heading at or above the reading position, when
+ * block `blockId` is at the top: the last heading in an earlier block, or
+ * in that block itself if `passed(index)` says it has reached the top (a
+ * heading inside a fenced div or HTML container may still be further down).
+ */
+export function currentEntryAt(toc: TocEntry[], blockId: number, passed: (index: number) => boolean): number | null {
+  let current: number | null = null;
+  for (const [index, entry] of toc.entries()) {
+    if (entry.blockId > blockId) break;
+    // Headings in one block are in order, so the first not reached ends it.
+    if (entry.blockId === blockId && !passed(index)) break;
+    current = index;
+  }
+  return current;
 }
 
 /**

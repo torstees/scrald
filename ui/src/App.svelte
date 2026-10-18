@@ -89,7 +89,6 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { AUTOSAVE_DELAY_MS, Autosaver } from "./editor/autosave";
   import TocSidebar from "./toc/TocSidebar.svelte";
-  import { entryForHeadingBlock } from "./toc/tree";
   import StatusBar from "./status/StatusBar.svelte";
   import { TypographyController } from "./typography/controller.svelte";
   import TypographyPanel from "./typography/TypographyPanel.svelte";
@@ -105,7 +104,8 @@
   let message = $state<string | null>(null);
   let notice = $state<string | null>(null);
   let tocVisible = $state(true);
-  let currentSection = $state(0);
+  // The TOC entry for the reading position, reported by the reader.
+  let currentEntry = $state<number | null>(null);
   let reader: Reader | undefined = $state();
   const search = new SearchController(() => reader);
   let searchBar: SearchBar | undefined = $state();
@@ -156,11 +156,6 @@
   let openStarted = 0;
   let noticeTimer = 0;
 
-  const currentEntry = $derived.by(() => {
-    if (!doc) return null;
-    const section = doc.sections[currentSection];
-    return entryForHeadingBlock(doc.toc, section?.headingBlock ?? null);
-  });
   const sectionTitle = $derived(currentEntry === null ? null : (doc?.toc[currentEntry]?.text ?? null));
 
   // Whether the properties panel is open: a global preference (DESIGN.md §8.2).
@@ -1331,12 +1326,11 @@
     const entry = doc?.toc[index];
     if (!entry || !doc) return;
     if (rawMode) {
-      const block = doc.blocks[entry.blockId];
       const bom = doc.hasBom ? 3 : 0;
-      if (block) void rawEditor?.scrollToByte(block.source.start - bom);
+      void rawEditor?.scrollToByte(entry.offset - bom);
       return;
     }
-    void reader?.scrollToBlock(entry.blockId);
+    void reader?.scrollToHeading(entry);
   }
 </script>
 
@@ -1403,7 +1397,7 @@
           {doc}
           {assetToken}
           {initialAnchor}
-          onsectionchange={(s) => (currentSection = s)}
+          onentrychange={(e) => (currentEntry = e)}
           onfirstscreen={onFirstScreen}
           onfullymounted={() => reportTiming("full_mount", performance.now() - openStarted)}
           onlink={onLink}

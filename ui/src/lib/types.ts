@@ -62,7 +62,10 @@ export interface TocEntry {
   level: number;
   text: string;
   slug: string;
+  /** The block holding the heading: the heading itself, or a fenced div or HTML container around it. */
   blockId: number;
+  /** Byte offset of the heading in the file. */
+  offset: number;
   /** Outline number like "2.1"; null for the document title. */
   number: string | null;
 }

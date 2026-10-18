@@ -39,6 +39,8 @@ A warning div.
 :::: {#outer .sidebar} ::::
 Outer.
 
+### Sidebar heading
+
 ::: inner
 Inner.
 :::

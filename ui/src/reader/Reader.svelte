@@ -4,7 +4,8 @@
   // browser skips layout and paint for off-screen sections. Sections are
   // mounted outward from the initial position, the rest in idle time.
   import { onDestroy, tick, untrack } from "svelte";
-  import type { Block, DocumentModel, SearchReply } from "../lib/types";
+  import type { Block, DocumentModel, SearchReply, TocEntry } from "../lib/types";
+  import { currentEntryAt } from "../toc/tree";
   import BlockEditor from "../editor/BlockEditor.svelte";
   import type { BlockEditing } from "../editor/blocks";
   import { assetUrl } from "../lib/commands";
@@ -25,8 +26,8 @@
     /** Token for this document's images in the asset protocol. */
     assetToken: number;
     initialAnchor?: ScrollAnchor;
-    /** Called when the section at the top of the viewport changes. */
-    onsectionchange?: (sectionId: number) => void;
+    /** Called when the TOC entry for the reading position changes (an index into `doc.toc`). */
+    onentrychange?: (entry: number | null) => void;
     /** Called once the first screen has been painted. */
     onfirstscreen?: () => void;
     /** Called once every section is mounted. */
@@ -62,7 +63,7 @@
     doc,
     assetToken,
     initialAnchor = TOP_ANCHOR,
-    onsectionchange,
+    onentrychange,
     onfirstscreen,
     onfullymounted,
     onlink,
@@ -92,7 +93,8 @@
   let cancelIdle: CancelIdle | null = null;
   // Bumped for every new document, so work for an old one stops.
   let generation = 0;
-  let currentSection = -1;
+  // The TOC entry last reported to `onentrychange`; undefined before the first.
+  let currentEntry: number | null | undefined = undefined;
   let scrollFrame = 0;
 
   const keys = $derived(blockKeys(doc));
@@ -162,7 +164,7 @@
   async function startMount(d: DocumentModel, anchor: ScrollAnchor): Promise<void> {
     const gen = ++generation;
     cancelIdle?.();
-    currentSection = -1;
+    currentEntry = undefined;
 
     const startBlock = d.blocks[blockIndexAtOffset(d.blocks, anchor.offset)];
     const startSection = startBlock?.section ?? 0;
@@ -331,18 +333,61 @@
     return block ? scrollToAnchor({ offset: block.source.start, fraction: 0 }) : Promise.resolve();
   }
 
-  function updateCurrentSection(): void {
+  /**
+   * Scrolls a TOC entry's heading to the top of the viewport. A heading
+   * inside a fenced div or HTML container isn't at the top of its block, so
+   * once the block is in place the heading itself is scrolled to, opening
+   * a folded `<details>` around it.
+   */
+  export async function scrollToHeading(entry: TocEntry): Promise<void> {
+    const block = doc.blocks[entry.blockId];
+    if (!block) return;
+    await scrollToBlock(entry.blockId);
+    if (entry.offset === block.source.start) return;
+    const heading = headingElement(entry);
+    if (!heading) return;
+    revealNode(heading);
+    heading.scrollIntoView({ block: "start" });
+    noteScrolled();
+  }
+
+  function headingElement(entry: TocEntry): HTMLElement | null {
+    return scroller?.querySelector<HTMLElement>(`[id="${CSS.escape(contentId(entry.slug))}"]`) ?? null;
+  }
+
+  function updateCurrentEntry(): void {
     if (!scroller) return;
-    // The section of the block at the top: the same rule as the reading
-    // position, so the TOC highlight and the saved position always agree.
-    const found = blockAt(scroller.getBoundingClientRect().top);
+    // The heading at or above the block at the top: the same rule as the
+    // reading position, so the TOC highlight and the saved position agree.
+    const viewTop = scroller.getBoundingClientRect().top;
+    const found = blockAt(viewTop);
     if (!found) return;
-    const s = found.sectionIndex;
-    if (s !== currentSection && doc.sections[s]) {
-      currentSection = s;
-      onsectionchange?.(s);
+    const block = doc.blocks[found.blockId];
+    const entry = currentEntryAt(doc.toc, found.blockId, (i) => {
+      const e = doc.toc[i];
+      if (!e || !block) return false;
+      if (e.offset === block.source.start) return true;
+      // Inside the block: passed once the heading reaches the top.
+      const top = headingElement(e)?.getBoundingClientRect().top;
+      return top !== undefined && top <= viewTop + HEADING_SLACK_PX;
+    });
+    if (entry !== currentEntry) {
+      currentEntry = entry;
+      onentrychange?.(entry);
     }
   }
+
+  /** Scrolling to a heading can stop a pixel short of it; it still counts as reached. */
+  const HEADING_SLACK_PX = 4;
+
+  // After an edit the entries may be renumbered, so work the current one out again.
+  $effect(() => {
+    void doc;
+    untrack(() => {
+      currentEntry = undefined;
+      void tick().then(updateCurrentEntry);
+    });
+  });
 
   // The last settled reading position. Resizing rewraps text before any
   // resize handler runs, so a position captured then has already moved;
@@ -351,7 +396,7 @@
 
   /** Refreshes the current section, the recorded reading position, and search highlights. */
   function noteScrolled(): void {
-    updateCurrentSection();
+    updateCurrentEntry();
     lastAnchor = captureAnchor();
     paintSearch();
     if (scroller && onposition) {

@@ -14,8 +14,11 @@ pub struct TocEntry {
     pub text: String,
     /// The heading's HTML `id`, unique within the document.
     pub slug: String,
-    /// The `Block::id` of the heading.
+    /// The `Block::id` of the block holding the heading: the heading itself,
+    /// or a fenced div or HTML container with the heading inside.
     pub block_id: u32,
+    /// Byte offset of the heading in the file (where raw mode jumps to).
+    pub offset: usize,
     /// Outline number like "2.1", for themes that number headings. `None`
     /// for a document title (a lone top-level heading at the start).
     pub number: Option<String>,
