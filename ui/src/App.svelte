@@ -95,6 +95,8 @@
   import TypographyPanel from "./typography/TypographyPanel.svelte";
   import SearchBar from "./search/SearchBar.svelte";
   import { SearchController } from "./search/controller.svelte";
+  import ShortcutsDialog from "./shortcuts/ShortcutsDialog.svelte";
+  import { opensShortcuts } from "./shortcuts/shortcuts";
 
   let doc = $state<DocumentModel | null>(null);
   let assetToken = $state(0);
@@ -106,6 +108,7 @@
   let reader: Reader | undefined = $state();
   const search = new SearchController(() => reader);
   let searchBar: SearchBar | undefined = $state();
+  let shortcutsOpen = $state(false);
   let canGoBack = $state(false);
   let canGoForward = $state(false);
 
@@ -1223,6 +1226,16 @@
 
   function onKeydown(event: KeyboardEvent): void {
     if (switcherOpen || unsavedPrompt) return;
+    if (opensShortcuts(event, (event.target as HTMLElement | null)?.closest(".cm-editor") != null)) {
+      event.preventDefault();
+      shortcutsOpen = !shortcutsOpen;
+      return;
+    }
+    // The reference is modal: other shortcuts wait until it closes.
+    if (shortcutsOpen) {
+      if (event.key === "Escape") shortcutsOpen = false;
+      return;
+    }
     if (event.ctrlKey && !event.shiftKey && doc && !rawMode && (event.key === "f" || event.key === "F")) {
       event.preventDefault();
       openSearch();
@@ -1422,6 +1435,7 @@
       ontypographyclick={() => (typographyOpen = !typographyOpen)}
       {autosave}
       onautosave={toggleAutosave}
+      onshortcuts={() => (shortcutsOpen = true)}
     />
     {#if typographyOpen}
       <TypographyPanel
@@ -1487,6 +1501,7 @@
         onopen={openRecent}
         onpin={pinRecent}
         onforget={forgetRecent}
+        onshortcuts={() => (shortcutsOpen = true)}
       >
         {#if recoveredList.length > 0}
           <RecoveredList
@@ -1499,6 +1514,9 @@
         {/if}
       </StartScreen>
     </main>
+  {/if}
+  {#if shortcutsOpen}
+    <ShortcutsDialog onclose={() => (shortcutsOpen = false)} />
   {/if}
   {#if dropping}
     <div class="sk-drop" aria-hidden="true"><span>Drop to open</span></div>

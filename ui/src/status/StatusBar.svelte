@@ -33,6 +33,8 @@
     /** Whether autosave is on; clicking toggles it (for every window). */
     autosave: boolean;
     onautosave: () => void;
+    /** Opens the keyboard shortcut reference. */
+    onshortcuts: () => void;
   }
 
   let {
@@ -57,6 +59,7 @@
     onflavor,
     autosave,
     onautosave,
+    onshortcuts,
   }: Props = $props();
 
   let flavorMenuOpen = $state(false);
@@ -118,6 +121,7 @@
   {/if}
   <span>{formatWordCount(wordCount)}</span>
   <span title="Estimated reading time">{formatReadingTime(wordCount)}</span>
+  <button class="theme help" onclick={onshortcuts} title="Keyboard shortcuts (F1)" aria-label="Keyboard shortcuts">?</button>
 </footer>
 
 <style>
