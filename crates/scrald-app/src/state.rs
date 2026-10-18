@@ -74,6 +74,10 @@ const PROPERTIES_OPEN: &str = "properties.open";
 /// (DESIGN.md §9.3).
 const AUTOSAVE: &str = "editing.autosave";
 
+/// Settings key: the deepest heading level the contents sidebar lists, 1–6
+/// (DESIGN.md §10).
+const CONTENTS_DEPTH: &str = "contents.depth";
+
 /// Zoom is a multiplier on the base font size; outside this range the
 /// reader stops being useful.
 pub const MIN_ZOOM: f64 = 0.5;
@@ -312,6 +316,32 @@ impl StateStore {
         self.set_setting(AUTOSAVE, &enabled)
     }
 
+    /// The deepest heading level the contents list shows; 6 (all) unless set.
+    pub fn contents_depth(&self) -> anyhow::Result<u8> {
+        Ok(self
+            .get_setting::<u8>(CONTENTS_DEPTH)?
+            .unwrap_or(6)
+            .clamp(1, 6))
+    }
+
+    pub fn set_contents_depth(&self, depth: u8) -> anyhow::Result<()> {
+        self.set_setting(CONTENTS_DEPTH, &depth.clamp(1, 6))
+    }
+
+    /// The global default theme's id, if the user chose one.
+    pub fn default_theme(&self) -> anyhow::Result<Option<String>> {
+        self.get_setting(DEFAULT_THEME)
+    }
+
+    /// Sets the global default theme, or with `None` forgets it, so the
+    /// built-in light or dark theme follows the system again.
+    pub fn set_default_theme(&self, id: Option<&str>) -> anyhow::Result<()> {
+        match id {
+            Some(id) => self.set_setting(DEFAULT_THEME, &id),
+            None => self.remove_setting(DEFAULT_THEME),
+        }
+    }
+
     pub fn typography_defaults(&self) -> anyhow::Result<TypographyDefaults> {
         Ok(self.get_setting(TYPOGRAPHY)?.unwrap_or_default())
     }
@@ -502,6 +532,12 @@ impl StateStore {
              ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             params![key, serde_json::to_string(value)?],
         )?;
+        Ok(())
+    }
+
+    pub fn remove_setting(&self, key: &str) -> anyhow::Result<()> {
+        self.conn()
+            .execute("DELETE FROM settings WHERE key = ?1", [key])?;
         Ok(())
     }
 }
@@ -960,6 +996,26 @@ mod tests {
         let recent = store.recent_documents(10).unwrap();
         assert_eq!(recent.len(), 1);
         assert_eq!(store.memory(&a).unwrap(), DocumentMemory::default());
+    }
+
+    #[test]
+    fn contents_depth_defaults_to_all_and_is_clamped() {
+        let store = StateStore::in_memory().unwrap();
+        assert_eq!(store.contents_depth().unwrap(), 6);
+        store.set_contents_depth(2).unwrap();
+        assert_eq!(store.contents_depth().unwrap(), 2);
+        store.set_contents_depth(0).unwrap();
+        assert_eq!(store.contents_depth().unwrap(), 1);
+    }
+
+    #[test]
+    fn default_theme_can_be_forgotten() {
+        let store = StateStore::in_memory().unwrap();
+        assert_eq!(store.default_theme().unwrap(), None);
+        store.set_default_theme(Some("sepia")).unwrap();
+        assert_eq!(store.default_theme().unwrap().as_deref(), Some("sepia"));
+        store.set_default_theme(None).unwrap();
+        assert_eq!(store.default_theme().unwrap(), None);
     }
 
     #[test]

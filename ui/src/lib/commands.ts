@@ -197,8 +197,14 @@ export function setDocumentTheme(path: string, id: string | null): Promise<void>
   return invoke("set_document_theme", { path, id });
 }
 
-export function setDefaultTheme(id: string): Promise<void> {
+/** Sets the global default theme; null follows the system's light or dark mode again. */
+export function setDefaultTheme(id: string | null): Promise<void> {
   return invoke("set_default_theme", { id });
+}
+
+/** The global default theme's id, or null when it follows the system. */
+export function defaultTheme(): Promise<string | null> {
+  return invoke<string | null>("default_theme");
 }
 
 /** Copies a theme into the user theme folder; resolves to the new theme's id. */
@@ -273,6 +279,23 @@ export function typographyDefaults(): Promise<TypographyDefaults> {
 
 export function setTypographyDefaults(defaults: TypographyDefaults): Promise<void> {
   return invoke("set_typography_defaults", { defaults });
+}
+
+/** The deepest heading level the contents sidebar lists (1–6). */
+export function contentsDepth(): Promise<number> {
+  return invoke<number>("contents_depth");
+}
+
+export function setContentsDepth(depth: number): Promise<void> {
+  return invoke("set_contents_depth", { depth });
+}
+
+/** A global setting another window (or this one) changed. */
+export type SettingName = "theme.default" | "typography" | "contents.depth";
+
+/** Calls `handler` with the setting's name whenever a global setting changes, in any window. */
+export function onSettingsChanged(handler: (name: SettingName) => void): Promise<UnlistenFn> {
+  return listen<SettingName>("settings-changed", (event) => handler(event.payload));
 }
 
 /** Recently opened documents: pinned first, then newest first. */

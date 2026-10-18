@@ -24,6 +24,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["Alt+Left", "Mouse back button"], action: "Back to the previous document" },
       { keys: ["Alt+Right", "Mouse forward button"], action: "Forward" },
       { keys: ["F1", "Ctrl+/"], action: "Show these shortcuts" },
+      { keys: ["Ctrl+,"], action: "Settings" },
     ],
   },
   {
@@ -91,6 +92,11 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
  */
 export function keyParts(keys: string): string[] {
   return keys.split(/\+(?!$)/);
+}
+
+/** Whether a key press opens the settings dialog: Ctrl+, (the physical key too). */
+export function opensSettings(event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "altKey" | "shiftKey">): boolean {
+  return event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === "," || event.code === "Comma");
 }
 
 /**

@@ -45,6 +45,12 @@
     autosave as autosaveSetting,
     setAutosave,
     onAutosaveChanged,
+    defaultTheme as defaultThemeSetting,
+    contentsDepth as contentsDepthSetting,
+    typographyDefaults,
+    setContentsDepth,
+    onSettingsChanged,
+    type SettingName,
     pickAssetsFolder,
     blockSource,
     editBlock,
@@ -95,7 +101,8 @@
   import SearchBar from "./search/SearchBar.svelte";
   import { SearchController } from "./search/controller.svelte";
   import ShortcutsDialog from "./shortcuts/ShortcutsDialog.svelte";
-  import { opensShortcuts } from "./shortcuts/shortcuts";
+  import { opensSettings, opensShortcuts } from "./shortcuts/shortcuts";
+  import SettingsDialog from "./settings/SettingsDialog.svelte";
   import { readingProgress, wordsBefore, type ReadingPosition } from "./status/progress";
 
   let doc = $state<DocumentModel | null>(null);
@@ -110,6 +117,11 @@
   const search = new SearchController(() => reader);
   let searchBar: SearchBar | undefined = $state();
   let shortcutsOpen = $state(false);
+  let settingsOpen = $state(false);
+  // Global settings shown in the settings dialog (the typography defaults
+  // live in `typography`, autosave in `autosave`).
+  let defaultThemeId = $state<string | null>(null);
+  let contentsDepth = $state(6);
   // Reading progress (DESIGN.md §10), in words above the top of the screen.
   let readingPosition = $state<ReadingPosition>({ blockIndex: 0, fraction: 0, atEnd: false });
   const blockWordsBefore = $derived(doc ? wordsBefore(doc.blocks) : [0]);
@@ -534,12 +546,10 @@
     if (dirty) await save("Autosaved");
   }
 
-  async function toggleAutosave(): Promise<void> {
-    const enabled = !autosave;
+  async function changeAutosave(enabled: boolean): Promise<void> {
     try {
       await setAutosave(enabled);
       applyAutosave(enabled);
-      showNotice(enabled ? "Autosave on" : "Autosave off: Ctrl+S saves");
     } catch (e) {
       showNotice(`Could not change autosave: ${String(e)}`);
     }
@@ -695,6 +705,54 @@
     void setPropertiesOpen(open).catch(() => {});
   }
 
+  // Settings (DESIGN.md §10). Each change is stored at once; the app tells
+  // every window (this one too), and `applySetting` brings each up to date.
+  async function openSettings(): Promise<void> {
+    settingsOpen = true;
+    try {
+      [themeList, defaultThemeId] = await Promise.all([listThemes(), defaultThemeSetting()]);
+    } catch (e) {
+      showNotice(`Could not read the settings: ${String(e)}`);
+    }
+  }
+
+  async function changeSetting(name: string, change: () => Promise<void>): Promise<void> {
+    try {
+      await change();
+    } catch (e) {
+      showNotice(`Could not change ${name}: ${String(e)}`);
+    }
+  }
+
+  async function applySetting(name: SettingName): Promise<void> {
+    try {
+      if (name === "typography") {
+        await typography.applyDefaults(await typographyDefaults());
+      } else if (name === "contents.depth") {
+        contentsDepth = await contentsDepthSetting();
+      } else if (name === "theme.default") {
+        defaultThemeId = await defaultThemeSetting();
+        await followDefaultTheme();
+      }
+    } catch (e) {
+      console.warn(`could not apply the ${name} setting`, e);
+    }
+  }
+
+  /** The default theme changed: a window showing it switches to the new one. */
+  async function followDefaultTheme(): Promise<void> {
+    if (!doc) {
+      await showStartScreen();
+      return;
+    }
+    if (theme?.source !== "default") return;
+    // The default level alone resolves exactly as on the start screen.
+    const resolved = await startTheme();
+    if (resolved.id === theme.id) return;
+    theme = { id: resolved.id, source: "default" };
+    if (!switcherOpen && !themeEditing) await showTheme(resolved.id);
+  }
+
   onMount(() => {
     void refreshThemeList().catch(() => {});
     // Closing with unsaved changes asks first (DESIGN.md §9.3).
@@ -713,6 +771,10 @@
       .then(applyAutosave)
       .catch(() => {});
     const unlistenAutosave = onAutosaveChanged(applyAutosave);
+    void contentsDepthSetting()
+      .then((depth) => (contentsDepth = depth))
+      .catch(() => {});
+    const unlistenSettings = onSettingsChanged((name) => void applySetting(name));
     // Drag and drop (DESIGN.md §11): Tauri hands over the dropped files'
     // paths; the page itself never sees the files.
     const unlistenDrop = getCurrentWebview().onDragDropEvent((event) => {
@@ -753,6 +815,7 @@
       void unlistenClose.then((stop) => stop());
       void unlistenThemes.then((stop) => stop());
       void unlistenAutosave.then((stop) => stop());
+      void unlistenSettings.then((stop) => stop());
       void unlistenDrop.then((stop) => stop());
       void unlistenFocus.then((stop) => stop());
       window.removeEventListener("wheel", onWheel);
@@ -1229,12 +1292,20 @@
     if (switcherOpen || unsavedPrompt) return;
     if (opensShortcuts(event, (event.target as HTMLElement | null)?.closest(".cm-editor") != null)) {
       event.preventDefault();
+      settingsOpen = false;
       shortcutsOpen = !shortcutsOpen;
       return;
     }
-    // The reference is modal: other shortcuts wait until it closes.
-    if (shortcutsOpen) {
-      if (event.key === "Escape") shortcutsOpen = false;
+    if (opensSettings(event)) {
+      event.preventDefault();
+      shortcutsOpen = false;
+      if (settingsOpen) settingsOpen = false;
+      else void openSettings();
+      return;
+    }
+    // The reference and settings are modal: other shortcuts wait until they close.
+    if (shortcutsOpen || settingsOpen) {
+      if (event.key === "Escape") shortcutsOpen = settingsOpen = false;
       return;
     }
     if (event.ctrlKey && !event.shiftKey && doc && !rawMode && (event.key === "f" || event.key === "F")) {
@@ -1339,7 +1410,14 @@
 <div class="sk-app" class:with-toc={tocVisible && doc !== null}>
   {#if doc}
     {#if tocVisible}
-      <TocSidebar toc={doc.toc} current={currentEntry} onselect={selectTocEntry} {numbering} />
+      <TocSidebar
+        toc={doc.toc}
+        current={currentEntry}
+        onselect={selectTocEntry}
+        {numbering}
+        depth={contentsDepth}
+        ondepth={(depth) => changeSetting("the contents depth", () => setContentsDepth(depth))}
+      />
     {/if}
     <main class="sk-main" class:sk-beside-editor={themeEditing !== null} bind:this={mainElement}>
       {#if search.open && !rawMode}
@@ -1435,7 +1513,7 @@
       typography={typography.summary}
       ontypographyclick={() => (typographyOpen = !typographyOpen)}
       {autosave}
-      onautosave={toggleAutosave}
+      onsettings={openSettings}
       {progress}
       onshortcuts={() => (shortcutsOpen = true)}
     />
@@ -1504,6 +1582,7 @@
         onpin={pinRecent}
         onforget={forgetRecent}
         onshortcuts={() => (shortcutsOpen = true)}
+        onsettings={openSettings}
       >
         {#if recoveredList.length > 0}
           <RecoveredList
@@ -1519,6 +1598,22 @@
   {/if}
   {#if shortcutsOpen}
     <ShortcutsDialog onclose={() => (shortcutsOpen = false)} />
+  {/if}
+  {#if settingsOpen}
+    <SettingsDialog
+      themes={themeList}
+      defaultTheme={defaultThemeId}
+      typography={typography.defaults}
+      {contentsDepth}
+      {propertiesOpen}
+      {autosave}
+      ondefaulttheme={(id) => changeSetting("the default theme", () => setDefaultTheme(id))}
+      ontypography={(defaults) => changeSetting("the text size", () => typography.applyDefaults(defaults, true))}
+      oncontentsdepth={(depth) => changeSetting("the contents depth", () => setContentsDepth(depth))}
+      onpropertiesopen={togglePropertiesPanel}
+      onautosave={changeAutosave}
+      onclose={() => (settingsOpen = false)}
+    />
   {/if}
   {#if dropping}
     <div class="sk-drop" aria-hidden="true"><span>Drop to open</span></div>

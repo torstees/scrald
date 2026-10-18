@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyParts, opensShortcuts, SHORTCUT_GROUPS } from "./shortcuts";
+import { keyParts, opensSettings, opensShortcuts, SHORTCUT_GROUPS } from "./shortcuts";
 
 describe("keyParts", () => {
   it("splits a combination into its keys", () => {
@@ -46,5 +46,27 @@ describe("SHORTCUT_GROUPS", () => {
       expect(new Set(actions).size).toBe(actions.length);
       for (const shortcut of group.shortcuts) expect(shortcut.keys.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("opensSettings", () => {
+  const key = (k: string, code: string, mods: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean } = {}) => ({
+    key: k,
+    code,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...mods,
+  });
+
+  it("opens on Ctrl+, (and the physical comma key)", () => {
+    expect(opensSettings(key(",", "Comma", { ctrlKey: true }))).toBe(true);
+    expect(opensSettings(key(";", "Comma", { ctrlKey: true }))).toBe(true);
+  });
+
+  it("leaves a plain comma and other combinations alone", () => {
+    expect(opensSettings(key(",", "Comma"))).toBe(false);
+    expect(opensSettings(key("<", "Comma", { ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(opensSettings(key(",", "Comma", { ctrlKey: true, altKey: true }))).toBe(false);
   });
 });

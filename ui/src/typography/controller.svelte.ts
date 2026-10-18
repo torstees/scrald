@@ -221,6 +221,19 @@ export class TypographyController {
     await this.saveDefaults();
   }
 
+  /**
+   * New global defaults, from the settings dialog (`save`) or another
+   * window, applied keeping the reading position. Documents with their own
+   * mode or zoom keep it.
+   */
+  async applyDefaults(defaults: TypographyDefaults, save = false): Promise<void> {
+    await this.keepPlace(0, () => {
+      this.defaults = defaults;
+      this.recompute();
+    });
+    if (save) await this.saveDefaults();
+  }
+
   /** Promotes the current mode and zoom to the global default (DESIGN.md §7.4). */
   async makeDefault(): Promise<void> {
     this.defaults = { textSizing: this.mode, zoom: this.zoom, fillWindow: this.fillWindow };
