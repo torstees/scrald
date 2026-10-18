@@ -295,7 +295,7 @@ As implemented:
 - Core replaces each Markdown image with its own markup: `<img data-asset="id" width height loading="lazy">` for a resolved local file (dimensions read from the file header so layout space is reserved), a placeholder `<span>` for missing or blocked images, or `<img src>` only for `data:image/...` and allowed remote images. Local images never carry a file path in `src`.
 - `open_document` registers the document's resolved files with an **asset token**. URLs carry only `<token>-<id>`, never a path, and opening another document in the window revokes the previous token. The frontend builds URLs in one place (`assetUrl`, via Tauri's `convertFileSrc`), because the URL format differs per platform.
 - Raw HTML `<img src>` is resolved like a Markdown image and rewritten to `data-asset` (§6.1); the sanitizer still drops any remaining `src` unless it is a `data:image` URL or an allowed remote image, so raw HTML can't point the webview at local files.
-- The remote-image toggle re-parses the document with remote images allowed and restores the scroll anchor. It is remembered per session until the state database exists (M3).
+- The remote-image toggle re-parses the document with remote images allowed and restores the scroll anchor, keeping unsaved edits. The choice is remembered per document in the state database. While remote images are blocked, the status bar says "N remote images blocked" with **Load**; once loaded, it says "N remote images loaded" with **Block**, which re-parses with them blocked again.
 
 ### 6.3 Layout
 
@@ -618,8 +618,9 @@ As implemented (`ui/src/editor/RawEditor.svelte`):
 - **Keyboard shortcuts:** `F1` or `Ctrl+/` shows every shortcut, grouped (documents, reading, find, editing, raw mode, properties, themes), as does the ? button at the right of the status bar and a link on the start screen. As implemented: the list lives in `ui/src/shortcuts/shortcuts.ts`, the one place to update when a shortcut changes. Inside a CodeMirror editor, `Ctrl+/` stays CodeMirror's (comment lines in or out); `F1` works there too.
 - **Footnotes:** hover popovers in reading view, plus the endnotes section. As implemented: a popover appears on hovering or keyboard-focusing a reference and stays while the pointer is over it; clicking a reference jumps to its endnote, and each endnote's ↩ jumps back to the first reference (§5.4).
 - **Status bar:** word count, estimated reading time, current section, flavor, theme, zoom.
+- **Reading progress:** the status bar shows how much has been read ("42% · 7 min left"), and a thin accent line along its top edge grows with it. As implemented (`ui/src/status/progress.ts`): progress is the share of the document's words above the top of the screen, from a word count core gives each block (`Block.words`, which add up to `word_count`), plus the fraction of the top block scrolled past. Words rather than pixels, because sections not yet laid out only have estimated heights, which would make a scroll fraction drift as they mount. It reads 100% once the end of the document is on screen, and the time shown at the start and the end is the whole document's.
 - **Links:** external links open in the default browser. Links to other Markdown files open in Scrald (same window, with back and forward navigation). As implemented: core's `resolve_link` classifies each link; only `http`, `https`, and `mailto` are handed to the system (via the opener plugin, from a Rust command that re-checks the scheme, so the frontend has no opener permission). Links to other local files are **not opened**, since a link to an executable must never run it; a status-bar notice explains instead. Back/Forward: Alt+Left/Right, mouse side buttons, or the status-bar arrows; each history entry keeps its scroll anchor.
-- **Post-v1:** print/export to PDF using the active theme, and a reading-progress indicator.
+- **Post-v1:** print/export to PDF using the active theme.
 
 ---
 

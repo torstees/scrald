@@ -44,6 +44,8 @@ export interface Block {
   source: SourceRange;
   hash: number;
   section: number;
+  /** Words in the block; they add up to `DocumentModel.wordCount`. */
+  words: number;
 }
 
 /** Mirrors `Section`. */

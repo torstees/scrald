@@ -18,6 +18,7 @@
   import { clearMatches, matchRanges, paintMatches, revealNode } from "../search/highlight";
   import type { SearchOptions } from "../search/matcher";
   import { blocksInRange, locateMatch, type MatchLocation } from "../search/results";
+  import type { ReadingPosition } from "../status/progress";
 
   interface Props {
     doc: DocumentModel;
@@ -34,6 +35,8 @@
     onlink?: (href: string) => void;
     /** Called once scrolling has stopped for a moment (to save the position). */
     onscrollsettled?: () => void;
+    /** Called with the reading position after every scroll (for the progress indicator). */
+    onposition?: (position: ReadingPosition) => void;
     /** Reading font size in px (text sizing mode and zoom applied). */
     fontSize?: number | null;
     /** Ignore the measure and let text run the full width. */
@@ -64,6 +67,7 @@
     onfullymounted,
     onlink,
     onscrollsettled,
+    onposition,
     fontSize = null,
     fillWindow = false,
     propertiesOpen = true,
@@ -350,6 +354,16 @@
     updateCurrentSection();
     lastAnchor = captureAnchor();
     paintSearch();
+    if (scroller && onposition) {
+      onposition({ blockIndex: blockIndexAtOffset(doc.blocks, lastAnchor.offset), fraction: lastAnchor.fraction, atEnd: endInView() });
+    }
+  }
+
+  /** Whether the end of the document is on screen: the column's content, not the room left below it to scroll the last lines up. */
+  function endInView(): boolean {
+    if (!scroller || !column) return false;
+    const contentEnd = column.getBoundingClientRect().bottom - parseFloat(getComputedStyle(column).paddingBottom);
+    return contentEnd <= scroller.getBoundingClientRect().bottom + 1;
   }
 
   /** The id of the block at the top of the viewport. */

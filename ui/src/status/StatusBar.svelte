@@ -2,6 +2,7 @@
   import type { Flavor, FlavorSource } from "../lib/types";
   import { FLAVOR_NAMES } from "./flavor";
   import FlavorMenu from "./FlavorMenu.svelte";
+  import { formatProgress, formatTimeLeft } from "./progress";
   import { formatReadingTime, formatWordCount } from "./reading";
 
   interface Props {
@@ -17,7 +18,8 @@
     /** Remote images in the document, and whether they're loading. */
     remoteImages: number;
     remoteImagesAllowed: boolean;
-    onallowremote: () => void;
+    /** Loads (true) or blocks (false) the document's remote images. */
+    onremoteimages: (allowed: boolean) => void;
     /** Name of the document's theme; clicking it opens the switcher. */
     themeName: string | null;
     onthemeclick: () => void;
@@ -33,6 +35,8 @@
     /** Whether autosave is on; clicking toggles it (for every window). */
     autosave: boolean;
     onautosave: () => void;
+    /** Share of the document read, 0..1 (DESIGN.md §10). */
+    progress: number;
     /** Opens the keyboard shortcut reference. */
     onshortcuts: () => void;
   }
@@ -47,7 +51,7 @@
     onforward,
     remoteImages,
     remoteImagesAllowed,
-    onallowremote,
+    onremoteimages,
     themeName,
     onthemeclick,
     typography,
@@ -59,6 +63,7 @@
     onflavor,
     autosave,
     onautosave,
+    progress,
     onshortcuts,
   }: Props = $props();
 
@@ -67,7 +72,7 @@
   const flavorLabel = $derived(`${FLAVOR_NAMES[flavor]}${flavorSource === "document" ? "" : " (auto)"}`);
 </script>
 
-<footer class="sk-status">
+<footer class="sk-status" style:--sk-progress={progress}>
   <button
     class="toc"
     onclick={ontoggletoc}
@@ -86,10 +91,18 @@
   {:else}
     <span class="section" title={section ?? ""}>{section ?? ""}</span>
   {/if}
-  {#if remoteImages > 0 && !remoteImagesAllowed}
+  {#if remoteImages > 0}
+    {@const images = `${remoteImages} remote ${remoteImages === 1 ? "image" : "images"}`}
     <span class="remote">
-      {remoteImages} remote {remoteImages === 1 ? "image" : "images"} blocked
-      <button class="load" onclick={onallowremote} title="Load remote images for this document">Load</button>
+      {#if remoteImagesAllowed}
+        {images} loaded
+        <button class="load" onclick={() => onremoteimages(false)} title="Stop loading remote images for this document"
+          >Block</button
+        >
+      {:else}
+        {images} blocked
+        <button class="load" onclick={() => onremoteimages(true)} title="Load remote images for this document">Load</button>
+      {/if}
     </span>
   {/if}
   <button
@@ -120,12 +133,17 @@
     <FlavorMenu {flavor} {flavorSource} onchoose={onflavor} onclose={() => (flavorMenuOpen = false)} />
   {/if}
   <span>{formatWordCount(wordCount)}</span>
-  <span title="Estimated reading time">{formatReadingTime(wordCount)}</span>
+  <span
+    class="progress"
+    title={`Read: ${formatProgress(progress)}. Whole document: about ${formatReadingTime(wordCount)}.`}
+    >{formatProgress(progress)} · {formatTimeLeft(wordCount, progress)}</span
+  >
   <button class="theme help" onclick={onshortcuts} title="Keyboard shortcuts (F1)" aria-label="Keyboard shortcuts">?</button>
 </footer>
 
 <style>
   .sk-status {
+    position: relative;
     display: flex;
     gap: 1.25rem;
     align-items: center;
@@ -203,5 +221,21 @@
 
   .notice {
     color: var(--sk-color-accent);
+  }
+
+  /* Reading progress: a thin line along the top edge, as wide as the share read. */
+  .sk-status::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    left: 0;
+    height: 2px;
+    width: calc(var(--sk-progress, 0) * 100%);
+    background: var(--sk-color-accent);
+    pointer-events: none;
+  }
+
+  .progress {
+    font-variant-numeric: tabular-nums;
   }
 </style>
