@@ -3,7 +3,7 @@ import { ModelTracker } from "./models";
 import type { Block, OpenedDocument } from "./types";
 
 function block(id: number, html: string): Block {
-  return { id, kind: { type: "paragraph" }, html, source: { start: id, end: id + 1 }, hash: id, section: 0 };
+  return { id, kind: { type: "paragraph" }, html, source: { start: id, end: id + 1 }, hash: id, section: 0, words: 0 };
 }
 
 function model(n: number, base: number | null, blocks: Block[], htmlFrom: (number | null)[] = []): OpenedDocument {

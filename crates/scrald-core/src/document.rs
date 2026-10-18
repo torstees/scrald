@@ -95,6 +95,9 @@ pub struct Block {
     pub hash: u64,
     /// Index into `DocumentModel::sections`.
     pub section: u32,
+    /// Words in this block, counted as for `DocumentModel::word_count`
+    /// (which is their sum). The reader's progress indicator uses them.
+    pub words: u32,
 }
 
 /// What kind of block this is. Serialized as `{ "type": "heading", "level": 2 }`.
@@ -402,8 +405,9 @@ pub fn parse_document_cached(
             [only] if pandoc && heading_text.is_some() => pandoc::attributes_of(only),
             _ => None,
         };
+        let mut words = 0;
         for &node in group {
-            word_count += count_words(node);
+            words += count_words(node);
             update_features(node, &mut features);
             if let Some(vault) = &vault {
                 let link_ctx = obsidian::LinkContext {
@@ -524,7 +528,9 @@ pub fn parse_document_cached(
             source,
             hash: hash_text(source_text),
             section,
+            words: words as u32,
         });
+        word_count += words;
     }
 
     // Outline numbers need every heading, so they're added afterwards.
@@ -1044,6 +1050,23 @@ mod tests {
     fn word_count_skips_code_blocks() {
         let doc = parse("Hello brave new world.\n\n```\nnot counted here\n```\n\nUse `x` - ok\n");
         assert_eq!(doc.word_count, 4 + 2 + 1);
+    }
+
+    #[test]
+    fn each_block_counts_its_own_words() {
+        let doc = parse(
+            "# Two words
+
+Hello brave new world.
+
+```
+not counted
+```
+",
+        );
+        let words: Vec<u32> = doc.blocks.iter().map(|b| b.words).collect();
+        assert_eq!(words, vec![2, 4, 0]);
+        assert_eq!(doc.word_count, 6);
     }
 
     #[test]

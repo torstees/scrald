@@ -97,6 +97,7 @@
   import { SearchController } from "./search/controller.svelte";
   import ShortcutsDialog from "./shortcuts/ShortcutsDialog.svelte";
   import { opensShortcuts } from "./shortcuts/shortcuts";
+  import { readingProgress, wordsBefore, type ReadingPosition } from "./status/progress";
 
   let doc = $state<DocumentModel | null>(null);
   let assetToken = $state(0);
@@ -109,6 +110,10 @@
   const search = new SearchController(() => reader);
   let searchBar: SearchBar | undefined = $state();
   let shortcutsOpen = $state(false);
+  // Reading progress (DESIGN.md §10), in words above the top of the screen.
+  let readingPosition = $state<ReadingPosition>({ blockIndex: 0, fraction: 0, atEnd: false });
+  const blockWordsBefore = $derived(doc ? wordsBefore(doc.blocks) : [0]);
+  const progress = $derived(readingProgress(blockWordsBefore, readingPosition));
   let canGoBack = $state(false);
   let canGoForward = $state(false);
 
@@ -970,13 +975,14 @@
     }
   }
 
-  async function allowRemoteImages(): Promise<void> {
+  /** Loads (or blocks again) the document's remote images, remembered for it (DESIGN.md §6.1). */
+  async function setRemote(allowed: boolean): Promise<void> {
     if (!doc) return;
     try {
-      await setRemoteImages(doc.path, true);
+      await setRemoteImages(doc.path, allowed);
       await reparse();
     } catch (e) {
-      showNotice(`Could not load remote images: ${String(e)}`);
+      showNotice(`Could not ${allowed ? "load" : "block"} remote images: ${String(e)}`);
     }
   }
 
@@ -1402,6 +1408,7 @@
           onfullymounted={() => reportTiming("full_mount", performance.now() - openStarted)}
           onlink={onLink}
           onscrollsettled={rememberPosition}
+          onposition={(p) => (readingPosition = p)}
           fontSize={typography.fontSize}
           fillWindow={typography.fillWindow}
           {propertiesOpen}
@@ -1423,7 +1430,7 @@
       onforward={goForward}
       remoteImages={doc.remoteImages}
       remoteImagesAllowed={doc.remoteImagesAllowed}
-      onallowremote={allowRemoteImages}
+      onremoteimages={setRemote}
       {themeName}
       onthemeclick={openSwitcher}
       {tocVisible}
@@ -1435,6 +1442,7 @@
       ontypographyclick={() => (typographyOpen = !typographyOpen)}
       {autosave}
       onautosave={toggleAutosave}
+      {progress}
       onshortcuts={() => (shortcutsOpen = true)}
     />
     {#if typographyOpen}

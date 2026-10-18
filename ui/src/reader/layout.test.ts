@@ -10,7 +10,7 @@ import {
 } from "./layout";
 
 function block(id: number, section: number, length: number, kind: BlockKind = { type: "paragraph" }): Block {
-  return { id, kind, html: "", source: { start: id * 1000, end: id * 1000 + length }, hash: 0, section };
+  return { id, kind, html: "", source: { start: id * 1000, end: id * 1000 + length }, hash: 0, section, words: 0 };
 }
 
 function section(id: number, firstBlock: number, blockCount: number): Section {

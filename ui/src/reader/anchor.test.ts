@@ -3,7 +3,7 @@ import type { Block } from "../lib/types";
 import { blockIndexAtOffset, firstBoxBelow, fractionInto } from "./anchor";
 
 function blockAt(id: number, start: number, end: number): Block {
-  return { id, kind: { type: "paragraph" }, html: "", source: { start, end }, hash: 0, section: 0 };
+  return { id, kind: { type: "paragraph" }, html: "", source: { start, end }, hash: 0, section: 0, words: 0 };
 }
 
 describe("blockIndexAtOffset", () => {
