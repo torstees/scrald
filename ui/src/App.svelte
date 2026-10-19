@@ -18,6 +18,7 @@
     pickTerminalTheme,
     themeDetails,
     previewThemeEdit,
+    themeContrast,
     saveThemeEdit,
     systemFonts,
     importTerminalTheme,
@@ -75,6 +76,7 @@
     ThemeChange,
     ThemeDetails,
     ThemeEditorValues,
+    ContrastProblem,
     ThemeSummary,
   } from "./lib/types";
   import SchemeChooser from "./themes/SchemeChooser.svelte";
@@ -1277,14 +1279,16 @@
     }
   }
 
-  async function previewEdit(changes: ThemeChange[]): Promise<ThemeEditorValues> {
+  async function previewEdit(
+    changes: ThemeChange[],
+  ): Promise<{ values: ThemeEditorValues; contrast: ContrastProblem[] }> {
     if (!themeEditing) throw new Error("not editing");
     const preview = await previewThemeEdit(themeEditing.details.id, changes);
     applyTheme(preview.style);
     themeName = preview.style.name;
     numbering = preview.style.numbering;
     typography.setTheme(preview.style.layout);
-    return preview.values;
+    return { values: preview.values, contrast: preview.contrast };
   }
 
   async function saveEdit(changes: ThemeChange[]): Promise<void> {
@@ -1626,6 +1630,7 @@
         onduplicate={duplicate}
         onimport={importTerminal}
         onedit={(id) => void editTheme(id)}
+        oncontrast={themeContrast}
         highlight={importedTheme}
         onsavetodocument={saveThemeToDocument}
         oncancel={cancelSwitcher}

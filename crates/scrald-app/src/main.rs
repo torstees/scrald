@@ -143,6 +143,7 @@ fn main() -> anyhow::Result<()> {
             commands::list_themes,
             commands::theme_style,
             commands::theme_details,
+            commands::theme_contrast,
             commands::preview_theme_edit,
             commands::save_theme_edit,
             commands::set_document_theme,

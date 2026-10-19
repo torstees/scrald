@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use anyhow::Context;
 use scrald_core::search::{SearchIndex, SearchOptions, SearchResults};
+use scrald_core::theme::contrast::{ContrastProblem, contrast_problems};
 use scrald_core::theme::{Appearance, TextSizing, ThemeSource, ThemeSummary, resolve_theme};
 use scrald_core::yaml_edit::Change;
 use scrald_core::{DocumentModel, DocumentPreview, Flavor, LinkTarget, ParseOptions};
@@ -794,6 +795,8 @@ pub struct ThemeDetails {
     /// The theme's folder, for user themes.
     pub folder: Option<String>,
     pub values: scrald_core::theme::edit::EditorValues,
+    /// Color pairs below WCAG AA, worst first (DESIGN.md §7.2).
+    pub contrast: Vec<ContrastProblem>,
 }
 
 #[tauri::command]
@@ -811,9 +814,23 @@ pub fn theme_details(
     Ok(ThemeDetails {
         editable: folder.is_some(),
         values: scrald_core::theme::edit::EditorValues::from_theme(&theme.file),
+        contrast: contrast_problems(&theme.file),
         id: theme.id,
         folder,
     })
+}
+
+/// Theme `id`'s color pairs below WCAG AA, worst first, for the switcher's
+/// "Check contrast" button and after an import (DESIGN.md §7.2).
+#[tauri::command]
+pub fn theme_contrast(
+    themes: tauri::State<'_, ThemeService>,
+    id: String,
+) -> Result<Vec<ContrastProblem>, CommandError> {
+    let theme = themes
+        .get(&id)
+        .ok_or_else(|| anyhow::anyhow!("no theme named {id}"))?;
+    Ok(contrast_problems(&theme.file))
 }
 
 /// A theme as it would be with the editor's changes: its styles, and the
@@ -822,6 +839,8 @@ pub fn theme_details(
 pub struct ThemeEditPreview {
     pub style: ThemeStyle,
     pub values: scrald_core::theme::edit::EditorValues,
+    /// The edited theme's color pairs below WCAG AA, worst first.
+    pub contrast: Vec<ContrastProblem>,
 }
 
 /// Theme `id` as it would look with the editor's `changes`, without saving.
@@ -836,9 +855,11 @@ pub fn preview_theme_edit(
 ) -> Result<ThemeEditPreview, CommandError> {
     let (theme, _) = themes.edited(&id, &changes)?;
     let values = scrald_core::theme::edit::EditorValues::from_theme(&theme.file);
+    let contrast = contrast_problems(&theme.file);
     Ok(ThemeEditPreview {
         style: style_for(&app, &fonts, theme),
         values,
+        contrast,
     })
 }
 

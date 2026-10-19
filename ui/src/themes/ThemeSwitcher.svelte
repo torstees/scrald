@@ -4,8 +4,9 @@
   // Escape puts the original theme back.
   import { trapFocus } from "../lib/focus";
   import { onMount, untrack } from "svelte";
-  import type { ResolvedTheme, ThemeSummary } from "../lib/types";
+  import type { ContrastProblem, ResolvedTheme, ThemeSummary } from "../lib/types";
   import { describeSource, stepIndex } from "./apply";
+  import ContrastReport from "./ContrastReport.svelte";
 
   interface Props {
     themes: ThemeSummary[];
@@ -23,6 +24,8 @@
     onimport: () => void;
     /** Open the theme editor on `id` (a user theme). */
     onedit: (id: string) => void;
+    /** Theme `id`'s color pairs below WCAG AA. */
+    oncontrast: (id: string) => Promise<ContrastProblem[]>;
     /** A theme to select and preview once it's in the list (a new import). */
     highlight: string | null;
     /** Write `id` into the document's front matter (`scrald-theme`). */
@@ -42,6 +45,7 @@
     onduplicate,
     onimport,
     onedit,
+    oncontrast,
     highlight,
     onsavetodocument,
     oncancel,
@@ -67,13 +71,39 @@
     const index = usable.findIndex((t) => t.id === highlight);
     if (highlight === null || highlight === highlighted || index < 0) return;
     highlighted = highlight;
-    untrack(() => select(index));
+    untrack(() => {
+      select(index);
+      // A new import is checked at once: its colors came from a terminal
+      // scheme, whose own text color may be below AA.
+      void checkContrast(highlight, true);
+    });
     list?.focus();
   });
+
+  // The last contrast check, shown until another theme is selected.
+  let report = $state<{
+    id: string;
+    name: string;
+    imported: boolean;
+    problems: ContrastProblem[] | null;
+    error: string | null;
+  } | null>(null);
+
+  async function checkContrast(id: string, imported = false): Promise<void> {
+    const name = usable.find((t) => t.id === id)?.name ?? id;
+    report = { id, name, imported, problems: null, error: null };
+    try {
+      const problems = await oncontrast(id);
+      if (report?.id === id) report = { ...report, problems };
+    } catch (e) {
+      if (report?.id === id) report = { ...report, error: String(e) };
+    }
+  }
 
   function select(index: number): void {
     selected = index;
     const theme = usable[index];
+    if (report && report.id !== theme?.id) report = null;
     if (theme) onpreview(theme.id);
     list?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.scrollIntoView({ block: "nearest" });
   }
@@ -148,6 +178,26 @@
       </details>
     {/if}
 
+    {#if report}
+      <section class="report" aria-label="Contrast check">
+        <h3>{report.imported ? `Imported ${report.name}` : `Contrast: ${report.name}`}</h3>
+        {#if report.error}
+          <p class="error">{report.error}</p>
+        {:else if report.problems}
+          <ContrastReport problems={report.problems} />
+          {#if report.problems.length > 0}
+            <p class="hint">
+              {usable.find((t) => t.id === report?.id)?.bundled
+                ? "Duplicate it to adjust the colors."
+                : "Edit… changes the colors and checks again as you go."}
+            </p>
+          {/if}
+        {:else}
+          <p>Checking…</p>
+        {/if}
+      </section>
+    {/if}
+
     <footer>
       <div class="actions">
         <button class="primary" onclick={() => act(onchoose)}>Use for this document</button>
@@ -161,6 +211,10 @@
           title={usable[selected]?.bundled
             ? "Built-in themes can't be changed; duplicate one to customize it"
             : "Change this theme's colors, fonts, and layout"}>Edit…</button
+        >
+        <button
+          onclick={() => act((id) => void checkContrast(id))}
+          title="Check the selected theme's text and accent colors against WCAG AA contrast">Check contrast</button
         >
         <button onclick={() => act(onduplicate)}>Duplicate to customize</button>
         <button onclick={onimport} title="Create a theme from a terminal color scheme: Windows Terminal, iTerm2, Alacritty, Ghostty, kitty, or base16/base24"
@@ -277,6 +331,29 @@
     white-space: pre-wrap;
     font-size: 0.75rem;
     margin: 0 0 0.5rem;
+  }
+
+  .report {
+    margin: 0;
+    padding: 0.5rem 1rem;
+    border-top: 1px solid var(--sk-color-border);
+    max-height: 30vh;
+    overflow-y: auto;
+  }
+
+  .report h3 {
+    margin: 0 0 0.2rem;
+    font-size: 0.85rem;
+    font-family: var(--sk-font-ui);
+  }
+
+  .report p {
+    margin: 0.2rem 0;
+  }
+
+  .error {
+    color: var(--sk-palette-red, var(--sk-color-accent));
+    white-space: pre-wrap;
   }
 
   footer {
