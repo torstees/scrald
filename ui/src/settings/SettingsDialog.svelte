@@ -3,7 +3,7 @@
   // Each change applies at once, in every window; there's no Save button.
   // Escape, the × button, or clicking outside closes it.
   import { onMount } from "svelte";
-  import type { ThemeSummary, TypographyDefaults } from "../lib/types";
+  import type { PropertiesPlacement, ThemeSummary, TypographyDefaults } from "../lib/types";
   import { formatZoom, ZOOM_STEPS, type TextSizing } from "../typography/typography";
 
   interface Props {
@@ -13,11 +13,13 @@
     typography: TypographyDefaults;
     contentsDepth: number;
     propertiesOpen: boolean;
+    propertiesPlacement: PropertiesPlacement;
     autosave: boolean;
     ondefaulttheme: (id: string | null) => void;
     ontypography: (defaults: TypographyDefaults) => void;
     oncontentsdepth: (depth: number) => void;
     onpropertiesopen: (open: boolean) => void;
+    onpropertiesplacement: (placement: PropertiesPlacement) => void;
     onautosave: (enabled: boolean) => void;
     onclose: () => void;
   }
@@ -28,11 +30,13 @@
     typography,
     contentsDepth,
     propertiesOpen,
+    propertiesPlacement,
     autosave,
     ondefaulttheme,
     ontypography,
     oncontentsdepth,
     onpropertiesopen,
+    onpropertiesplacement,
     onautosave,
     onclose,
   }: Props = $props();
@@ -145,10 +149,22 @@
             <option value={6}>All headings</option>
           </select>
         </label>
+        <label class="row">
+          <span class="label">Properties</span>
+          <select
+            value={propertiesPlacement}
+            onchange={(e) => onpropertiesplacement(e.currentTarget.value as PropertiesPlacement)}
+          >
+            <option value="top">At the top of the document</option>
+            <option value="left">At the left, as a tab beside Contents</option>
+            <option value="right">At the right, in a sidebar of their own</option>
+          </select>
+        </label>
         <label class="row check">
           <input type="checkbox" checked={propertiesOpen} onchange={(e) => onpropertiesopen(e.currentTarget.checked)} />
-          Show the properties panel open
+          Show the properties open
         </label>
+        <p class="hint">A document's front matter. At the left or right, a document without any can have properties added.</p>
       </section>
 
       <section>

@@ -417,3 +417,6 @@ export type DiskState = "unchanged" | "changed" | "missing";
  * the file changed on disk and nothing was written.
  */
 export type SaveOutcome = "saved" | "conflict";
+
+/** Where the properties panel goes (DESIGN.md §8.2); mirrors `PropertiesPlacement` in state.rs. */
+export type PropertiesPlacement = "top" | "left" | "right";

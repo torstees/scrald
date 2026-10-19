@@ -1,11 +1,13 @@
 <script lang="ts">
   // Properties panel (DESIGN.md §8.2): the front matter at the top of the
-  // document. With an editor, values are edited in place; each change is a
-  // minimal text edit in memory (§8.3), saved with Ctrl+S like any edit.
-  // Keys the engine can't change safely are read-only and say why.
+  // document, or docked in a sidebar. With an editor, values are edited in
+  // place; each change is a minimal text edit in memory (§8.3), saved with
+  // Ctrl+S like any edit. Keys the engine can't change safely are read-only
+  // and say why.
   import { tick } from "svelte";
-  import type { Flavor, FrontMatter, PropertyChange } from "../lib/types";
+  import type { Flavor, FrontMatter, PropertiesPlacement, PropertyChange } from "../lib/types";
   import { FLAVOR_NAMES } from "../status/flavor";
+  import PlacementSelect from "./PlacementSelect.svelte";
   import {
     isWebLink,
     missingProperties,
@@ -16,9 +18,16 @@
   } from "./properties";
 
   interface Props {
-    frontMatter: FrontMatter;
+    /** Null for a document without front matter: only a sidebar shows it. */
+    frontMatter: FrontMatter | null;
+    /** At the top, whether the panel is expanded; a sidebar always is. */
     open: boolean;
     ontoggle: (open: boolean) => void;
+    /** In a sidebar, which has its own header, instead of above the document. */
+    docked?: boolean;
+    /** Where the panel goes; the header at the top offers to move it. */
+    placement?: PropertiesPlacement;
+    onplacement?: ((placement: PropertiesPlacement) => void) | null;
     /** Opens a link the same way links in the document do. */
     onlink: (href: string) => void;
     editor?: PropertyEditor | null;
@@ -26,9 +35,20 @@
     onraw?: ((offset: number) => void) | null;
   }
 
-  let { frontMatter, open, ontoggle, onlink, editor = null, onraw = null }: Props = $props();
+  let {
+    frontMatter,
+    open,
+    ontoggle,
+    docked = false,
+    placement = "top",
+    onplacement = null,
+    onlink,
+    editor = null,
+    onraw = null,
+  }: Props = $props();
 
-  const rows = $derived(propertyRows(frontMatter));
+  const expanded = $derived(docked || open);
+  const rows = $derived(frontMatter ? propertyRows(frontMatter) : []);
   const missing = $derived(editor ? missingProperties(frontMatter) : []);
 
   // The row being edited (its key), and the text being typed.
@@ -193,16 +213,28 @@
   </div>
 {/snippet}
 
-{#if shown.length > 0 || frontMatter.error}
-  <section class="sk-properties" aria-label="Properties" aria-busy={busy}>
-    <button class="sk-properties-toggle" aria-expanded={open} onclick={() => ontoggle(!open)}>
-      <span class="sk-chevron" class:open aria-hidden="true">›</span>
-      Properties
-      {#if !open}<span class="sk-count">{rows.length}</span>{/if}
-    </button>
-    {#if open}
-      {#if frontMatter.error}
+{#if docked || shown.length > 0 || frontMatter?.error}
+  <section class="sk-properties" class:docked aria-label="Properties" aria-busy={busy}>
+    {#if !docked}
+      <div class="sk-properties-header">
+        <button class="sk-properties-toggle" aria-expanded={open} onclick={() => ontoggle(!open)}>
+          <span class="sk-chevron" class:open aria-hidden="true">›</span>
+          Properties
+          {#if !open}<span class="sk-count">{rows.length}</span>{/if}
+        </button>
+        {#if open && onplacement}
+          <PlacementSelect {placement} {onplacement} />
+        {/if}
+      </div>
+    {/if}
+    {#if expanded}
+      {#if frontMatter?.error}
         <p class="sk-properties-error">The front matter has a YAML error, so its properties can't be shown: {frontMatter.error}</p>
+      {:else if shown.length === 0}
+        <p class="sk-properties-empty">
+          No properties.{#if editor && missing.length > 0}{" "}Add a title, tags, or a theme for this document;
+            they're saved at the top of the file.{/if}
+        </p>
       {/if}
       <dl>
         {#each shown as row (row.key)}
@@ -216,7 +248,7 @@
                 <button
                   class="sk-raw-link"
                   title={`Can't be edited here: ${row.reason}. Opens the whole file at this key (Ctrl+E).`}
-                  onclick={() => onraw?.(row.offset ?? frontMatter.range.start)}>Edit in raw mode</button
+                  onclick={() => onraw?.(row.offset ?? frontMatter?.range.start ?? 0)}>Edit in raw mode</button
                 >
               {/if}
             {/if}
@@ -325,15 +357,58 @@
     color: var(--sk-color-foreground);
   }
 
+  /* In a sidebar: its text size, no box of its own, labels above values. */
+  .sk-properties.docked {
+    font-size: inherit;
+    margin: 0;
+    border: none;
+  }
+
+  .docked dl {
+    grid-template-columns: 1fr;
+    gap: 0.15em;
+    padding: 0 0.25rem 0.8em;
+  }
+
+  /* The row's remove button sits at the right of the value's first line,
+     so in a narrow sidebar it doesn't wrap onto a line of its own. */
+  .docked dd {
+    position: relative;
+    margin-bottom: 0.5em;
+    padding-right: 1.2em;
+  }
+
+  .docked .sk-remove {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+
+  .docked .sk-add {
+    padding: 0 0.25rem;
+  }
+
+  .sk-properties-empty {
+    margin: 0 0.25rem 0.8em;
+    color: var(--sk-color-muted);
+    line-height: 1.4;
+  }
+
   .sk-properties[aria-busy="true"] {
     cursor: progress;
+  }
+
+  .sk-properties-header {
+    display: flex;
+    align-items: center;
+    padding-right: 0.8em;
   }
 
   .sk-properties-toggle {
     display: flex;
     align-items: center;
     gap: 0.4em;
-    width: 100%;
+    flex: 1;
     padding: 0.5em 0.8em;
     background: none;
     border: none;
@@ -539,6 +614,10 @@
   .sk-properties-error {
     margin: 0 0.8em 0.6em;
     color: var(--sk-color-muted);
+  }
+
+  .docked .sk-properties-error {
+    margin: 0 0.25rem 0.8em;
   }
 
   a {

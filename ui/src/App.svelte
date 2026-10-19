@@ -30,6 +30,8 @@
     pickDocument,
     startTheme,
     setPropertiesOpen,
+    propertiesPlacement as propertiesPlacementSetting,
+    setPropertiesPlacement,
     reparseDocument,
     editFrontMatter,
     saveDocument,
@@ -65,6 +67,7 @@
     RecentDocument,
     Flavor,
     OpenedDocument,
+    PropertiesPlacement,
     PropertyChange,
     RecoveredChanges,
     ResolvedTheme,
@@ -95,13 +98,16 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { AUTOSAVE_DELAY_MS, Autosaver } from "./editor/autosave";
   import TocSidebar from "./toc/TocSidebar.svelte";
+  import PropertiesSidebar from "./sidebar/PropertiesSidebar.svelte";
+  import SidebarTabs from "./sidebar/SidebarTabs.svelte";
+  import { chooseTab, isShown, layout, toggle, type Panel, type SidebarState } from "./sidebar/layout";
   import StatusBar from "./status/StatusBar.svelte";
   import { TypographyController } from "./typography/controller.svelte";
   import TypographyPanel from "./typography/TypographyPanel.svelte";
   import SearchBar from "./search/SearchBar.svelte";
   import { SearchController } from "./search/controller.svelte";
   import ShortcutsDialog from "./shortcuts/ShortcutsDialog.svelte";
-  import { opensSettings, opensShortcuts } from "./shortcuts/shortcuts";
+  import { opensSettings, opensShortcuts, togglesPanel } from "./shortcuts/shortcuts";
   import SettingsDialog from "./settings/SettingsDialog.svelte";
   import { readingProgress, wordsBefore, type ReadingPosition } from "./status/progress";
 
@@ -110,6 +116,7 @@
   let initialAnchor = $state<ScrollAnchor>(TOP_ANCHOR);
   let message = $state<string | null>(null);
   let notice = $state<string | null>(null);
+  // The left sidebar: Contents, or its Properties tab (DESIGN.md §8.2, §10).
   let tocVisible = $state(true);
   // The TOC entry for the reading position, reported by the reader.
   let currentEntry = $state<number | null>(null);
@@ -171,7 +178,35 @@
   const sectionTitle = $derived(currentEntry === null ? null : (doc?.toc[currentEntry]?.text ?? null));
 
   // Whether the properties panel is open: a global preference (DESIGN.md §8.2).
+  // In a sidebar, it's whether the properties are shown.
   let propertiesOpen = $state(true);
+  let propertiesPlacement = $state<PropertiesPlacement>("top");
+  // The sidebar opened last, which a narrow window keeps when both don't fit.
+  let lastPanel = $state<Panel>("contents");
+  // Wide enough for Contents and properties side by side with the reading column.
+  const wideQuery = window.matchMedia("(min-width: 64rem)");
+  let wide = $state(wideQuery.matches);
+  const sidebarState = $derived<SidebarState>({ leftOpen: tocVisible, propertiesOpen, last: lastPanel });
+  const shown = $derived(layout(propertiesPlacement, sidebarState, wide));
+
+  function setSidebars(next: SidebarState): void {
+    tocVisible = next.leftOpen;
+    lastPanel = next.last;
+    if (next.propertiesOpen !== propertiesOpen) togglePropertiesPanel(next.propertiesOpen);
+  }
+
+  function togglePanel(panel: Panel): void {
+    setSidebars(toggle(panel, propertiesPlacement, sidebarState, wide));
+  }
+
+  /** Moves the properties panel, in every window, and shows it in this one. */
+  async function placeProperties(placement: PropertiesPlacement): Promise<void> {
+    await changeSetting("where the properties go", () => setPropertiesPlacement(placement));
+    propertiesPlacement = placement;
+    if (!isShown("properties", placement, sidebarState, wide)) {
+      setSidebars(toggle("properties", placement, sidebarState, wide));
+    }
+  }
 
   // Unsaved edits (DESIGN.md §9.3): the backend keeps the edited text; the
   // file changes only on Ctrl+S.
@@ -401,6 +436,9 @@
           pickFolder: () => (doc ? pickAssetsFolder(doc.path) : Promise.resolve(null)),
         },
   );
+  // Raw mode holds the text being typed, so a sidebar shows the properties
+  // read-only there: the front matter is edited in the text instead.
+  const sidebarEditor = $derived(rawMode ? null : propertyEditor);
 
   // External changes while there are unsaved edits (DESIGN.md §9.3): the
   // banner offers to keep mine, load the disk version, or compare.
@@ -730,6 +768,8 @@
         await typography.applyDefaults(await typographyDefaults());
       } else if (name === "contents.depth") {
         contentsDepth = await contentsDepthSetting();
+      } else if (name === "properties.placement") {
+        propertiesPlacement = await propertiesPlacementSetting();
       } else if (name === "theme.default") {
         defaultThemeId = await defaultThemeSetting();
         await followDefaultTheme();
@@ -767,6 +807,11 @@
     void propertiesOpenSetting()
       .then((open) => (propertiesOpen = open))
       .catch(() => {});
+    void propertiesPlacementSetting()
+      .then((placement) => (propertiesPlacement = placement))
+      .catch(() => {});
+    const onWideChange = (event: MediaQueryListEvent) => (wide = event.matches);
+    wideQuery.addEventListener("change", onWideChange);
     void autosaveSetting()
       .then(applyAutosave)
       .catch(() => {});
@@ -816,6 +861,7 @@
       void unlistenThemes.then((stop) => stop());
       void unlistenAutosave.then((stop) => stop());
       void unlistenSettings.then((stop) => stop());
+      wideQuery.removeEventListener("change", onWideChange);
       void unlistenDrop.then((stop) => stop());
       void unlistenFocus.then((stop) => stop());
       window.removeEventListener("wheel", onWheel);
@@ -1216,6 +1262,8 @@
   // previews on the document as it goes; closing it puts the document's own
   // theme back (the saved version, if the edited theme is that one).
   let themeEditing = $state<{ details: ThemeDetails; fonts: string[] } | null>(null);
+  // The theme editor takes the right edge while it's open.
+  const showRight = $derived(shown.right && themeEditing === null);
   let installedFonts: string[] | null = null;
 
   async function editTheme(id: string): Promise<void> {
@@ -1357,6 +1405,12 @@
         return;
       }
     }
+    const panel = togglesPanel(event);
+    if (panel) {
+      event.preventDefault();
+      togglePanel(panel);
+      return;
+    }
     if (event.ctrlKey && doc && (event.key === "=" || event.key === "+")) {
       event.preventDefault();
       typography.zoomIn();
@@ -1369,10 +1423,6 @@
     } else if (event.ctrlKey && (event.key === "t" || event.key === "T")) {
       event.preventDefault();
       void openSwitcher();
-    } else if (event.ctrlKey && (event.key === "\\" || event.code === "Backslash")) {
-      // Match the physical key too: on many non-US layouts the backslash isn't on it.
-      event.preventDefault();
-      tocVisible = !tocVisible;
     } else if (event.altKey && event.key === "ArrowLeft") {
       event.preventDefault();
       void goBack();
@@ -1407,9 +1457,13 @@
 
 <svelte:window onkeydown={onKeydown} onmouseup={onMouseUp} />
 
-<div class="sk-app" class:with-toc={tocVisible && doc !== null}>
+{#snippet sidebarTabs()}
+  <SidebarTabs tab={shown.left ?? "contents"} ontab={(tab) => setSidebars(chooseTab(tab))} />
+{/snippet}
+
+<div class="sk-app" class:with-left={shown.left !== null && doc !== null} class:with-right={showRight && doc !== null}>
   {#if doc}
-    {#if tocVisible}
+    {#if shown.left === "contents"}
       <TocSidebar
         toc={doc.toc}
         current={currentEntry}
@@ -1417,6 +1471,17 @@
         {numbering}
         depth={contentsDepth}
         ondepth={(depth) => changeSetting("the contents depth", () => setContentsDepth(depth))}
+        tabs={propertiesPlacement === "left" ? sidebarTabs : undefined}
+      />
+    {:else if shown.left === "properties"}
+      <PropertiesSidebar
+        side="left"
+        frontMatter={doc.frontMatter}
+        editor={sidebarEditor}
+        onlink={onLink}
+        onraw={(offset) => void enterRawMode(offset)}
+        onplacement={placeProperties}
+        tabs={sidebarTabs}
       />
     {/if}
     <main class="sk-main" class:sk-beside-editor={themeEditing !== null} bind:this={mainElement}>
@@ -1484,6 +1549,8 @@
           fontSize={typography.fontSize}
           fillWindow={typography.fillWindow}
           {propertiesOpen}
+          propertiesAtTop={propertiesPlacement === "top"}
+          onpropertiesplacement={placeProperties}
           {propertyEditor}
           {blockEditing}
           {keepPosition}
@@ -1492,6 +1559,17 @@
         />
       {/if}
     </main>
+    {#if showRight}
+      <PropertiesSidebar
+        side="right"
+        frontMatter={doc.frontMatter}
+        editor={sidebarEditor}
+        onlink={onLink}
+        onraw={(offset) => void enterRawMode(offset)}
+        onplacement={placeProperties}
+        onclose={() => togglePanel("properties")}
+      />
+    {/if}
     <StatusBar
       wordCount={doc.wordCount}
       section={sectionTitle}
@@ -1505,8 +1583,10 @@
       onremoteimages={setRemote}
       {themeName}
       onthemeclick={openSwitcher}
-      {tocVisible}
-      ontoggletoc={() => (tocVisible = !tocVisible)}
+      tocVisible={shown.left === "contents"}
+      ontoggletoc={() => togglePanel("contents")}
+      propertiesShown={propertiesPlacement === "right" ? showRight : null}
+      ontoggleproperties={() => togglePanel("properties")}
       flavor={doc.flavor}
       flavorSource={doc.flavorSource}
       onflavor={chooseFlavor}
@@ -1606,11 +1686,13 @@
       typography={typography.defaults}
       {contentsDepth}
       {propertiesOpen}
+      {propertiesPlacement}
       {autosave}
       ondefaulttheme={(id) => changeSetting("the default theme", () => setDefaultTheme(id))}
       ontypography={(defaults) => changeSetting("the text size", () => typography.applyDefaults(defaults, true))}
       oncontentsdepth={(depth) => changeSetting("the contents depth", () => setContentsDepth(depth))}
       onpropertiesopen={togglePropertiesPanel}
+      onpropertiesplacement={(placement) => void placeProperties(placement)}
       onautosave={changeAutosave}
       onclose={() => (settingsOpen = false)}
     />
@@ -1628,11 +1710,19 @@
     height: 100vh;
   }
 
-  .sk-app.with-toc {
+  .sk-app.with-left {
     grid-template-columns: minmax(12rem, 18rem) 1fr;
   }
 
-  .sk-app.with-toc :global(.sk-status) {
+  .sk-app.with-right {
+    grid-template-columns: 1fr minmax(14rem, 20rem);
+  }
+
+  .sk-app.with-left.with-right {
+    grid-template-columns: minmax(12rem, 18rem) 1fr minmax(14rem, 20rem);
+  }
+
+  .sk-app :global(.sk-status) {
     grid-column: 1 / -1;
   }
 

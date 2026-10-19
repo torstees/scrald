@@ -18,8 +18,8 @@ use tauri_plugin_opener::OpenerExt;
 use crate::protocol::AssetRegistry;
 use crate::session::{DiskState, SaveOutcome, Sessions, Step};
 use crate::state::{
-    CoverImage, DEFAULT_THEME, DocumentMemory, RecentDocument, ScrollAnchor, StateStore,
-    TypographyDefaults,
+    CoverImage, DEFAULT_THEME, DocumentMemory, PropertiesPlacement, RecentDocument, ScrollAnchor,
+    StateStore, TypographyDefaults,
 };
 use crate::themes::ThemeService;
 use crate::vaults::VaultCache;
@@ -915,6 +915,25 @@ pub fn set_properties_open(
     Ok(store.set_properties_open(open)?)
 }
 
+/// Where the properties panel goes: "top", "left", or "right".
+#[tauri::command]
+pub fn properties_placement(
+    store: tauri::State<'_, StateStore>,
+) -> Result<PropertiesPlacement, CommandError> {
+    Ok(store.properties_placement()?)
+}
+
+/// Moves the properties panel, in every window.
+#[tauri::command]
+pub fn set_properties_placement(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, StateStore>,
+    placement: PropertiesPlacement,
+) -> Result<(), CommandError> {
+    store.set_properties_placement(placement)?;
+    settings_changed(&app, "properties.placement")
+}
+
 /// Event sent to every window when autosave is turned on or off, with the
 /// new value.
 pub const AUTOSAVE_CHANGED: &str = "autosave-changed";
@@ -961,7 +980,8 @@ pub fn set_typography_defaults(
 }
 
 /// Event sent to every window when a global setting changes, with the
-/// setting's name: "theme.default", "typography", or "contents.depth".
+/// setting's name: "theme.default", "typography", "contents.depth", or
+/// "properties.placement".
 /// (Autosave has its own event; `properties.open` isn't announced, since
 /// it's only how the panel starts and open windows keep theirs.)
 pub const SETTINGS_CHANGED: &str = "settings-changed";

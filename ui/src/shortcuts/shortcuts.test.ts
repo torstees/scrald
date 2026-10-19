@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyParts, opensSettings, opensShortcuts, SHORTCUT_GROUPS } from "./shortcuts";
+import { keyParts, opensSettings, opensShortcuts, SHORTCUT_GROUPS, togglesPanel } from "./shortcuts";
 
 describe("keyParts", () => {
   it("splits a combination into its keys", () => {
@@ -68,5 +68,31 @@ describe("opensSettings", () => {
     expect(opensSettings(key(",", "Comma"))).toBe(false);
     expect(opensSettings(key("<", "Comma", { ctrlKey: true, shiftKey: true }))).toBe(false);
     expect(opensSettings(key(",", "Comma", { ctrlKey: true, altKey: true }))).toBe(false);
+  });
+});
+
+describe("togglesPanel", () => {
+  const key = (k: string, code: string, mods: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean } = {}) => ({
+    key: k,
+    code,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...mods,
+  });
+
+  it("toggles Contents on Ctrl+\ and properties on Ctrl+Shift+\\", () => {
+    expect(togglesPanel(key("\\", "Backslash", { ctrlKey: true }))).toBe("contents");
+    expect(togglesPanel(key("|", "Backslash", { ctrlKey: true, shiftKey: true }))).toBe("properties");
+  });
+
+  it("matches the physical key on other layouts", () => {
+    expect(togglesPanel(key("#", "Backslash", { ctrlKey: true }))).toBe("contents");
+  });
+
+  it("ignores other keys and Alt", () => {
+    expect(togglesPanel(key("\\", "Backslash"))).toBe(null);
+    expect(togglesPanel(key("\\", "Backslash", { ctrlKey: true, altKey: true }))).toBe(null);
+    expect(togglesPanel(key("p", "KeyP", { ctrlKey: true, shiftKey: true }))).toBe(null);
   });
 });

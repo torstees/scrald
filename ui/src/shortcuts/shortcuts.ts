@@ -1,6 +1,7 @@
 // Every keyboard shortcut, grouped as the reference dialog shows them (F1).
 // Keep this in step with the handlers: the window's in `App.svelte`, and
 // each panel's own (`SearchBar`, `BlockEditor`, `ThemeSwitcher`, ...).
+import type { Panel } from "../sidebar/layout";
 
 export interface Shortcut {
   /** Alternatives, each written like "Ctrl+Shift+Z". */
@@ -31,6 +32,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Reading",
     shortcuts: [
       { keys: ["Ctrl+\\"], action: "Show or hide the contents" },
+      { keys: ["Ctrl+Shift+\\"], action: "Show or hide the properties" },
       { keys: ["Ctrl+T"], action: "Choose a theme" },
       { keys: ["Ctrl+=", "Ctrl+wheel up"], action: "Zoom in" },
       { keys: ["Ctrl+-", "Ctrl+wheel down"], action: "Zoom out" },
@@ -92,6 +94,17 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
  */
 export function keyParts(keys: string): string[] {
   return keys.split(/\+(?!$)/);
+}
+
+/**
+ * The panel a key press shows or hides: Ctrl+\ for Contents, Ctrl+Shift+\
+ * for properties. The physical key counts too: on many non-US layouts the
+ * backslash isn't on it.
+ */
+export function togglesPanel(event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "altKey" | "shiftKey">): Panel | null {
+  if (!event.ctrlKey || event.altKey) return null;
+  if (event.key !== "\\" && event.key !== "|" && event.code !== "Backslash") return null;
+  return event.shiftKey ? "properties" : "contents";
 }
 
 /** Whether a key press opens the settings dialog: Ctrl+, (the physical key too). */

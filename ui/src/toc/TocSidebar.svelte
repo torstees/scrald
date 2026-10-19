@@ -2,6 +2,7 @@
   // Table of contents sidebar (DESIGN.md §10): click to jump, current
   // section highlighted, collapsible entries, and a depth limit for long
   // documents such as novels.
+  import type { Snippet } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import type { TocEntry } from "../lib/types";
   import { hasChildren, nearestVisible, visibleEntries } from "./tree";
@@ -17,9 +18,11 @@
     depth?: number;
     /** Called when the depth is changed here. */
     ondepth?: (depth: number) => void;
+    /** Tabs shown instead of the title, when properties share the sidebar. */
+    tabs?: Snippet;
   }
 
-  let { toc, current, onselect, numbering = false, depth = 6, ondepth }: Props = $props();
+  let { toc, current, onselect, numbering = false, depth = 6, ondepth, tabs }: Props = $props();
 
   const deepest = $derived(toc.reduce((max, e) => Math.max(max, e.level), 1));
   const shallowest = $derived(toc.reduce((min, e) => Math.min(min, e.level), 6));
@@ -38,7 +41,11 @@
 
 <nav class="sk-toc" aria-label="Table of contents">
   <header>
-    <span class="title">Contents</span>
+    {#if tabs}
+      {@render tabs()}
+    {:else}
+      <span class="title">Contents</span>
+    {/if}
     {#if deepest > shallowest}
       <label>
         Depth
@@ -94,8 +101,10 @@
 
   header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
+    gap: 0.25rem 0.5rem;
     padding: 0 0.25rem 0.5rem;
     color: var(--sk-color-muted);
   }

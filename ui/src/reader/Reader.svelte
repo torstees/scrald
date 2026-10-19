@@ -4,7 +4,7 @@
   // browser skips layout and paint for off-screen sections. Sections are
   // mounted outward from the initial position, the rest in idle time.
   import { onDestroy, tick, untrack } from "svelte";
-  import type { Block, DocumentModel, SearchReply, TocEntry } from "../lib/types";
+  import type { Block, DocumentModel, PropertiesPlacement, SearchReply, TocEntry } from "../lib/types";
   import { currentEntryAt } from "../toc/tree";
   import BlockEditor from "../editor/BlockEditor.svelte";
   import type { BlockEditing } from "../editor/blocks";
@@ -44,6 +44,13 @@
     fillWindow?: boolean;
     /** Whether the properties panel is open. */
     propertiesOpen?: boolean;
+    /**
+     * Shows the properties panel above the document. False when it's in a
+     * sidebar instead (DESIGN.md §8.2).
+     */
+    propertiesAtTop?: boolean;
+    /** Moves the properties panel, from the menu in its header. */
+    onpropertiesplacement?: ((placement: PropertiesPlacement) => void) | null;
     /** Makes the properties panel editable. */
     propertyEditor?: PropertyEditor | null;
     /** Makes blocks editable by double-clicking them. */
@@ -72,6 +79,8 @@
     fontSize = null,
     fillWindow = false,
     propertiesOpen = true,
+    propertiesAtTop = true,
+    onpropertiesplacement = null,
     propertyEditor = null,
     blockEditing = null,
     keepPosition = false,
@@ -661,11 +670,12 @@
   role="document"
 >
   <article bind:this={column} class="sk-column" class:fill={fillWindow} style:font-size={fontSize === null ? null : `${fontSize}px`}>
-    {#if doc.frontMatter}
+    {#if doc.frontMatter && propertiesAtTop}
       <PropertiesPanel
         frontMatter={doc.frontMatter}
         open={propertiesOpen}
         ontoggle={(open) => onpropertiestoggle?.(open)}
+        onplacement={onpropertiesplacement}
         onlink={(href) => onlink?.(href)}
         editor={propertyEditor}
         onraw={onrawat}

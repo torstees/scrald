@@ -25,6 +25,12 @@
     onthemeclick: () => void;
     tocVisible: boolean;
     ontoggletoc: () => void;
+    /**
+     * Whether the right properties sidebar is shown, or null for no button
+     * (the panel is at the top, or a tab at the left).
+     */
+    propertiesShown?: boolean | null;
+    ontoggleproperties?: () => void;
     flavor: Flavor;
     flavorSource: FlavorSource;
     /** A flavor the user picked, or null for automatic. */
@@ -59,6 +65,8 @@
     ontypographyclick,
     tocVisible,
     ontoggletoc,
+    propertiesShown = null,
+    ontoggleproperties,
     flavor,
     flavorSource,
     onflavor,
@@ -139,6 +147,15 @@
   >
   <button class="theme help" onclick={onsettings} title="Settings (Ctrl+,)" aria-label="Settings">⚙</button>
   <button class="theme help" onclick={onshortcuts} title="Keyboard shortcuts (F1)" aria-label="Keyboard shortcuts">?</button>
+  {#if propertiesShown !== null}
+    <button
+      class="toc"
+      onclick={ontoggleproperties}
+      aria-pressed={propertiesShown}
+      title={`${propertiesShown ? "Hide" : "Show"} properties (Ctrl+Shift+\\)`}
+      aria-label="Toggle properties">◨</button
+    >
+  {/if}
 </footer>
 
 <style>

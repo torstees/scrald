@@ -8,6 +8,7 @@ import type {
   LaunchInfo,
   LinkTarget,
   OpenedDocument,
+  PropertiesPlacement,
   PropertyChange,
   DiskState,
   SaveOutcome,
@@ -273,6 +274,15 @@ export function setPropertiesOpen(open: boolean): Promise<void> {
   return invoke("set_properties_open", { open });
 }
 
+export function propertiesPlacement(): Promise<PropertiesPlacement> {
+  return invoke<PropertiesPlacement>("properties_placement");
+}
+
+/** Moves the properties panel, in every window. */
+export function setPropertiesPlacement(placement: PropertiesPlacement): Promise<void> {
+  return invoke("set_properties_placement", { placement });
+}
+
 export function typographyDefaults(): Promise<TypographyDefaults> {
   return invoke<TypographyDefaults>("typography_defaults");
 }
@@ -291,7 +301,7 @@ export function setContentsDepth(depth: number): Promise<void> {
 }
 
 /** A global setting another window (or this one) changed. */
-export type SettingName = "theme.default" | "typography" | "contents.depth";
+export type SettingName = "theme.default" | "typography" | "contents.depth" | "properties.placement";
 
 /** Calls `handler` with the setting's name whenever a global setting changes, in any window. */
 export function onSettingsChanged(handler: (name: SettingName) => void): Promise<UnlistenFn> {
