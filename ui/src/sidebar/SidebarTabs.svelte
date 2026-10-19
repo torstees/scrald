@@ -1,6 +1,7 @@
 <script lang="ts">
   // "Contents | Properties": the left sidebar's tabs when the properties
   // panel shares it (DESIGN.md §8.2).
+  import { tick } from "svelte";
   import type { Panel } from "./layout";
 
   interface Props {
@@ -15,14 +16,27 @@
     { id: "properties", label: "Properties", keys: "Ctrl+Shift+\\" },
   ];
 
-  /** Left and right arrows move between the tabs, as in any tab list. */
-  function onKeydown(event: KeyboardEvent): void {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  /**
+   * Left and right arrows move between the tabs (wrapping around), and Home
+   * and End go to the first and last, as in any tab list.
+   */
+  async function onKeydown(event: KeyboardEvent): Promise<void> {
+    const current = TABS.findIndex((t) => t.id === tab);
+    let index: number;
+    if (event.key === "ArrowLeft") index = (current - 1 + TABS.length) % TABS.length;
+    else if (event.key === "ArrowRight") index = (current + 1) % TABS.length;
+    else if (event.key === "Home") index = 0;
+    else if (event.key === "End") index = TABS.length - 1;
+    else return;
+    const next = TABS[index];
+    if (!next) return;
     event.preventDefault();
-    const next = tab === "contents" ? "properties" : "contents";
-    ontab(next);
-    const list = (event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>("[role=tab]");
-    list[next === "contents" ? 0 : 1]?.focus();
+    ontab(next.id);
+    // Each tab is a different sidebar component, so choosing one replaces this
+    // tab list with a new one. Focus the chosen tab there once it's rendered;
+    // the buttons here are about to leave the page.
+    await tick();
+    document.querySelector<HTMLButtonElement>('.sk-tabs [role="tab"][aria-selected="true"]')?.focus();
   }
 </script>
 
