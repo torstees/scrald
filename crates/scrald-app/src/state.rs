@@ -70,6 +70,9 @@ const TYPOGRAPHY: &str = "typography";
 /// Settings key: whether the properties panel starts open (DESIGN.md §8.2).
 const PROPERTIES_OPEN: &str = "properties.open";
 
+/// Settings key: where the properties panel goes (DESIGN.md §8.2).
+const PROPERTIES_PLACEMENT: &str = "properties.placement";
+
 /// Settings key: whether documents save themselves after a pause in editing
 /// (DESIGN.md §9.3).
 const AUTOSAVE: &str = "editing.autosave";
@@ -95,6 +98,23 @@ pub struct TypographyDefaults {
     /// Let text run the full window width, ignoring the measure.
     #[serde(default)]
     pub fill_window: bool,
+}
+
+/// Where the properties panel goes (DESIGN.md §8.2); mirrors
+/// `PropertiesPlacement` in ui/src/lib/types.ts.
+// Rust note: `#[default]` marks the variant `Default::default()` returns,
+// for enums whose `Default` is derived. Serde writes the variants as
+// "top", "left", and "right".
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PropertiesPlacement {
+    /// Above the document, scrolling with it.
+    #[default]
+    Top,
+    /// A tab beside Contents in the left sidebar.
+    Left,
+    /// A sidebar of its own at the right.
+    Right,
 }
 
 /// A reading position (DESIGN.md §4); mirrors `ScrollAnchor` in ui/src/reader/anchor.ts.
@@ -305,6 +325,15 @@ impl StateStore {
 
     pub fn set_properties_open(&self, open: bool) -> anyhow::Result<()> {
         self.set_setting(PROPERTIES_OPEN, &open)
+    }
+
+    /// Where the properties panel goes; at the top unless the user moved it.
+    pub fn properties_placement(&self) -> anyhow::Result<PropertiesPlacement> {
+        Ok(self.get_setting(PROPERTIES_PLACEMENT)?.unwrap_or_default())
+    }
+
+    pub fn set_properties_placement(&self, placement: PropertiesPlacement) -> anyhow::Result<()> {
+        self.set_setting(PROPERTIES_PLACEMENT, &placement)
     }
 
     /// Whether autosave is on. Off unless the user turned it on.
@@ -1006,6 +1035,29 @@ mod tests {
         assert_eq!(store.contents_depth().unwrap(), 2);
         store.set_contents_depth(0).unwrap();
         assert_eq!(store.contents_depth().unwrap(), 1);
+    }
+
+    #[test]
+    fn properties_placement_defaults_to_top() {
+        let store = StateStore::in_memory().unwrap();
+        assert_eq!(
+            store.properties_placement().unwrap(),
+            PropertiesPlacement::Top
+        );
+        store
+            .set_properties_placement(PropertiesPlacement::Right)
+            .unwrap();
+        assert_eq!(
+            store.properties_placement().unwrap(),
+            PropertiesPlacement::Right
+        );
+        assert_eq!(
+            store
+                .get_setting::<String>(PROPERTIES_PLACEMENT)
+                .unwrap()
+                .as_deref(),
+            Some("right")
+        );
     }
 
     #[test]
