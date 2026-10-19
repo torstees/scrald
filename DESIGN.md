@@ -408,7 +408,14 @@ Schema notes (as implemented, `crates/scrald-core/src/theme/`): unknown keys are
 - the accent as tag text on its 12% chip;
 - each syntax color on code, and as a callout title on its 9% tint.
 
-The accent also needs 3:1 against the page and the sidebar, since it draws the focus outline and the progress line. A test holds every bundled theme to this; user and imported themes aren't checked yet.
+The accent also needs 3:1 against the page and the sidebar, since it draws the focus outline and the progress line. A test holds every bundled theme to this. For other themes, the check runs in three places:
+- **Check contrast** in the theme switcher checks the selected theme, built-in or user, as its `theme.toml` reads now (for a theme written or changed by hand).
+- After an import, the switcher checks the new theme at once; a terminal scheme's own text color can fall short even though the derived colors aim for AA (§7.3).
+- The theme editor has a Contrast section that follows every pending change, and marks each color row involved in a problem with ⚠ (the problems are in its tooltip and accessible name). Palette colors aren't in the editor, so a problem with one points to `theme.toml`.
+
+These are warnings only: a theme below AA still loads and saves.
+
+Each result gives the pair drawn, its ratio cut (not rounded) to two decimals, the minimum, the theme colors involved, and a sample in the two colors.
 
 Tokens become CSS custom properties (`--sk-color-background`, `--sk-font-body`, `--sk-measure`, and so on). Bundled themes and user themes go through the same path, so a theme can be built entirely from TOML, and `theme.css` exists only for things tokens can't express.
 

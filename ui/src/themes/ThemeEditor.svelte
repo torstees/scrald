@@ -5,7 +5,9 @@
   // changes only the edited keys in theme.toml (comments stay).
   import { restoreFocus } from "../lib/focus";
   import { onMount } from "svelte";
-  import type { ThemeChange, ThemeDetails, ThemeEditorValues, ThemeFontValue } from "../lib/types";
+  import type { ContrastProblem, ThemeChange, ThemeDetails, ThemeEditorValues, ThemeFontValue } from "../lib/types";
+  import { COLOR_LABELS, describeProblems, problemsFor } from "./contrast";
+  import ContrastReport from "./ContrastReport.svelte";
   import {
     changeList,
     colorFieldValue,
@@ -20,27 +22,17 @@
     details: ThemeDetails;
     /** Installed font families, suggested in the font fields. */
     fonts: string[];
-    /** Preview `changes`; resolves to the edited values, or rejects with the problems. */
-    onpreview: (changes: ThemeChange[]) => Promise<ThemeEditorValues>;
+    /**
+     * Preview `changes`; resolves to the edited values and their contrast
+     * problems, or rejects with the problems that stop the theme loading.
+     */
+    onpreview: (changes: ThemeChange[]) => Promise<{ values: ThemeEditorValues; contrast: ContrastProblem[] }>;
     onsave: (changes: ThemeChange[]) => Promise<void>;
     oncancel: () => void;
   }
 
   let { details, fonts, onpreview, onsave, oncancel }: Props = $props();
 
-  const COLOR_LABELS: Record<string, string> = {
-    background: "Page",
-    foreground: "Text",
-    muted: "Muted text",
-    accent: "Accent",
-    link: "Links",
-    selection: "Selection",
-    border: "Borders",
-    code_bg: "Code background",
-    quote_bar: "Quote bar",
-    highlight_bg: "Highlight",
-    ui_background: "Sidebar and status bar",
-  };
   const DEFAULT_GLYPH = "❦";
   const FONT_LABELS: Record<ThemeFontValue["slot"], string> = {
     body: "Body",
@@ -56,6 +48,9 @@
   let colorText = $state<Record<string, string>>(Object.fromEntries(start.colors.map((c) => [c.key, c.value ?? ""])));
   let changes = $state(new Map<string, ThemeChange["value"]>());
   let problem = $state<string | null>(null);
+  // Contrast of the theme as previewed; checked again with every change.
+  // svelte-ignore state_referenced_locally
+  let contrast = $state<ContrastProblem[]>(details.contrast);
   let saving = $state(false);
   let panel: HTMLElement | undefined = $state();
 
@@ -77,7 +72,8 @@
       if (seq !== previewSeq) return;
       problem = null;
       // Derived colors follow the edited ones; the text fields stay as typed.
-      values.colors = edited.colors;
+      values.colors = edited.values.colors;
+      contrast = edited.contrast;
     } catch (e) {
       if (seq === previewSeq) problem = String(e);
     }
@@ -181,8 +177,16 @@
     <h3>Colors</h3>
     <p class="hint">Leave a color empty to derive it from the others.</p>
     {#each values.colors as color (color.key)}
+      {@const low = problemsFor(color.key, contrast)}
       <div class="row color">
-        <label for={`sk-color-${color.key}`}>{COLOR_LABELS[color.key] ?? color.key}</label>
+        <label for={`sk-color-${color.key}`}
+          >{COLOR_LABELS[color.key] ?? color.key}{#if low.length > 0}<span
+              class="warn"
+              title={`Low contrast:
+${describeProblems(low)}`}
+              aria-label={`${low.length} contrast problem${low.length === 1 ? "" : "s"}`}>⚠</span
+            >{/if}</label
+        >
         <input
           type="color"
           aria-label={`${COLOR_LABELS[color.key] ?? color.key} color picker`}
@@ -207,6 +211,14 @@
         {/if}
       </div>
     {/each}
+  </section>
+
+  <section>
+    <h3>Contrast</h3>
+    <ContrastReport problems={contrast} />
+    {#if contrast.some((p) => p.colors.some((c) => c.startsWith("palette.")))}
+      <p class="hint">Palette colors aren't in this editor; change them under [palette] in theme.toml.</p>
+    {/if}
   </section>
 
   <section>
@@ -488,6 +500,12 @@
 
   .unit {
     color: var(--sk-color-muted);
+  }
+
+  /* In the text color, like Save: the accent may be what's being fixed. */
+  .warn {
+    margin-left: 0.3em;
+    cursor: help;
   }
 
   fieldset {

@@ -3,6 +3,8 @@
 //! 4.5:1; the accent, which also draws focus rings and the progress line,
 //! needs 3:1 as a non-text color (and 4.5:1 where it's text, as in tags).
 
+use serde::Serialize;
+
 use super::color::Color;
 use super::schema::ThemeFile;
 
@@ -12,66 +14,81 @@ pub const TEXT: f32 = 4.5;
 pub const NON_TEXT: f32 = 3.0;
 
 /// One pair of colors that doesn't reach its minimum contrast.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContrastProblem {
     /// What is drawn on what, e.g. "muted text on the sidebar".
     pub what: String,
     pub ratio: f32,
     pub minimum: f32,
+    /// The theme colors involved, as the editor names them: `colors` keys
+    /// such as `"muted"` and `"ui_background"`, or `"palette.green"`.
+    pub colors: Vec<String>,
+    /// The two colors as drawn, opaque, for a sample of the problem.
+    pub fg: String,
+    pub bg: String,
 }
 
 impl std::fmt::Display for ContrastProblem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: {:.2}:1, needs {}:1",
-            self.what, self.ratio, self.minimum
-        )
+        // Cut to two decimals rather than rounded, so 4.496 never reads as
+        // the 4.50 it fails to reach.
+        let ratio = (self.ratio * 100.0).floor() / 100.0;
+        write!(f, "{}: {ratio:.2}:1, needs {}:1", self.what, self.minimum)
+    }
+}
+
+/// One pair to measure: a description, the color drawn and the color it's
+/// drawn on (each with the theme key it comes from), and the minimum.
+struct Pair {
+    what: String,
+    fg: (Color, String),
+    bg: (Color, String),
+    minimum: f32,
+}
+
+fn pair(what: &str, fg: (Color, &str), bg: (Color, &str), minimum: f32) -> Pair {
+    Pair {
+        what: what.to_string(),
+        fg: (fg.0, fg.1.to_string()),
+        bg: (bg.0, bg.1.to_string()),
+        minimum,
     }
 }
 
 /// Every pair in the theme below its minimum, worst first.
 pub fn contrast_problems(theme: &ThemeFile) -> Vec<ContrastProblem> {
     let c = theme.resolved_colors();
-    let page = c.background;
+    let text = (c.foreground, "foreground");
+    let muted = (c.muted, "muted");
+    let link = (c.link, "link");
+    let accent = (c.accent, "accent");
+    let page = (c.background, "background");
+    let sidebar = (c.ui_background, "ui_background");
+    let code = (c.code_bg, "code_bg");
     // Highlights and tag chips are translucent; measure what's on screen.
-    let highlight = c.highlight_bg.over(page);
-    let chip = c.accent.with_alpha(0.12).over(page);
+    let highlight = (c.highlight_bg.over(c.background), "highlight_bg");
+    let chip = (c.accent.with_alpha(0.12).over(c.background), "background");
 
-    let mut pairs: Vec<(String, Color, Color, f32)> = vec![
-        ("text on the page".into(), c.foreground, page, TEXT),
-        (
-            "text on the sidebar".into(),
-            c.foreground,
-            c.ui_background,
+    let mut pairs = vec![
+        pair("text on the page", text, page, TEXT),
+        pair("text on the sidebar", text, sidebar, TEXT),
+        pair("text on code", text, code, TEXT),
+        pair(
+            "text on a selection",
+            text,
+            (c.selection, "selection"),
             TEXT,
         ),
-        ("text on code".into(), c.foreground, c.code_bg, TEXT),
-        (
-            "text on a selection".into(),
-            c.foreground,
-            c.selection,
-            TEXT,
-        ),
-        ("text on a highlight".into(), c.foreground, highlight, TEXT),
-        ("muted text on the page".into(), c.muted, page, TEXT),
-        (
-            "muted text on the sidebar".into(),
-            c.muted,
-            c.ui_background,
-            TEXT,
-        ),
-        ("comments in code".into(), c.muted, c.code_bg, TEXT),
-        ("links on the page".into(), c.link, page, TEXT),
-        ("links on the sidebar".into(), c.link, c.ui_background, TEXT),
-        ("accent text in a tag".into(), c.accent, chip, TEXT),
-        ("accent on the page".into(), c.accent, page, NON_TEXT),
-        (
-            "accent on the sidebar".into(),
-            c.accent,
-            c.ui_background,
-            NON_TEXT,
-        ),
+        pair("text on a highlight", text, highlight, TEXT),
+        pair("muted text on the page", muted, page, TEXT),
+        pair("muted text on the sidebar", muted, sidebar, TEXT),
+        pair("comments in code", muted, code, TEXT),
+        pair("links on the page", link, page, TEXT),
+        pair("links on the sidebar", link, sidebar, TEXT),
+        pair("accent text in a tag", accent, chip, TEXT),
+        pair("accent on the page", accent, page, NON_TEXT),
+        pair("accent on the sidebar", accent, sidebar, NON_TEXT),
     ];
 
     // Syntax colors on code, and the callout titles drawn in them on a 9%
@@ -79,30 +96,37 @@ pub fn contrast_problems(theme: &ThemeFile) -> Vec<ContrastProblem> {
     // the accent or the link color.
     let p = &theme.palette;
     let palette = [
-        ("green", &p.green, c.accent),
-        ("cyan", &p.cyan, c.link),
-        ("magenta", &p.magenta, c.accent),
-        ("blue", &p.blue, c.link),
-        ("yellow", &p.yellow, c.accent),
-        ("red", &p.red, c.accent),
+        ("green", &p.green, accent),
+        ("cyan", &p.cyan, link),
+        ("magenta", &p.magenta, accent),
+        ("blue", &p.blue, link),
+        ("yellow", &p.yellow, accent),
+        ("red", &p.red, accent),
     ];
     for (name, value, fallback) in palette {
-        let color = value.as_deref().and_then(Color::parse).unwrap_or(fallback);
-        pairs.push((format!("{name} code on code"), color, c.code_bg, TEXT));
-        let tint = color.with_alpha(0.09).over(page);
-        pairs.push((format!("{name} callout title"), color, tint, TEXT));
+        let key = format!("palette.{name}");
+        let color = match value.as_deref().and_then(Color::parse) {
+            Some(color) => (color, key.as_str()),
+            None => fallback,
+        };
+        pairs.push(pair(&format!("{name} code on code"), color, code, TEXT));
+        let tint = (color.0.with_alpha(0.09).over(c.background), "background");
+        pairs.push(pair(&format!("{name} callout title"), color, tint, TEXT));
     }
 
     let mut problems: Vec<ContrastProblem> = pairs
         .into_iter()
-        .filter_map(|(what, fg, bg, minimum)| {
-            let ratio = fg.contrast(bg);
+        .filter_map(|pair| {
+            let ratio = pair.fg.0.contrast(pair.bg.0);
             // Rust note: `cond.then_some(x)` is `Some(x)` if `cond` holds,
             // else `None`, which is what `filter_map` keeps or drops.
-            (ratio < minimum).then_some(ContrastProblem {
-                what,
+            (ratio < pair.minimum).then_some(ContrastProblem {
+                what: pair.what,
                 ratio,
-                minimum,
+                minimum: pair.minimum,
+                colors: vec![pair.fg.1, pair.bg.1],
+                fg: pair.fg.0.to_string(),
+                bg: pair.bg.0.to_string(),
             })
         })
         .collect();
@@ -142,10 +166,57 @@ mod tests {
             .unwrap();
         assert_eq!(
             muted.to_string(),
-            "muted text on the page: 1.61:1, needs 4.5:1"
+            "muted text on the page: 1.60:1, needs 4.5:1"
+        );
+        assert_eq!(muted.colors, ["muted", "background"]);
+        assert_eq!(
+            (muted.fg.as_str(), muted.bg.as_str()),
+            ("#cccccc", "#ffffff")
         );
         assert!(problems.iter().any(|p| p.what == "text on the page"));
         let shortfalls: Vec<f32> = problems.iter().map(|p| p.ratio / p.minimum).collect();
         assert!(shortfalls.windows(2).all(|w| w[0] <= w[1]), "{problems:?}");
+    }
+
+    #[test]
+    fn ratios_just_short_of_the_minimum_never_print_as_passing() {
+        let problem = ContrastProblem {
+            what: "text on the page".into(),
+            ratio: 4.497,
+            minimum: TEXT,
+            colors: vec![],
+            fg: String::new(),
+            bg: String::new(),
+        };
+        assert_eq!(problem.to_string(), "text on the page: 4.49:1, needs 4.5:1");
+    }
+
+    #[test]
+    fn palette_colors_name_their_key_or_the_fallback() {
+        let theme = ThemeFile::parse(
+            "[meta]
+name = \"Pale\"
+schema = 1
+appearance = \"light\"
+             [colors]
+background = \"#ffffff\"
+accent = \"#dddddd\"
+             [palette]
+yellow = \"#ffff00\"
+",
+        )
+        .unwrap();
+        let problems = contrast_problems(&theme);
+        let find = |what: &str| problems.iter().find(|p| p.what == what).unwrap();
+        assert_eq!(
+            find("yellow code on code").colors,
+            ["palette.yellow", "code_bg"]
+        );
+        // No green in the palette: green code is drawn in the accent.
+        assert_eq!(find("green code on code").colors, ["accent", "code_bg"]);
+        assert_eq!(
+            find("accent text in a tag").colors,
+            ["accent", "background"]
+        );
     }
 }
