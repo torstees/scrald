@@ -2,6 +2,7 @@
 //! choosing which theme a document uses.
 
 pub mod color;
+pub mod contrast;
 pub mod css;
 pub mod edit;
 pub mod google_fonts;

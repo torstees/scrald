@@ -86,7 +86,6 @@
   button:focus-visible {
     background: var(--sk-color-background);
     border-color: var(--sk-color-border);
-    outline: none;
   }
 
   button.on {

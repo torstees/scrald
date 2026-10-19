@@ -5,6 +5,7 @@
 <script lang="ts">
   // Asked before closing the window or leaving a document with unsaved
   // changes (DESIGN.md §9.3): save, discard, or stay.
+  import { trapFocus } from "../lib/focus";
   import { onMount } from "svelte";
 
   interface Props {
@@ -31,7 +32,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div class="sk-backdrop" role="presentation" onkeydown={onKeydown}>
-  <div class="sk-dialog" role="alertdialog" aria-modal="true" aria-labelledby="sk-unsaved-title" aria-describedby="sk-unsaved-text">
+  <div class="sk-dialog" use:trapFocus role="alertdialog" aria-modal="true" aria-labelledby="sk-unsaved-title" aria-describedby="sk-unsaved-text">
     <h2 id="sk-unsaved-title">Save changes to “{title}”?</h2>
     <p id="sk-unsaved-text">You have unsaved changes. If you don't save them before {action}, they'll be lost.</p>
     <div class="sk-buttons">

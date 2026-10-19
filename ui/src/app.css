@@ -8,7 +8,7 @@
   color-scheme: light;
   --sk-color-background: #fbf8f1;
   --sk-color-foreground: #2b2a27;
-  --sk-color-muted: #77736a;
+  --sk-color-muted: #6c6960;
   --sk-color-accent: #8a5a2b;
   --sk-color-link: #2f5f8a;
   --sk-color-selection: #e8e0cd;
@@ -51,6 +51,32 @@ body {
   font-family: var(--sk-font-body);
   font-size: var(--sk-font-size);
   line-height: var(--sk-line-height);
+}
+
+/*
+ * Keyboard focus is shown in the theme's accent, which every bundled theme
+ * keeps at 3:1 or more against the page and the sidebar (core's contrast
+ * check). Mouse clicks don't show it (:focus-visible).
+ */
+:focus-visible {
+  outline: 2px solid var(--sk-color-accent);
+  outline-offset: 2px;
+}
+
+/* CodeMirror shows focus with its cursor and active line. */
+.cm-editor .cm-content:focus-visible {
+  outline: none;
+}
+
+/* With reduced motion asked for, nothing slides or spins (zoom checks it too). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /*

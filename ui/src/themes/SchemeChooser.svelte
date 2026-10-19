@@ -1,6 +1,7 @@
 <script lang="ts">
   // Chooses which color schemes to import from a terminal theme file that
   // holds several, such as a Windows Terminal settings.json (DESIGN.md §7.3).
+  import { trapFocus } from "../lib/focus";
   import { onMount } from "svelte";
 
   interface Props {
@@ -40,7 +41,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="backdrop" onkeydown={onKeydown} onclick={(e) => e.target === e.currentTarget && oncancel()}>
-  <div class="panel" role="dialog" aria-modal="true" aria-label="Choose color schemes to import">
+  <div class="panel" use:trapFocus role="dialog" aria-modal="true" aria-label="Choose color schemes to import">
     <header>
       <h2>Import color schemes</h2>
       <p class="source" title={path}>{names.length} schemes in {fileName}</p>
