@@ -277,12 +277,28 @@ export interface ThemeDetails {
   editable: boolean;
   folder: string | null;
   values: ThemeEditorValues;
+  /** Color pairs below WCAG AA, worst first. */
+  contrast: ContrastProblem[];
+}
+
+/** Mirrors `ContrastProblem` (crates/scrald-core/src/theme/contrast.rs). */
+export interface ContrastProblem {
+  /** What is drawn on what, e.g. "muted text on the sidebar". */
+  what: string;
+  ratio: number;
+  minimum: number;
+  /** Theme color keys involved: "muted", "ui_background", "palette.green", ... */
+  colors: string[];
+  /** The two colors as drawn, for a sample. */
+  fg: string;
+  bg: string;
 }
 
 /** Mirrors `ThemeEditPreview` (crates/scrald-app/src/commands.rs). */
 export interface ThemeEditPreview {
   style: ThemeStyle;
   values: ThemeEditorValues;
+  contrast: ContrastProblem[];
 }
 
 /** Mirrors `TerminalThemeFile` (crates/scrald-app/src/commands.rs). */

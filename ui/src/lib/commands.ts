@@ -22,6 +22,7 @@ import type {
   ThemeChange,
   ThemeDetails,
   ThemeEditPreview,
+  ContrastProblem,
   ThemeStyle,
   ThemeSummary,
   TypographyDefaults,
@@ -216,6 +217,11 @@ export function duplicateTheme(id: string): Promise<string> {
 /** What the theme editor shows for theme `id`. */
 export function themeDetails(id: string): Promise<ThemeDetails> {
   return invoke<ThemeDetails>("theme_details", { id });
+}
+
+/** Theme `id`'s color pairs below WCAG AA, worst first. */
+export function themeContrast(id: string): Promise<ContrastProblem[]> {
+  return invoke<ContrastProblem[]>("theme_contrast", { id });
 }
 
 /** Theme `id` as it would look with `changes`, without saving. */
