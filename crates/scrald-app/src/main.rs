@@ -4,6 +4,7 @@
 
 mod commands;
 mod fonts;
+mod newdoc;
 mod protocol;
 mod session;
 mod state;
@@ -139,6 +140,14 @@ fn main() -> anyhow::Result<()> {
             commands::set_document_pinned,
             commands::forget_document,
             commands::pick_document,
+            commands::new_document_options,
+            commands::pick_folder,
+            commands::create_document,
+            commands::remember_new_document_folder,
+            commands::forget_new_document_folder,
+            commands::remember_new_folders,
+            commands::set_remember_new_folders,
+            commands::open_templates_folder,
             commands::start_theme,
             commands::list_themes,
             commands::theme_style,
@@ -189,6 +198,12 @@ fn main() -> anyhow::Result<()> {
             }
             app.manage(theme_service);
             app.manage(fonts::FontCache::new(font_cache_dir(app.handle())));
+
+            let templates = newdoc::Templates::new(templates_dir(app.handle()));
+            if let Err(error) = templates.ensure_sample(&app.state::<state::StateStore>()) {
+                tracing::warn!(error = format!("{error:#}"), "templates folder unavailable");
+            }
+            app.manage(templates);
 
             start_crash_recovery(app.handle());
             Ok(())
@@ -280,6 +295,19 @@ fn user_theme_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
             .app_config_dir()
             .ok()
             .map(|dir| dir.join("themes")),
+    }
+}
+
+/// `templates/` in the app config folder (or under `SCRALD_DATA_DIR`, for
+/// tests): the user's templates for new documents (DESIGN.md §11).
+fn templates_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    match std::env::var_os("SCRALD_DATA_DIR") {
+        Some(dir) => Some(PathBuf::from(dir).join("templates")),
+        None => app
+            .path()
+            .app_config_dir()
+            .ok()
+            .map(|dir| dir.join("templates")),
     }
 }
 

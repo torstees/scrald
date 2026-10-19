@@ -436,3 +436,41 @@ export type SaveOutcome = "saved" | "conflict";
 
 /** Where the properties panel goes (DESIGN.md §8.2); mirrors `PropertiesPlacement` in state.rs. */
 export type PropertiesPlacement = "top" | "left" | "right";
+
+/** Mirrors `FolderChoice` (crates/scrald-app/src/commands.rs). */
+export interface FolderChoice {
+  path: string;
+  /** In the user's list of remembered folders. */
+  remembered: boolean;
+  /** The template last used there (remembered folders only). */
+  template: string | null;
+  /** Missing folders are only listed in the settings, to be removed. */
+  exists: boolean;
+}
+
+/** Mirrors `TemplateChoice` (crates/scrald-app/src/newdoc.rs). */
+export interface TemplateChoice {
+  /** `builtin:plain`, `builtin:obsidian`, `builtin:pandoc`, or `user:<file name>`. */
+  id: string;
+  name: string;
+}
+
+/** Mirrors `NewDocumentOptions` (crates/scrald-app/src/commands.rs). */
+export interface NewDocumentOptions {
+  folders: FolderChoice[];
+  defaultFolder: string | null;
+  templates: TemplateChoice[];
+  rememberByDefault: boolean;
+  templatesFolder: string | null;
+}
+
+/** Mirrors `NewDocumentRequest` (crates/scrald-app/src/commands.rs). */
+export interface NewDocumentRequest {
+  folder: string;
+  fileName: string;
+  title: string | null;
+  template: string;
+  /** Today's local date, `2026-10-19`. */
+  date: string;
+  remember: boolean;
+}

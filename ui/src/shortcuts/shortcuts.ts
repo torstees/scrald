@@ -21,6 +21,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Documents",
     shortcuts: [
       { keys: ["Ctrl+O"], action: "Open a document" },
+      { keys: ["Ctrl+N"], action: "Create a new document" },
       { keys: ["Ctrl+S"], action: "Save" },
       { keys: ["Alt+Left", "Mouse back button"], action: "Back to the previous document" },
       { keys: ["Alt+Right", "Mouse forward button"], action: "Forward" },

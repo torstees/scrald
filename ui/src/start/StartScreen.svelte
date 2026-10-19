@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Shown when Scrald starts without a document (DESIGN.md §11): an Open
-  // button, pinned and recent documents with their cover image or a swatch
+  // Shown when Scrald starts without a document (DESIGN.md §11): Open and
+  // New document buttons, pinned and recent documents with their cover image or a swatch
   // of the theme each was last shown in, and anything else the app puts in
   // `children` (recovered changes). Files can also be dropped anywhere on
   // the window.
@@ -16,6 +16,8 @@
     /** A line about the launch (say, a file that wasn't found). */
     message: string | null;
     onpick: () => void;
+    /** Opens the New document dialog. */
+    onnew: () => void;
     onopen: (doc: RecentDocument) => void;
     onpin: (doc: RecentDocument, pinned: boolean) => void;
     onforget: (doc: RecentDocument) => void;
@@ -25,7 +27,7 @@
     children?: Snippet;
   }
 
-  let { documents, themes, message, onpick, onopen, onpin, onforget, onshortcuts, onsettings, children }: Props = $props();
+  let { documents, themes, message, onpick, onnew, onopen, onpin, onforget, onshortcuts, onsettings, children }: Props = $props();
 
   const groups = $derived(splitPinned(documents));
   const themesById = $derived(new Map(themes.map((t) => [t.id, t])));
@@ -110,6 +112,7 @@
     <h1>Scrald</h1>
     <div class="open-row">
       <button class="primary" onclick={onpick} title="Open a Markdown file (Ctrl+O)">Open…</button>
+      <button class="primary" onclick={onnew} title="Create a Markdown file (Ctrl+N)">New document…</button>
       <span class="hint">or drop a Markdown file anywhere on this window</span>
       <button class="link" onclick={onsettings} title="Settings (Ctrl+,)">Settings</button>
       <button class="link" onclick={onshortcuts} title="Keyboard shortcuts (F1)">Keyboard shortcuts</button>

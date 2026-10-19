@@ -29,6 +29,13 @@
     setDocumentPinned,
     forgetDocument,
     pickDocument,
+    newDocumentOptions,
+    pickFolder,
+    createDocument,
+    openTemplatesFolder,
+    rememberNewDocumentFolder,
+    forgetNewDocumentFolder,
+    setRememberNewFolders,
     startTheme,
     setPropertiesOpen,
     propertiesPlacement as propertiesPlacementSetting,
@@ -78,6 +85,8 @@
     ThemeEditorValues,
     ContrastProblem,
     ThemeSummary,
+    NewDocumentOptions,
+    NewDocumentRequest,
   } from "./lib/types";
   import SchemeChooser from "./themes/SchemeChooser.svelte";
   import ThemeEditor from "./themes/ThemeEditor.svelte";
@@ -111,6 +120,7 @@
   import ShortcutsDialog from "./shortcuts/ShortcutsDialog.svelte";
   import { opensSettings, opensShortcuts, togglesPanel } from "./shortcuts/shortcuts";
   import SettingsDialog from "./settings/SettingsDialog.svelte";
+  import NewDocumentDialog from "./newdoc/NewDocumentDialog.svelte";
   import { readingProgress, wordsBefore, type ReadingPosition } from "./status/progress";
 
   let doc = $state<DocumentModel | null>(null);
@@ -127,6 +137,10 @@
   let searchBar: SearchBar | undefined = $state();
   let shortcutsOpen = $state(false);
   let settingsOpen = $state(false);
+  // The New document dialog's folders and templates while it's open (DESIGN.md §11).
+  let newDocument = $state<NewDocumentOptions | null>(null);
+  // Remembered folders and their setting, for the settings dialog.
+  let newDocumentSettings = $state<NewDocumentOptions | null>(null);
   // Global settings shown in the settings dialog (the typography defaults
   // live in `typography`, autosave in `autosave`).
   let defaultThemeId = $state<string | null>(null);
@@ -750,7 +764,11 @@
   async function openSettings(): Promise<void> {
     settingsOpen = true;
     try {
-      [themeList, defaultThemeId] = await Promise.all([listThemes(), defaultThemeSetting()]);
+      [themeList, defaultThemeId, newDocumentSettings] = await Promise.all([
+        listThemes(),
+        defaultThemeSetting(),
+        newDocumentOptions(),
+      ]);
     } catch (e) {
       showNotice(`Could not read the settings: ${String(e)}`);
     }
@@ -910,6 +928,44 @@
   }
 
   /** "Open…" (Ctrl+O): a file dialog, starting in the open document's folder. */
+  // New document (DESIGN.md §11).
+  async function openNewDocument(): Promise<void> {
+    try {
+      newDocument = await newDocumentOptions();
+    } catch (e) {
+      report(`Could not start a new document: ${String(e)}`);
+    }
+  }
+
+  /**
+   * Creates the document and opens it in raw mode, ready to type. Asks about
+   * unsaved changes first, so cancelling that never leaves a new file
+   * behind; if creating fails, the dialog stays open with the reason.
+   */
+  async function createNewDocument(request: NewDocumentRequest): Promise<void> {
+    if (!(await confirmLeave("creating a new document"))) return;
+    const path = await createDocument(request);
+    newDocument = null;
+    await navigate(path, null, true);
+    // Past the end: the cursor goes after the starting text.
+    if (doc) await enterRawMode(Number.MAX_SAFE_INTEGER);
+  }
+
+  /** Remembered folders, from the settings (DESIGN.md §11). */
+  async function changeNewDocumentFolders(change: () => Promise<unknown>): Promise<void> {
+    try {
+      await change();
+      newDocumentSettings = await newDocumentOptions();
+    } catch (e) {
+      showNotice(`Could not change the folders: ${String(e)}`);
+    }
+  }
+
+  async function addNewDocumentFolder(): Promise<void> {
+    const picked = await pickFolder(newDocumentSettings?.defaultFolder ?? null);
+    if (picked) await changeNewDocumentFolders(() => rememberNewDocumentFolder(picked));
+  }
+
   async function pickAndOpen(): Promise<void> {
     try {
       const path = await pickDocument(doc?.path ?? null);
@@ -981,10 +1037,19 @@
       const opened = await openDocument(path);
       reportTiming("ipc_open_document", performance.now() - openStarted);
       autosaver.cancel();
+      // Another document never inherits raw mode: the editor would still
+      // hold the previous document's text. (Its pending typing was sent by
+      // `confirmLeave`, which runs before every switch.)
+      const another = doc !== null && opened.document.path !== doc.path;
       await applyOpened(opened, anchor);
       recovered = opened.recovered;
       conflict = null;
       recoveryComparing = false;
+      if (another && rawMode) {
+        rawMode = false;
+        raw = null;
+        comparing = false;
+      }
       if (comparing) {
         comparing = false;
         rawMode = false;
@@ -1025,8 +1090,9 @@
    * Opens a document as a new history entry: at `fragment` if given,
    * otherwise where the reader left off last time.
    */
-  async function navigate(path: string, fragment: string | null = null): Promise<void> {
-    if (!(await confirmLeave("opening another document"))) return;
+  /** Opens `path` in this window; `confirmed` when unsaved changes were already asked about. */
+  async function navigate(path: string, fragment: string | null = null, confirmed = false): Promise<void> {
+    if (!confirmed && !(await confirmLeave("opening another document"))) return;
     rememberPosition();
     pendingFragment = fragment;
     if (await load(path, fragment === null ? "remembered" : TOP_ANCHOR)) {
@@ -1355,7 +1421,9 @@
       else void openSettings();
       return;
     }
-    // The reference and settings are modal: other shortcuts wait until they close.
+    // The reference, settings, and New document are modal: other shortcuts
+    // wait until they close (the New document dialog handles its own Escape).
+    if (newDocument) return;
     if (shortcutsOpen || settingsOpen) {
       if (event.key === "Escape") shortcutsOpen = settingsOpen = false;
       return;
@@ -1373,6 +1441,11 @@
     if (event.ctrlKey && !event.shiftKey && (event.key === "o" || event.key === "O")) {
       event.preventDefault();
       void pickAndOpen();
+      return;
+    }
+    if (event.ctrlKey && !event.shiftKey && (event.key === "n" || event.key === "N")) {
+      event.preventDefault();
+      void openNewDocument();
       return;
     }
     if (event.ctrlKey && (event.key === "s" || event.key === "S")) {
@@ -1663,6 +1736,7 @@
         themes={themeList}
         {message}
         onpick={pickAndOpen}
+        onnew={openNewDocument}
         onopen={openRecent}
         onpin={pinRecent}
         onforget={forgetRecent}
@@ -1699,7 +1773,20 @@
       onpropertiesopen={togglePropertiesPanel}
       onpropertiesplacement={(placement) => void placeProperties(placement)}
       onautosave={changeAutosave}
+      newDocument={newDocumentSettings}
+      onremembernewfolders={(remember) => void changeNewDocumentFolders(() => setRememberNewFolders(remember))}
+      onforgetfolder={(path) => void changeNewDocumentFolders(() => forgetNewDocumentFolder(path))}
+      onaddfolder={() => void addNewDocumentFolder()}
       onclose={() => (settingsOpen = false)}
+    />
+  {/if}
+  {#if newDocument}
+    <NewDocumentDialog
+      options={newDocument}
+      oncreate={createNewDocument}
+      onpickfolder={pickFolder}
+      ontemplatesfolder={() => void openTemplatesFolder().catch((e) => showNotice(`Could not open the templates folder: ${String(e)}`))}
+      oncancel={() => (newDocument = null)}
     />
   {/if}
   {#if dropping}

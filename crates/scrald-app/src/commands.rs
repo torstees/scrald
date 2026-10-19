@@ -1271,6 +1271,231 @@ pub async fn pick_document(
 /// File extensions Scrald opens as Markdown (dialogs, drag and drop).
 pub const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown", "mdown", "mkd", "mkdn", "txt"];
 
+/// A folder the New document dialog offers (DESIGN.md §11).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderChoice {
+    pub path: String,
+    /// In the user's list of remembered folders.
+    pub remembered: bool,
+    /// The template last used there (remembered folders only).
+    pub template: Option<String>,
+    /// Whether the folder is still there; missing ones are only listed in
+    /// the settings, to be removed.
+    pub exists: bool,
+}
+
+/// What the New document dialog and the settings offer.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewDocumentOptions {
+    /// Remembered folders first (missing ones included), then the folders
+    /// of recent documents, then the Documents folder if nothing else is.
+    pub folders: Vec<FolderChoice>,
+    /// The folder of the most recently opened document, else the first
+    /// remembered folder, else the Documents folder.
+    pub default_folder: Option<String>,
+    pub templates: Vec<crate::newdoc::TemplateChoice>,
+    /// Whether "Remember this folder" starts checked.
+    pub remember_by_default: bool,
+    pub templates_folder: Option<String>,
+}
+
+/// How many recent documents' folders the dialog suggests.
+const RECENT_FOLDERS: usize = 5;
+
+/// The folders, templates, and defaults for a new document.
+#[tauri::command]
+pub async fn new_document_options(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, StateStore>,
+    templates: tauri::State<'_, crate::newdoc::Templates>,
+) -> Result<NewDocumentOptions, CommandError> {
+    let remembered = store.new_document_folders()?;
+    let recent = store.last_opened_paths(50)?;
+    let documents = app.path().document_dir().ok();
+    // Checking folders on a disconnected network drive can take seconds, so
+    // it happens on a worker thread (like the start screen's list).
+    let (folders, default_folder) = tauri::async_runtime::spawn_blocking(move || {
+        let mut folders: Vec<FolderChoice> = remembered
+            .into_iter()
+            .map(|f| FolderChoice {
+                exists: Path::new(&f.path).is_dir(),
+                path: f.path,
+                remembered: true,
+                template: f.template,
+            })
+            .collect();
+        let mut recent_folders: Vec<String> = Vec::new();
+        for document in &recent {
+            let Some(folder) = Path::new(document).parent() else {
+                continue;
+            };
+            let folder = folder.display().to_string();
+            if !recent_folders.contains(&folder) && Path::new(&folder).is_dir() {
+                recent_folders.push(folder);
+            }
+            if recent_folders.len() == RECENT_FOLDERS {
+                break;
+            }
+        }
+        let default_folder = recent_folders
+            .first()
+            .cloned()
+            .or_else(|| folders.iter().find(|f| f.exists).map(|f| f.path.clone()))
+            .or_else(|| documents.as_ref().map(|d| d.display().to_string()));
+        // Rust note: an `Option` is also an iterator of zero or one items, so
+        // `chain(option)` appends the default folder only when there is one.
+        for folder in recent_folders.into_iter().chain(default_folder.clone()) {
+            if !folders.iter().any(|f| f.path == folder) {
+                folders.push(FolderChoice {
+                    path: folder,
+                    remembered: false,
+                    template: None,
+                    exists: true,
+                });
+            }
+        }
+        (folders, default_folder)
+    })
+    .await
+    .context("checking folders failed")?;
+    Ok(NewDocumentOptions {
+        folders,
+        default_folder,
+        templates: templates.list(),
+        remember_by_default: store.remember_new_folders()?,
+        templates_folder: templates.dir().map(|d| d.display().to_string()),
+    })
+}
+
+/// Shows the system folder dialog for a new document's folder (or one to
+/// remember, from the settings), starting in `near` when given.
+#[tauri::command]
+pub async fn pick_folder(
+    window: tauri::WebviewWindow,
+    near: Option<PathBuf>,
+) -> Result<Option<PathBuf>, CommandError> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = window
+            .dialog()
+            .file()
+            .set_parent(&window)
+            .set_title("Choose a folder");
+        if let Some(folder) = near.filter(|f| f.is_dir()) {
+            dialog = dialog.set_directory(folder);
+        }
+        dialog.blocking_pick_folder()
+    })
+    .await
+    .context("folder picker failed")?;
+    Ok(picked.and_then(|p| p.into_path().ok()))
+}
+
+/// What the New document dialog asks for.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewDocumentRequest {
+    pub folder: PathBuf,
+    /// As typed; `.md` is added unless it has a Markdown extension.
+    pub file_name: String,
+    /// Empty or missing for none: then the template is ignored (Plain).
+    pub title: Option<String>,
+    pub template: String,
+    /// Today's date where the user is, `2026-10-19` (the frontend knows the
+    /// time zone).
+    pub date: String,
+    /// Add the folder to the remembered ones.
+    pub remember: bool,
+}
+
+/// Creates a new document and returns its path; the frontend then opens it.
+/// A built-in template also sets the document's flavor, as the user's
+/// choice for it (DESIGN.md §11).
+#[tauri::command]
+pub fn create_document(
+    store: tauri::State<'_, StateStore>,
+    templates: tauri::State<'_, crate::newdoc::Templates>,
+    request: NewDocumentRequest,
+) -> Result<PathBuf, CommandError> {
+    let name = scrald_core::newdoc::file_name(&request.file_name)?;
+    let title = request
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+    // A template needs a title; without one the document is plain.
+    let template_id = match title {
+        Some(_) => request.template.as_str(),
+        None => scrald_core::newdoc::BuiltinTemplate::Plain.id(),
+    };
+    let (template, flavor) = templates.text(template_id)?;
+    let text = scrald_core::newdoc::starting_text(&template, title, &request.date)?;
+    let path = crate::newdoc::create_file(&request.folder, &name, &text)?;
+    tracing::info!(path = %path.display(), template = template_id, "created document");
+
+    if let Some(flavor) = flavor {
+        // The flavor is stored with the document's row, which opening makes.
+        store.record_open(&path)?;
+        store.set_document_flavor(&path, Some(flavor))?;
+    }
+    if request.remember {
+        store.remember_new_document_folder(&request.folder, title.map(|_| template_id))?;
+    } else if title.is_some() {
+        store.set_new_document_folder_template(&request.folder, template_id)?;
+    }
+    Ok(path)
+}
+
+/// Adds a folder to the remembered ones (from the settings).
+#[tauri::command]
+pub fn remember_new_document_folder(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+) -> Result<(), CommandError> {
+    Ok(store.remember_new_document_folder(&path, None)?)
+}
+
+#[tauri::command]
+pub fn forget_new_document_folder(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+) -> Result<(), CommandError> {
+    Ok(store.forget_new_document_folder(&path)?)
+}
+
+#[tauri::command]
+pub fn remember_new_folders(store: tauri::State<'_, StateStore>) -> Result<bool, CommandError> {
+    Ok(store.remember_new_folders()?)
+}
+
+/// Sets whether "Remember this folder" starts checked.
+#[tauri::command]
+pub fn set_remember_new_folders(
+    store: tauri::State<'_, StateStore>,
+    remember: bool,
+) -> Result<(), CommandError> {
+    Ok(store.set_remember_new_folders(remember)?)
+}
+
+/// Opens the templates folder in the system file manager. Only that
+/// folder: the page can't ask for any other path.
+#[tauri::command]
+pub fn open_templates_folder(
+    app: tauri::AppHandle,
+    templates: tauri::State<'_, crate::newdoc::Templates>,
+) -> Result<(), CommandError> {
+    let dir = templates
+        .dir()
+        .context("there's no templates folder")?
+        .to_path_buf();
+    std::fs::create_dir_all(&dir).with_context(|| format!("could not create {}", dir.display()))?;
+    app.opener()
+        .open_path(dir.display().to_string(), None::<&str>)?;
+    Ok(())
+}
+
 /// The theme for a window without a document (the start screen): the
 /// global default, else the built-in one for the system's light or dark mode.
 #[tauri::command]

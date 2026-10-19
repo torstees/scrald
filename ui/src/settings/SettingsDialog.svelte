@@ -4,7 +4,7 @@
   // Escape, the × button, or clicking outside closes it.
   import { trapFocus } from "../lib/focus";
   import { onMount } from "svelte";
-  import type { PropertiesPlacement, ThemeSummary, TypographyDefaults } from "../lib/types";
+  import type { NewDocumentOptions, PropertiesPlacement, ThemeSummary, TypographyDefaults } from "../lib/types";
   import { formatZoom, ZOOM_STEPS, type TextSizing } from "../typography/typography";
 
   interface Props {
@@ -22,6 +22,12 @@
     onpropertiesopen: (open: boolean) => void;
     onpropertiesplacement: (placement: PropertiesPlacement) => void;
     onautosave: (enabled: boolean) => void;
+    /** Remembered folders and the "Remember this folder" default; null while loading. */
+    newDocument: NewDocumentOptions | null;
+    onremembernewfolders: (remember: boolean) => void;
+    onforgetfolder: (path: string) => void;
+    /** Picks a folder to remember. */
+    onaddfolder: () => void;
     onclose: () => void;
   }
 
@@ -39,8 +45,14 @@
     onpropertiesopen,
     onpropertiesplacement,
     onautosave,
+    newDocument,
+    onremembernewfolders,
+    onforgetfolder,
+    onaddfolder,
     onclose,
   }: Props = $props();
+
+  const rememberedFolders = $derived(newDocument?.folders.filter((f) => f.remembered) ?? []);
 
   let closeButton: HTMLButtonElement | undefined = $state();
   onMount(() => closeButton?.focus());
@@ -176,6 +188,38 @@
         </label>
         <p class="hint">Saves a document 5 seconds after your last edit. When off, <kbd>Ctrl</kbd>+<kbd>S</kbd> saves, and closing asks first.</p>
       </section>
+
+      <section>
+        <h3>New documents</h3>
+        {#if newDocument}
+          <label class="row check">
+            <input
+              type="checkbox"
+              checked={newDocument.rememberByDefault}
+              onchange={(e) => onremembernewfolders(e.currentTarget.checked)}
+            />
+            Check "Remember this folder" to start with
+          </label>
+          <p class="hint">Remembered folders are offered first when you create a document (<kbd>Ctrl</kbd>+<kbd>N</kbd>), each with the template you last used there.</p>
+          {#if rememberedFolders.length > 0}
+            <ul class="folders">
+              {#each rememberedFolders as folder (folder.path)}
+                <li class:missing={!folder.exists}>
+                  <span class="path" title={folder.path}>{folder.path}</span>
+                  {#if !folder.exists}<span class="missing-note">Not found</span>{/if}
+                  <button
+                    class="remove"
+                    aria-label={`Forget ${folder.path}`}
+                    title="Forget this folder"
+                    onclick={() => onforgetfolder(folder.path)}>×</button
+                  >
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <button class="add" onclick={onaddfolder}>Add folder…</button>
+        {/if}
+      </section>
     </div>
   </div>
 </div>
@@ -292,6 +336,62 @@
     color: var(--sk-color-muted);
     font-size: 0.9em;
     line-height: 1.4;
+  }
+
+  .folders {
+    list-style: none;
+    margin: 0 0 0.5em;
+    padding: 0;
+  }
+
+  .folders li {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.15em 0;
+  }
+
+  .path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .missing .path {
+    color: var(--sk-color-muted);
+  }
+
+  .missing-note {
+    color: var(--sk-color-muted);
+    font-size: 0.9em;
+  }
+
+  .remove,
+  .add {
+    font: inherit;
+    color: var(--sk-color-foreground);
+    background: var(--sk-color-background);
+    border: 1px solid var(--sk-color-border);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .remove {
+    padding: 0 0.45em;
+    color: var(--sk-color-muted);
+    background: none;
+    border-color: transparent;
+  }
+
+  .remove:hover {
+    color: var(--sk-color-foreground);
+    border-color: var(--sk-color-border);
+  }
+
+  .add {
+    padding: 0.25em 0.7em;
   }
 
   code,
