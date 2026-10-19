@@ -32,9 +32,10 @@
     /** Text sizing and zoom summary; clicking it opens the typography panel. */
     typography: string;
     ontypographyclick: () => void;
-    /** Whether autosave is on; clicking toggles it (for every window). */
+    /** Whether autosave is on; shown only then, and clicking opens settings. */
     autosave: boolean;
-    onautosave: () => void;
+    /** Opens the settings dialog. */
+    onsettings: () => void;
     /** Share of the document read, 0..1 (DESIGN.md §10). */
     progress: number;
     /** Opens the keyboard shortcut reference. */
@@ -62,7 +63,7 @@
     flavorSource,
     onflavor,
     autosave,
-    onautosave,
+    onsettings,
     progress,
     onshortcuts,
   }: Props = $props();
@@ -105,16 +106,14 @@
       {/if}
     </span>
   {/if}
-  <button
-    class="theme"
-    class:on={autosave}
-    onclick={onautosave}
-    aria-pressed={autosave}
-    title={autosave
-      ? "Documents save themselves 5 seconds after you stop editing. Click to turn off."
-      : "Off: changes are saved only with Ctrl+S. Click to save automatically 5 seconds after you stop editing."}
-    >Autosave {autosave ? "on" : "off"}</button
-  >
+  {#if autosave}
+    <button
+      class="theme on"
+      onclick={onsettings}
+      title="Autosave is on: documents save themselves 5 seconds after you stop editing. Click to change it in Settings."
+      >Autosave</button
+    >
+  {/if}
   {#if themeName}
     <button class="theme" onclick={onthemeclick} title="Change theme (Ctrl+T)">{themeName}</button>
   {/if}
@@ -138,6 +137,7 @@
     title={`Read: ${formatProgress(progress)}. Whole document: about ${formatReadingTime(wordCount)}.`}
     >{formatProgress(progress)} · {formatTimeLeft(wordCount, progress)}</span
   >
+  <button class="theme help" onclick={onsettings} title="Settings (Ctrl+,)" aria-label="Settings">⚙</button>
   <button class="theme help" onclick={onshortcuts} title="Keyboard shortcuts (F1)" aria-label="Keyboard shortcuts">?</button>
 </footer>
 

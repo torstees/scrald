@@ -13,16 +13,22 @@
     onselect: (index: number) => void;
     /** Show outline numbers (when the theme numbers headings). */
     numbering?: boolean;
+    /** The deepest heading level to list (a global setting; 6 is all). */
+    depth?: number;
+    /** Called when the depth is changed here. */
+    ondepth?: (depth: number) => void;
   }
 
-  let { toc, current, onselect, numbering = false }: Props = $props();
+  let { toc, current, onselect, numbering = false, depth = 6, ondepth }: Props = $props();
 
-  let maxLevel = $state(6);
+  const deepest = $derived(toc.reduce((max, e) => Math.max(max, e.level), 1));
+  const shallowest = $derived(toc.reduce((min, e) => Math.min(min, e.level), 6));
+  // A depth above this document's top level would hide every entry, and one
+  // at or below its deepest level is "All".
+  const maxLevel = $derived(depth >= deepest ? 6 : Math.max(depth, shallowest));
   const collapsed = new SvelteSet<number>();
   const visible = $derived(visibleEntries(toc, maxLevel, collapsed));
   const highlighted = $derived(nearestVisible(visible, current));
-  const deepest = $derived(toc.reduce((max, e) => Math.max(max, e.level), 1));
-  const shallowest = $derived(toc.reduce((min, e) => Math.min(min, e.level), 6));
 
   function toggle(index: number): void {
     if (collapsed.has(index)) collapsed.delete(index);
@@ -36,7 +42,7 @@
     {#if deepest > shallowest}
       <label>
         Depth
-        <select bind:value={maxLevel}>
+        <select value={maxLevel} onchange={(e) => ondepth?.(Number(e.currentTarget.value))}>
           {#each Array.from({ length: deepest - shallowest + 1 }, (_, k) => shallowest + k) as level (level)}
             <option value={level}>H{level}</option>
           {/each}

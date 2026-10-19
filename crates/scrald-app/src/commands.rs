@@ -952,10 +952,47 @@ pub fn typography_defaults(
 
 #[tauri::command]
 pub fn set_typography_defaults(
+    app: tauri::AppHandle,
     store: tauri::State<'_, StateStore>,
     defaults: TypographyDefaults,
 ) -> Result<(), CommandError> {
-    Ok(store.set_typography_defaults(defaults)?)
+    store.set_typography_defaults(defaults)?;
+    settings_changed(&app, "typography")
+}
+
+/// Event sent to every window when a global setting changes, with the
+/// setting's name: "theme.default", "typography", or "contents.depth".
+/// (Autosave has its own event; `properties.open` isn't announced, since
+/// it's only how the panel starts and open windows keep theirs.)
+pub const SETTINGS_CHANGED: &str = "settings-changed";
+
+fn settings_changed(app: &tauri::AppHandle, name: &str) -> Result<(), CommandError> {
+    use tauri::Emitter;
+    app.emit(SETTINGS_CHANGED, name)?;
+    Ok(())
+}
+
+/// The deepest heading level the contents sidebar lists (1–6).
+#[tauri::command]
+pub fn contents_depth(store: tauri::State<'_, StateStore>) -> Result<u8, CommandError> {
+    Ok(store.contents_depth()?)
+}
+
+#[tauri::command]
+pub fn set_contents_depth(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, StateStore>,
+    depth: u8,
+) -> Result<(), CommandError> {
+    store.set_contents_depth(depth)?;
+    settings_changed(&app, "contents.depth")
+}
+
+/// The global default theme's id; `null` when the built-in light or dark
+/// theme follows the system.
+#[tauri::command]
+pub fn default_theme(store: tauri::State<'_, StateStore>) -> Result<Option<String>, CommandError> {
+    Ok(store.default_theme()?)
 }
 
 /// Sets the theme for one document, or with `null` returns it to its
@@ -975,13 +1012,16 @@ pub fn set_document_theme(
     Ok(())
 }
 
-/// Sets the global default theme.
+/// Sets the global default theme, or with `null` goes back to following the
+/// system's light or dark mode.
 #[tauri::command]
 pub fn set_default_theme(
+    app: tauri::AppHandle,
     store: tauri::State<'_, StateStore>,
-    id: String,
+    id: Option<String>,
 ) -> Result<(), CommandError> {
-    Ok(store.set_setting(DEFAULT_THEME, &id)?)
+    store.set_default_theme(id.as_deref())?;
+    settings_changed(&app, "theme.default")
 }
 
 /// Copies a theme into the user theme folder to customize; returns the new id.

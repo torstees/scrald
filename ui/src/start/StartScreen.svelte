@@ -21,10 +21,11 @@
     onforget: (doc: RecentDocument) => void;
     /** Opens the keyboard shortcut reference. */
     onshortcuts: () => void;
+    onsettings: () => void;
     children?: Snippet;
   }
 
-  let { documents, themes, message, onpick, onopen, onpin, onforget, onshortcuts, children }: Props = $props();
+  let { documents, themes, message, onpick, onopen, onpin, onforget, onshortcuts, onsettings, children }: Props = $props();
 
   const groups = $derived(splitPinned(documents));
   const themesById = $derived(new Map(themes.map((t) => [t.id, t])));
@@ -110,6 +111,7 @@
     <div class="open-row">
       <button class="primary" onclick={onpick} title="Open a Markdown file (Ctrl+O)">Open…</button>
       <span class="hint">or drop a Markdown file anywhere on this window</span>
+      <button class="link" onclick={onsettings} title="Settings (Ctrl+,)">Settings</button>
       <button class="link" onclick={onshortcuts} title="Keyboard shortcuts (F1)">Keyboard shortcuts</button>
     </div>
     {#if message}<p class="message">{message}</p>{/if}
@@ -216,11 +218,15 @@
   }
 
   button.link {
-    margin-left: auto;
     border-color: transparent;
     background: none;
     color: var(--sk-color-link);
     padding: 0.3em 0;
+  }
+
+  /* The links sit together at the right. */
+  .hint + button.link {
+    margin-left: auto;
   }
 
   button.link:hover {
