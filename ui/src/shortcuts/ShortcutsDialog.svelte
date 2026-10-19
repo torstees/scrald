@@ -1,6 +1,7 @@
 <script lang="ts">
   // The keyboard shortcut reference (F1 or Ctrl+/), read from
   // `SHORTCUT_GROUPS`. Escape, the × button, or clicking outside closes it.
+  import { trapFocus } from "../lib/focus";
   import { onMount } from "svelte";
   import { keyParts, SHORTCUT_GROUPS } from "./shortcuts";
 
@@ -24,7 +25,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="backdrop" onkeydown={onKeydown} onclick={(e) => e.target === e.currentTarget && onclose()}>
-  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="sk-shortcuts-title">
+  <div class="panel" use:trapFocus role="dialog" aria-modal="true" aria-labelledby="sk-shortcuts-title">
     <header>
       <h2 id="sk-shortcuts-title">Keyboard shortcuts</h2>
       <button bind:this={closeButton} class="close" aria-label="Close" title="Close (Esc)" onclick={onclose}>×</button>

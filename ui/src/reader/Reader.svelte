@@ -125,10 +125,20 @@
         updateInPlace(d);
       } else {
         void startMount(d, anchor);
+        takeIdleFocus();
       }
       shownPath = d.path;
     });
   });
+
+  /**
+   * Focuses the reading area when nothing else has focus, as when a document
+   * opens, so PageDown, Space, and the arrow keys scroll it straight away.
+   */
+  function takeIdleFocus(): void {
+    const active = document.activeElement;
+    if (active === null || active === document.body) scroller?.focus({ preventScroll: true });
+  }
 
   /**
    * Shows an edited version of the same document: every section mounted, so
@@ -655,8 +665,10 @@
 </script>
 
 <!-- The click handler only intercepts clicks on links (delegation), and links are
-     keyboard-activatable themselves, so the container needs no key handler. -->
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+     keyboard-activatable themselves, so the container needs no key handler.
+     It's focusable because it scrolls: keyboard users Tab to it to scroll it
+     with PageDown and the arrows, as a scrollable region should allow. -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
 <div
   class="sk-scroller"
   bind:this={scroller}
@@ -668,6 +680,8 @@
   onfocusin={onFocusIn}
   onfocusout={scheduleHide}
   role="document"
+  aria-label="Document"
+  tabindex="0"
 >
   <article bind:this={column} class="sk-column" class:fill={fillWindow} style:font-size={fontSize === null ? null : `${fontSize}px`}>
     {#if doc.frontMatter && propertiesAtTop}
@@ -754,6 +768,11 @@
     overflow-anchor: auto;
     padding: 0 1.5rem;
     box-sizing: border-box;
+  }
+
+  /* Tabbing to the reading area outlines it from inside, where it isn't clipped. */
+  .sk-scroller:focus-visible {
+    outline-offset: -2px;
   }
 
   /* The text column: at most --sk-measure characters wide (DESIGN.md §7.4). */

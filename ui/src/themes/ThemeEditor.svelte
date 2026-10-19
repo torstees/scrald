@@ -3,6 +3,7 @@
   // user theme's colors, fonts, layout, and element styles. Every change is
   // previewed on the document at once; nothing is written until Save, which
   // changes only the edited keys in theme.toml (comments stay).
+  import { restoreFocus } from "../lib/focus";
   import { onMount } from "svelte";
   import type { ThemeChange, ThemeDetails, ThemeEditorValues, ThemeFontValue } from "../lib/types";
   import {
@@ -144,7 +145,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<aside bind:this={panel} class="sk-theme-editor" aria-label="Edit theme" onkeydown={onKeydown}>
+<aside bind:this={panel} use:restoreFocus class="sk-theme-editor" aria-label="Edit theme" onkeydown={onKeydown}>
   <header>
     <h2>Edit theme</h2>
     <p class="hint" title={details.folder ?? undefined}>Changes show on the document as you make them. Save writes theme.toml.</p>

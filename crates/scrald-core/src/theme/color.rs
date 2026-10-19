@@ -76,6 +76,15 @@ impl Color {
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
     }
 
+    /// The opaque color seen when `self` (possibly translucent) is drawn over
+    /// `background`, as a highlight is drawn over the page.
+    pub fn over(self, background: Color) -> Color {
+        Color {
+            a: 255,
+            ..background.mix(self, f32::from(self.a) / 255.0)
+        }
+    }
+
     /// The same color with a different alpha (0.0..=1.0).
     pub fn with_alpha(self, alpha: f32) -> Color {
         Color {
@@ -123,6 +132,8 @@ mod tests {
         assert_eq!(black.mix(white, 0.5).to_string(), "#808080");
         assert_eq!(black.mix(white, 2.0), white);
         assert_eq!(white.with_alpha(0.5).to_string(), "#ffffff80");
+        assert_eq!(white.with_alpha(0.5).over(black).to_string(), "#808080");
+        assert_eq!(white.over(black), white);
     }
 
     #[test]

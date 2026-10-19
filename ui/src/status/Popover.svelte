@@ -3,6 +3,7 @@
   // Closes on Escape or a click outside it; the status bar button that opens
   // it is marked `data-popover-toggle="<toggle>"` and toggles it instead.
   import type { Snippet } from "svelte";
+  import { restoreFocus } from "../lib/focus";
 
   interface Props {
     /** Accessible name of the panel. */
@@ -43,6 +44,7 @@
 <div
   class="popover"
   bind:this={panel}
+  use:restoreFocus
   tabindex="-1"
   role="dialog"
   aria-label={label}

@@ -2,6 +2,7 @@
   // Global settings (DESIGN.md §10), opened with Ctrl+, or the ⚙ button.
   // Each change applies at once, in every window; there's no Save button.
   // Escape, the × button, or clicking outside closes it.
+  import { trapFocus } from "../lib/focus";
   import { onMount } from "svelte";
   import type { PropertiesPlacement, ThemeSummary, TypographyDefaults } from "../lib/types";
   import { formatZoom, ZOOM_STEPS, type TextSizing } from "../typography/typography";
@@ -66,7 +67,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="backdrop" onkeydown={onKeydown} onclick={(e) => e.target === e.currentTarget && onclose()}>
-  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="sk-settings-title">
+  <div class="panel" use:trapFocus role="dialog" aria-modal="true" aria-labelledby="sk-settings-title">
     <header>
       <h2 id="sk-settings-title">Settings</h2>
       <button bind:this={closeButton} class="close" aria-label="Close" title="Close (Esc)" onclick={onclose}>×</button>

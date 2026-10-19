@@ -2,6 +2,7 @@
   // Theme switcher (DESIGN.md §7.6): Ctrl+T. Arrow keys preview themes live
   // on the current document; Enter keeps the selection for this document,
   // Escape puts the original theme back.
+  import { trapFocus } from "../lib/focus";
   import { onMount, untrack } from "svelte";
   import type { ResolvedTheme, ThemeSummary } from "../lib/types";
   import { describeSource, stepIndex } from "./apply";
@@ -111,7 +112,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="backdrop" onkeydown={onKeydown} onclick={(e) => e.target === e.currentTarget && oncancel()}>
-  <div class="panel" role="dialog" aria-modal="true" aria-label="Choose a theme">
+  <div class="panel" use:trapFocus role="dialog" aria-modal="true" aria-label="Choose a theme">
     <header>
       <h2>Theme</h2>
       <p class="source">Current: {current.id}, {describeSource(current.source)}</p>
