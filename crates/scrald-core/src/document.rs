@@ -1034,6 +1034,29 @@ mod tests {
     }
 
     #[test]
+    fn tags_whose_text_is_raw_dont_swallow_what_follows() {
+        // `<title>` and `<textarea>` take everything after them as text up
+        // to their end tag, so one written as a placeholder in prose ate the
+        // rest of the list, `</strong>` and the next item included.
+        let text = "- Its page gets **Remove from <title>** and **New <type>…**.\n\
+                    - **A second item** stays its own.\n\
+                    - A <textarea> too, and <style> and <xmp>.\n";
+        let html = &parse(text).blocks[0].html;
+        assert!(
+            html.contains("Remove from &lt;title&gt;</strong>"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<li><strong>A second item</strong> stays its own.</li>"),
+            "{html}"
+        );
+        assert!(
+            html.contains("A &lt;textarea&gt; too, and &lt;style&gt; and &lt;xmp&gt;."),
+            "{html}"
+        );
+    }
+
+    #[test]
     fn blocks_and_ranges_lf() {
         let text = "# Title\n\nSome *text*\nmore.\n\n- a\n- b\n";
         let doc = parse(text);

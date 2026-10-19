@@ -103,6 +103,8 @@ pub fn comrak_options(flavor: Flavor) -> comrak::Options<'static> {
     }
     // Raw HTML is passed through to ammonia, which removes anything unsafe.
     // Without this, comrak would replace raw HTML with a comment instead.
+    // Tags like `<title>` are written as text before sanitizing
+    // (`render::escape_unclosed_raw_text_tags`).
     options.render.r#unsafe = true;
     options
 }

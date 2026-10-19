@@ -137,8 +137,15 @@
    */
   function takeIdleFocus(): void {
     const active = document.activeElement;
-    if (active === null || active === document.body) scroller?.focus({ preventScroll: true });
+    if (active !== null && active !== document.body) return;
+    // The browser may count this as keyboard focus and outline the whole
+    // reading area; nobody tabbed here, so keep it quiet until focus leaves.
+    quietFocus = true;
+    scroller?.focus({ preventScroll: true });
   }
+
+  /** Focus the reader took by itself, shown without an outline. */
+  let quietFocus = $state(false);
 
   /**
    * Shows an edited version of the same document: every section mounted, so
@@ -679,6 +686,8 @@
   onpointerout={onPointerOut}
   onfocusin={onFocusIn}
   onfocusout={scheduleHide}
+  onblur={() => (quietFocus = false)}
+  data-quiet-focus={quietFocus || undefined}
   role="document"
   aria-label="Document"
   tabindex="0"
@@ -773,6 +782,10 @@
   /* Tabbing to the reading area outlines it from inside, where it isn't clipped. */
   .sk-scroller:focus-visible {
     outline-offset: -2px;
+  }
+
+  .sk-scroller[data-quiet-focus]:focus-visible {
+    outline: none;
   }
 
   /* The text column: at most --sk-measure characters wide (DESIGN.md §7.4). */

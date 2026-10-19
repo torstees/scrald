@@ -142,7 +142,9 @@ impl Renderer {
     }
 
     pub fn sanitize(&self, html: &str) -> String {
-        self.sanitizer.clean(html).to_string()
+        self.sanitizer
+            .clean(&escape_unclosed_raw_text_tags(html))
+            .to_string()
     }
 
     /// `sanitize`, reusing the result for HTML seen in the last parse.
@@ -151,9 +153,80 @@ impl Renderer {
         // is borrowed mutably; that's allowed because they're different
         // fields (a closure using `self` itself would not be).
         let sanitizer = &self.sanitizer;
-        self.cache
-            .sanitized(html, || sanitizer.clean(html).to_string())
+        self.cache.sanitized(html, || {
+            sanitizer
+                .clean(&escape_unclosed_raw_text_tags(html))
+                .to_string()
+        })
     }
+}
+
+/// Tags whose contents the HTML parser reads as plain text, up to their end
+/// tag (`<plaintext>` has none: it takes the rest of the input).
+const RAW_TEXT_TAGS: &[&str] = &[
+    "title",
+    "textarea",
+    "style",
+    "xmp",
+    "iframe",
+    "noembed",
+    "noframes",
+    "script",
+    "plaintext",
+];
+
+/// Writes the `<` of a `RAW_TEXT_TAGS` start tag as `&lt;` when no end tag
+/// for it follows, so it shows as text. Such a tag is prose, like a
+/// placeholder in `**Remove from <title>**`; left alone, the HTML parser
+/// would read the rest of the block as its text, and the sanitizer would
+/// then drop or garble it. A closed element (`<script>…</script>`) is left
+/// for the sanitizer, which removes it as before. GitHub escapes these tags
+/// even when closed (GFM's tag filter, which comrak no longer has); Scrald
+/// keeps removing them instead of showing their markup. comrak escapes `<`
+/// in text and code itself, so any such tag in its output is raw HTML.
+fn escape_unclosed_raw_text_tags(html: &str) -> std::borrow::Cow<'_, str> {
+    let mut out = String::new();
+    // Start of the text not yet copied to `out`.
+    let mut copied = 0;
+    for (at, _) in html.match_indices('<') {
+        let Some(tag) = raw_text_tag_at(html, at + 1) else {
+            continue;
+        };
+        if !has_end_tag(&html[at..], tag) {
+            out.push_str(&html[copied..at]);
+            out.push_str("&lt;");
+            copied = at + 1;
+        }
+    }
+    // Rust note: `Cow` ("clone on write") holds either a borrowed `&str` or
+    // an owned `String`, so the usual case (nothing to escape) copies nothing.
+    if copied == 0 {
+        std::borrow::Cow::Borrowed(html)
+    } else {
+        out.push_str(&html[copied..]);
+        std::borrow::Cow::Owned(out)
+    }
+}
+
+/// The `RAW_TEXT_TAGS` name starting at byte `at`, in any case, if the name
+/// ends there (`<titles>` is another tag).
+fn raw_text_tag_at(html: &str, at: usize) -> Option<&'static str> {
+    let bytes = html.as_bytes();
+    RAW_TEXT_TAGS.iter().copied().find(|tag| {
+        let end = at + tag.len();
+        bytes
+            .get(at..end)
+            .is_some_and(|name| name.eq_ignore_ascii_case(tag.as_bytes()))
+            && bytes
+                .get(end)
+                .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>' || *b == b'/')
+    })
+}
+
+/// Whether `html` has an end tag for `tag`, such as `</title>`.
+fn has_end_tag(html: &str, tag: &str) -> bool {
+    html.match_indices("</")
+        .any(|(at, _)| raw_text_tag_at(html, at + 2) == Some(tag))
 }
 
 /// Replaces a container node (a callout's blockquote, a fenced div) with one
@@ -287,6 +360,28 @@ pub fn escape_text(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unclosed_raw_text_tags_show_as_text() {
+        let r = Renderer::default();
+        assert_eq!(
+            r.sanitize("<p><strong>Remove <Title></strong> later</p><p>next</p>"),
+            "<p><strong>Remove &lt;Title&gt;</strong> later</p><p>next</p>"
+        );
+        // A closed element is still removed, contents and all.
+        assert_eq!(r.sanitize("<p>a<style>p{}</style>b</p>"), "<p>ab</p>");
+        // `<plaintext>` never closes; other names only start the same.
+        assert_eq!(
+            r.sanitize("<p><plaintext> x</p>"),
+            "<p>&lt;plaintext&gt; x</p>"
+        );
+        assert_eq!(r.sanitize("<p><titles>x</titles></p>"), "<p>x</p>");
+        // An end tag for another raw-text tag doesn't count.
+        assert_eq!(
+            r.sanitize("<p><title> and </textarea></p>"),
+            "<p>&lt;title&gt; and </p>"
+        );
+    }
 
     #[test]
     fn strips_scripts_and_handlers() {
