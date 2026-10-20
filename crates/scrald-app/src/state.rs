@@ -56,6 +56,12 @@ const MIGRATIONS: &[&str] = &[
     // 4: a summary line and cover image for the start screen (DESIGN.md §11).
     "ALTER TABLE documents ADD COLUMN summary TEXT;      -- one line, from the front matter
     ALTER TABLE documents ADD COLUMN cover TEXT;        -- path of the cover image file",
+    // 5: folders the user keeps new documents in (DESIGN.md §11).
+    "CREATE TABLE new_document_folders (
+        path     TEXT PRIMARY KEY,          -- canonical absolute path
+        template TEXT,                      -- template id last used there
+        added    INTEGER NOT NULL           -- Unix time, milliseconds
+    );",
 ];
 
 /// Setting key for the most recently used window size (DESIGN.md §11).
@@ -80,6 +86,14 @@ const AUTOSAVE: &str = "editing.autosave";
 /// Settings key: the deepest heading level the contents sidebar lists, 1–6
 /// (DESIGN.md §10).
 const CONTENTS_DEPTH: &str = "contents.depth";
+
+/// Settings key: whether "Remember this folder" starts checked in the New
+/// document dialog (DESIGN.md §11).
+const REMEMBER_NEW_FOLDERS: &str = "editing.remember_new_folders";
+
+/// Settings key: set once the sample template has been written, so an
+/// edited one is never replaced and a deleted one doesn't come back.
+const SAMPLE_TEMPLATE_WRITTEN: &str = "templates.sample_written";
 
 /// Zoom is a multiplier on the base font size; outside this range the
 /// reader stops being useful.
@@ -188,6 +202,15 @@ pub struct RecentDocument {
 pub struct CoverImage {
     pub token: u64,
     pub id: usize,
+}
+
+/// A folder the user keeps new documents in (DESIGN.md §11).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RememberedFolder {
+    pub path: String,
+    /// The template last used there, if any.
+    pub template: Option<String>,
 }
 
 /// The state database. All access goes through one connection behind a lock.
@@ -508,6 +531,84 @@ impl StateStore {
             [document_key(path)],
         )?;
         Ok(())
+    }
+
+    /// Whether "Remember this folder" starts checked; unchecked unless set.
+    pub fn remember_new_folders(&self) -> anyhow::Result<bool> {
+        Ok(self.get_setting(REMEMBER_NEW_FOLDERS)?.unwrap_or(false))
+    }
+
+    pub fn set_remember_new_folders(&self, remember: bool) -> anyhow::Result<()> {
+        self.set_setting(REMEMBER_NEW_FOLDERS, &remember)
+    }
+
+    /// Whether the sample template was written before.
+    pub fn sample_template_written(&self) -> anyhow::Result<bool> {
+        Ok(self.get_setting(SAMPLE_TEMPLATE_WRITTEN)?.unwrap_or(false))
+    }
+
+    pub fn set_sample_template_written(&self) -> anyhow::Result<()> {
+        self.set_setting(SAMPLE_TEMPLATE_WRITTEN, &true)
+    }
+
+    /// The remembered folders for new documents, in the order they were added.
+    pub fn new_document_folders(&self) -> anyhow::Result<Vec<RememberedFolder>> {
+        let conn = self.conn();
+        let mut statement =
+            conn.prepare("SELECT path, template FROM new_document_folders ORDER BY added, path")?;
+        let rows = statement.query_map([], |row| {
+            Ok(RememberedFolder {
+                path: row.get(0)?,
+                template: row.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Remembers `folder` for new documents (keeping its place if it's
+    /// already there), with `template` as the one last used, if given.
+    pub fn remember_new_document_folder(
+        &self,
+        folder: &Path,
+        template: Option<&str>,
+    ) -> anyhow::Result<()> {
+        self.conn().execute(
+            "INSERT INTO new_document_folders (path, template, added) VALUES (?1, ?2, ?3)
+             ON CONFLICT (path) DO UPDATE SET template = COALESCE(excluded.template, template)",
+            params![document_key(folder), template, now_millis()],
+        )?;
+        Ok(())
+    }
+
+    /// Records the template last used in `folder`, if it's remembered.
+    pub fn set_new_document_folder_template(
+        &self,
+        folder: &Path,
+        template: &str,
+    ) -> anyhow::Result<()> {
+        self.conn().execute(
+            "UPDATE new_document_folders SET template = ?2 WHERE path = ?1",
+            params![document_key(folder), template],
+        )?;
+        Ok(())
+    }
+
+    pub fn forget_new_document_folder(&self, folder: &Path) -> anyhow::Result<()> {
+        self.conn().execute(
+            "DELETE FROM new_document_folders WHERE path = ?1",
+            [document_key(folder)],
+        )?;
+        Ok(())
+    }
+
+    /// Paths of the most recently opened documents, newest first (pins
+    /// don't count here, unlike the start screen's order).
+    pub fn last_opened_paths(&self, limit: usize) -> anyhow::Result<Vec<String>> {
+        let conn = self.conn();
+        let mut statement =
+            conn.prepare("SELECT path FROM documents ORDER BY last_opened DESC LIMIT ?1")?;
+        let rows = statement.query_map([limit as i64], |row| row.get(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Reads a JSON-encoded setting; `None` if unset or unreadable.
@@ -1035,6 +1136,50 @@ mod tests {
         assert_eq!(store.contents_depth().unwrap(), 2);
         store.set_contents_depth(0).unwrap();
         assert_eq!(store.contents_depth().unwrap(), 1);
+    }
+
+    #[test]
+    fn new_document_folders_keep_their_order_and_last_template() {
+        let store = StateStore::in_memory().unwrap();
+        let notes = Path::new("/no/such/notes");
+        let vault = Path::new("/no/such/vault");
+        store.remember_new_document_folder(notes, None).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        store
+            .remember_new_document_folder(vault, Some("builtin:obsidian"))
+            .unwrap();
+        // Remembering again keeps the place and the template...
+        store.remember_new_document_folder(vault, None).unwrap();
+        // ...and a template is recorded only for a remembered folder.
+        store
+            .set_new_document_folder_template(notes, "builtin:pandoc")
+            .unwrap();
+        store
+            .set_new_document_folder_template(Path::new("/elsewhere"), "builtin:plain")
+            .unwrap();
+        let folders = store.new_document_folders().unwrap();
+        let summary: Vec<(String, Option<String>)> =
+            folders.into_iter().map(|f| (f.path, f.template)).collect();
+        assert_eq!(
+            summary,
+            [
+                (document_key(notes), Some("builtin:pandoc".to_string())),
+                (document_key(vault), Some("builtin:obsidian".to_string())),
+            ]
+        );
+        store.forget_new_document_folder(notes).unwrap();
+        assert_eq!(store.new_document_folders().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn new_document_settings_default_off() {
+        let store = StateStore::in_memory().unwrap();
+        assert!(!store.remember_new_folders().unwrap());
+        assert!(!store.sample_template_written().unwrap());
+        store.set_remember_new_folders(true).unwrap();
+        store.set_sample_template_written().unwrap();
+        assert!(store.remember_new_folders().unwrap());
+        assert!(store.sample_template_written().unwrap());
     }
 
     #[test]

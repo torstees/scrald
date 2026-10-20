@@ -23,6 +23,8 @@ import type {
   ThemeDetails,
   ThemeEditPreview,
   ContrastProblem,
+  NewDocumentOptions,
+  NewDocumentRequest,
   ThemeStyle,
   ThemeSummary,
   TypographyDefaults,
@@ -368,4 +370,41 @@ export function reportTiming(name: string, ms: number): void {
   invoke("report_timing", { name, ms }).catch(() => {
     // Timing is best-effort diagnostics; losing one measurement is fine.
   });
+}
+
+/** Folders, templates, and defaults for the New document dialog (DESIGN.md §11). */
+export function newDocumentOptions(): Promise<NewDocumentOptions> {
+  return invoke<NewDocumentOptions>("new_document_options");
+}
+
+/** The system folder dialog, starting in `near`; null if cancelled. */
+export function pickFolder(near: string | null): Promise<string | null> {
+  return invoke<string | null>("pick_folder", { near });
+}
+
+/** Creates a new document and returns its path. Rejects with a message to show. */
+export function createDocument(request: NewDocumentRequest): Promise<string> {
+  return invoke<string>("create_document", { request });
+}
+
+export function rememberNewDocumentFolder(path: string): Promise<void> {
+  return invoke<void>("remember_new_document_folder", { path });
+}
+
+export function forgetNewDocumentFolder(path: string): Promise<void> {
+  return invoke<void>("forget_new_document_folder", { path });
+}
+
+/** Whether "Remember this folder" starts checked. */
+export function rememberNewFolders(): Promise<boolean> {
+  return invoke<boolean>("remember_new_folders");
+}
+
+export function setRememberNewFolders(remember: boolean): Promise<void> {
+  return invoke<void>("set_remember_new_folders", { remember });
+}
+
+/** Opens the templates folder in the system file manager. */
+export function openTemplatesFolder(): Promise<void> {
+  return invoke<void>("open_templates_folder");
 }
