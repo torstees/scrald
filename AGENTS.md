@@ -27,11 +27,11 @@ assets/               # source artwork, e.g. icon-source.png (regenerate icons w
 .github/workflows/    # CI
 package.json          # root npm workspace + Tauri CLI
 justfile              # task shortcuts (`just` lists them)
-docs/                 # reserved: the published user documentation site (docsify)
+docs/                 # the published user documentation site (docsify)
 DESIGN.md  TODO.md  AGENTS.md  CLAUDE.md
 ```
 
-`docs/` is reserved for the user documentation site, published with [docsify](https://docsify.js.org) (DESIGN.md §15). Don't put design notes, plans, or developer docs there; those stay at the repository root (`DESIGN.md`, `AGENTS.md`, `TODO.md`). Until the site is set up, leave `docs/` alone.
+`docs/` is reserved for the user documentation site, published with [docsify](https://docsify.js.org) (DESIGN.md §15). Don't put design notes, plans, or developer docs there; those stay at the repository root (`DESIGN.md`, `AGENTS.md`, `TODO.md`). When a change alters what a user sees or does, update the matching page in the same PR. The pages are plain Markdown that Scrald itself should render well: link between them with relative `page.md` links (no `#anchor` links, which docsify and Scrald treat differently), and avoid docsify-only syntax. `docs/shortcuts.md` must list exactly the shortcuts in `ui/src/shortcuts/shortcuts.ts`; a frontend test checks it.
 
 Logic belongs in `scrald-core` whenever it can be tested without a window. `scrald-app` should mostly translate between Tauri and core.
 
@@ -101,6 +101,7 @@ Each completed chunk of work (usually a few related sub-issues) goes up as a pul
 3. New core behavior has tests. Rendering changes have snapshot tests with reviewed snapshots.
 4. The work is in a pull request (see above) that closes its sub-issues (`Closes #12`), and new follow-up work is filed as sub-issues of the right milestone issue.
 5. If a change contradicts or extends `DESIGN.md`, update `DESIGN.md` in the same change and call it out in your summary.
+6. If a change alters what a user sees or does, the user documentation in `docs/` says so.
 
 ## Coding conventions
 

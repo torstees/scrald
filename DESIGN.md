@@ -769,6 +769,13 @@ The user-facing documentation is a [docsify](https://docsify.js.org) site in the
 - Planned content: getting started (installing, opening files, file associations), the reading view and navigation, themes and a `theme.toml` reference, front matter keys (§8.1), Markdown flavors and supported syntax (§5), keyboard shortcuts, and where Scrald stores its data.
 - The pages are also good real-world fixtures: Scrald should render its own manual well.
 
+As implemented:
+- `docs/index.html` loads docsify 4.13.1 from jsDelivr (pinned), with its search plugin and Prism's TOML and YAML highlighting. Its light or dark theme follows the system. `.nojekyll` stops GitHub Pages from hiding `_sidebar.md`.
+- Pages: home (`README.md`), getting started, reading, editing and saving, printing, themes, the `theme.toml` reference, front matter, flavors and syntax, keyboard shortcuts, and where data is kept, listed in `_sidebar.md`.
+- Pages link to each other with relative `page.md` links and no `#anchors`, so the same links work in docsify and in Scrald. No docsify-only syntax (such as `?>` notes), since Scrald would show it as text.
+- `docs/shortcuts.md` is checked against `ui/src/shortcuts/shortcuts.ts` by a frontend test (via Vite's `?raw` import), so the two can't drift apart.
+- The PR template has a "User docs updated" check.
+
 ## 16. Open questions
 
 1. ~~**Front matter namespacing:** Is `scrald: { theme, flavor }` acceptable, or should these be flat keys such as `scrald-theme`?~~ **Resolved (2026-10-08):** flat `scrald-*` keys; the nested form is read but never written. See section 8.1.

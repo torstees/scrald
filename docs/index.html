@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scrald</title>
+    <meta name="description" content="Scrald: a themeable Markdown reader for anything from notes to novels." />
+    <!-- The docsify theme follows the system's light or dark mode. -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4.13.1/lib/themes/vue.css" media="(prefers-color-scheme: light)" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4.13.1/lib/themes/dark.css" media="(prefers-color-scheme: dark)" />
+    <style>
+      /* Keyboard shortcuts are written in code spans; keep them from wrapping. */
+      .markdown-section td code {
+        white-space: nowrap;
+      }
+
+      /* docsify's dark theme stripes tables in white, under light text. */
+      @media (prefers-color-scheme: dark) {
+        .markdown-section tr:nth-child(2n) {
+          background-color: rgba(255, 255, 255, 0.05);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">Loading…</div>
+    <script>
+      window.$docsify = {
+        name: "Scrald",
+        repo: "torstees/scrald",
+        loadSidebar: true,
+        subMaxLevel: 2,
+        auto2top: true,
+        search: {
+          placeholder: "Search",
+          noData: "No results",
+          depth: 3,
+        },
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/docsify@4.13.1/lib/docsify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docsify@4.13.1/lib/plugins/search.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-toml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-yaml.min.js"></script>
+  </body>
+</html>

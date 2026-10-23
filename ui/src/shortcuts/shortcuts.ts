@@ -1,6 +1,7 @@
 // Every keyboard shortcut, grouped as the reference dialog shows them (F1).
 // Keep this in step with the handlers: the window's in `App.svelte`, and
-// each panel's own (`SearchBar`, `BlockEditor`, `ThemeSwitcher`, ...).
+// each panel's own (`SearchBar`, `BlockEditor`, `ThemeSwitcher`, ...), and
+// with the user documentation's `docs/shortcuts.md` (a test compares them).
 import type { Panel } from "../sidebar/layout";
 
 export interface Shortcut {
