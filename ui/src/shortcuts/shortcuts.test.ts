@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+// The user documentation's shortcut page (DESIGN.md §15), as text.
+import shortcutsPage from "../../../docs/shortcuts.md?raw";
 import { keyParts, opensSettings, opensShortcuts, SHORTCUT_GROUPS, togglesPanel } from "./shortcuts";
 
 describe("keyParts", () => {
@@ -94,5 +96,26 @@ describe("togglesPanel", () => {
     expect(togglesPanel(key("\\", "Backslash"))).toBe(null);
     expect(togglesPanel(key("\\", "Backslash", { ctrlKey: true, altKey: true }))).toBe(null);
     expect(togglesPanel(key("p", "KeyP", { ctrlKey: true, shiftKey: true }))).toBe(null);
+  });
+});
+
+describe("docs/shortcuts.md", () => {
+  // The page lists the same shortcuts as the dialog, one table per group.
+  it("lists every shortcut under its group", () => {
+    const sections = shortcutsPage.split(/^## /m);
+    for (const group of SHORTCUT_GROUPS) {
+      const section = sections.find((text) => text.startsWith(`${group.title}\n`));
+      expect(section, `a "## ${group.title}" section`).toBeDefined();
+      for (const shortcut of group.shortcuts) {
+        const keys = shortcut.keys.map((key) => `\`${key}\``).join(" or ");
+        expect(section).toContain(`| ${keys} | ${shortcut.action} |`);
+      }
+    }
+  });
+
+  it("lists nothing the dialog doesn't", () => {
+    const rows = shortcutsPage.split("\n").filter((line) => line.startsWith("| `"));
+    const count = SHORTCUT_GROUPS.reduce((n, group) => n + group.shortcuts.length, 0);
+    expect(rows).toHaveLength(count);
   });
 });

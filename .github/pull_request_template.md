@@ -25,6 +25,7 @@ Prefer `just` recipes and fixtures over real documents.
 - [ ] `just check` passes (fmt, clippy, Rust tests, typecheck, frontend tests)
 - [ ] Snapshot changes reviewed (if any)
 - [ ] `DESIGN.md` updated if behavior or architecture changed
+- [ ] User docs in `docs/` updated if what users see or do changed
 - [ ] Decisions log in `TODO.md` updated (if a notable decision was made)
 - [ ] Follow-up work filed as sub-issues
 
