@@ -41,7 +41,7 @@ Logic belongs in `scrald-core` whenever it can be tested without a window. `scra
 - Toolchain: Rust stable via rustup (MSVC target), Node.js LTS, Visual Studio Build Tools (C++ workload). WebView2 is part of Windows 11.
 - The maintainer's editor is Zed. Don't add VS Code-specific config files.
 - Keep code free of Windows-only APIs unless isolated behind a clear module boundary, so macOS and Linux builds remain possible.
-- `scrald-core` must pass its tests on Windows, macOS, and Linux at all times (CI checks this). Use `std::path` APIs, never string-concatenated `\` separators, and don't assume a case-insensitive file system.
+- `scrald-core` must pass its tests on Windows, macOS, and Linux at all times (CI checks this). CI also builds and tests the app and frontend on all three, so app code must compile everywhere too. Use `std::path` APIs, never string-concatenated `\` separators, and don't assume a case-insensitive file system.
 
 ## Commands
 
