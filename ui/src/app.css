@@ -599,3 +599,52 @@ body {
   background-color: var(--sk-color-accent);
   color: var(--sk-color-background);
 }
+
+/*
+ * Printing (DESIGN.md §10). Only the document prints: App.svelte and
+ * Reader.svelte hide the app around it and lay the column out on the page,
+ * and print/print.ts adds the margins, title, page numbers, and colors.
+ * Paper can't scroll, so code wraps and wide tables show whole.
+ */
+@media print {
+  html,
+  body {
+    height: auto;
+  }
+
+  .sk-block pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow: visible;
+  }
+
+  .sk-block .sk-table {
+    overflow: visible;
+  }
+
+  .sk-block :is(pre, figure, img, tr, .sk-mermaid, .sk-abc, .sk-math-display, .sk-callout, .markdown-alert) {
+    break-inside: avoid;
+  }
+
+  .sk-block :is(h1, h2, h3, h4, h5, h6) {
+    break-after: avoid;
+  }
+
+  /* The properties, the endnotes' ↩ links, and search matches are for the screen. */
+  .sk-properties,
+  .sk-backref,
+  .sk-footnote-popover {
+    display: none !important;
+  }
+
+  ::highlight(sk-search),
+  ::highlight(sk-search-current) {
+    background-color: transparent;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  :focus-visible {
+    outline: none;
+  }
+}

@@ -1532,6 +1532,16 @@ pub fn open_external(app: tauri::AppHandle, url: String) -> Result<(), CommandEr
     }
 }
 
+/// Opens the system's print dialog for the window's page (DESIGN.md §10).
+/// The page gets itself ready first, and puts itself back when the browser
+/// reports `afterprint`. It goes through Tauri rather than `window.print()`
+/// because macOS's webview only prints from the native side.
+#[tauri::command]
+pub fn print_window(webview: tauri::Webview) -> Result<(), CommandError> {
+    webview.print()?;
+    Ok(())
+}
+
 /// Logs a timing measured in the frontend, so performance numbers end up in
 /// the same log as the backend's (DESIGN.md §4 budget checks).
 #[tauri::command]

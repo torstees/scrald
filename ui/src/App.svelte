@@ -67,6 +67,7 @@
     stepHistory,
     documentText,
     setDocumentText,
+    printWindow,
   } from "./lib/commands";
   import { afterPaint } from "./lib/idle";
   import { launchMessage } from "./lib/launch";
@@ -121,6 +122,8 @@
   import { opensSettings, opensShortcuts, togglesPanel } from "./shortcuts/shortcuts";
   import SettingsDialog from "./settings/SettingsDialog.svelte";
   import NewDocumentDialog from "./newdoc/NewDocumentDialog.svelte";
+  import PrintDialog from "./print/PrintDialog.svelte";
+  import { colorDeclarations, defaultPrintOptions, PAPER_THEME, printCss, type PrintOptions } from "./print/print";
   import { readingProgress, wordsBefore, type ReadingPosition } from "./status/progress";
 
   let doc = $state<DocumentModel | null>(null);
@@ -137,6 +140,11 @@
   let searchBar: SearchBar | undefined = $state();
   let shortcutsOpen = $state(false);
   let settingsOpen = $state(false);
+  // The print panel's starting choices while it's open (DESIGN.md §10).
+  let printPanel = $state<PrintOptions | null>(null);
+  // The choices of the last print in this window, which the next starts with.
+  let lastPrint: PrintOptions | null = null;
+  let printing = false;
   // The New document dialog's folders and templates while it's open (DESIGN.md §11).
   let newDocument = $state<NewDocumentOptions | null>(null);
   // Remembered folders and their setting, for the settings dialog.
@@ -1383,6 +1391,68 @@
     noticeTimer = window.setTimeout(() => (notice = null), 6000);
   }
 
+  /** `Ctrl+P`: asks how to print (DESIGN.md §10). */
+  function openPrint(): void {
+    if (!doc || printing) return;
+    printPanel = lastPrint ?? defaultPrintOptions(document.documentElement.dataset.appearance);
+  }
+
+  /**
+   * Prints the document: leaves raw mode, gets the whole document ready
+   * (every section, diagram, and image, folded parts opened), adds the
+   * print CSS, and opens the system's print dialog. Everything is put back
+   * when the browser reports `afterprint`, and the reading position kept.
+   */
+  async function startPrint(options: PrintOptions): Promise<void> {
+    printPanel = null;
+    if (!doc || printing) return;
+    printing = true;
+    lastPrint = options;
+    if (rawMode) await exitRawMode();
+    // A property or block being edited commits on blur, as for Ctrl+S.
+    (document.activeElement as HTMLElement | null)?.blur();
+    await tick();
+    await pendingEdits;
+    const current = doc;
+    const anchor = reader?.captureAnchor();
+    let paperColors: string[] = [];
+    if (options.colors === "paper") {
+      try {
+        paperColors = colorDeclarations((await themeStyle(PAPER_THEME)).css);
+      } catch (e) {
+        console.warn("could not read the paper colors", e);
+      }
+    }
+    const style = document.createElement("style");
+    style.id = "sk-print";
+    style.textContent = printCss(documentTitle(current), options, paperColors);
+    document.head.append(style);
+    // The PDF's title and the file name "Save as PDF" suggests.
+    const pageTitle = document.title;
+    document.title = documentTitle(current);
+    let restore = () => {};
+    const finish = async () => {
+      style.remove();
+      document.title = pageTitle;
+      restore();
+      if (paperColors.length > 0) await refreshRichForTheme();
+      if (anchor) await reader?.scrollToAnchor(anchor);
+      printing = false;
+    };
+    try {
+      showNotice("Getting the document ready to print…");
+      restore = (await reader?.prepareForPrint()) ?? restore;
+      // Diagrams and music drawn before now carry the theme's colors.
+      if (paperColors.length > 0) await refreshRichForTheme();
+      window.addEventListener("afterprint", () => void finish(), { once: true });
+      notice = null;
+      await printWindow();
+    } catch (e) {
+      await finish();
+      showNotice(`Could not print: ${String(e)}`);
+    }
+  }
+
   /** `Ctrl+F`: opens the find bar, with the selected text if it's short and on one line. */
   function openSearch(): void {
     const selected = window.getSelection()?.toString().trim() ?? "";
@@ -1423,7 +1493,7 @@
     }
     // The reference, settings, and New document are modal: other shortcuts
     // wait until they close (the New document dialog handles its own Escape).
-    if (newDocument) return;
+    if (newDocument || printPanel) return;
     if (shortcutsOpen || settingsOpen) {
       if (event.key === "Escape") shortcutsOpen = settingsOpen = false;
       return;
@@ -1441,6 +1511,12 @@
     if (event.ctrlKey && !event.shiftKey && (event.key === "o" || event.key === "O")) {
       event.preventDefault();
       void pickAndOpen();
+      return;
+    }
+    if (event.ctrlKey && !event.shiftKey && (event.key === "p" || event.key === "P")) {
+      // Always taken, so the webview never prints the page unprepared.
+      event.preventDefault();
+      openPrint();
       return;
     }
     if (event.ctrlKey && !event.shiftKey && (event.key === "n" || event.key === "N")) {
@@ -1673,6 +1749,7 @@
       onsettings={openSettings}
       {progress}
       onshortcuts={() => (shortcutsOpen = true)}
+      onprint={openPrint}
     />
     {#if typographyOpen}
       <TypographyPanel
@@ -1725,6 +1802,9 @@
         onimport={(names) => schemeChoice && void finishImport(schemeChoice.path, names)}
         oncancel={() => (schemeChoice = null)}
       />
+    {/if}
+    {#if printPanel}
+      <PrintDialog options={printPanel} themeName={themeName ?? "The theme"} onprint={(o) => void startPrint(o)} oncancel={() => (printPanel = null)} />
     {/if}
     {#if unsavedPrompt}
       <UnsavedDialog title={unsavedPrompt.title} action={unsavedPrompt.action} onchoose={unsavedPrompt.resolve} />
@@ -1836,6 +1916,28 @@
   .sk-main > :global(:last-child) {
     flex: 1;
     min-height: 0;
+  }
+
+  /* Printing (DESIGN.md §10): the reader alone, as one long page the
+     browser cuts into sheets. */
+  @media print {
+    .sk-app,
+    .sk-app.with-left,
+    .sk-app.with-right {
+      display: block;
+      height: auto;
+    }
+
+    .sk-app > :global(:not(.sk-main)),
+    .sk-main > :global(:not(.sk-scroller)) {
+      display: none !important;
+    }
+
+    .sk-main,
+    .sk-main.sk-beside-editor {
+      display: block;
+      margin: 0;
+    }
   }
 
   /* Shown while files are dragged over the window. */
