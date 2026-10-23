@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Print (DESIGN.md §10), opened with Ctrl+P or the status bar's ⎙: how
+  // Print (DESIGN.md §10), opened with Ctrl+P or the status bar's 🖶: how
   // the pages are colored and whether link addresses are printed. Print
   // hands over to the system's print dialog, which also saves as PDF.
   import { trapFocus } from "../lib/focus";

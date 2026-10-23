@@ -1596,6 +1596,21 @@
     }
   }
 
+  /**
+   * The webview's own right-click menu is kept only for text fields and
+   * selected text (Copy, Paste). Elsewhere it offers Print, which would skip
+   * the print panel and the preparation (DESIGN.md §10), and Refresh and
+   * Back, which reload or leave the app. Development builds keep it, for
+   * Inspect.
+   */
+  function onContextMenu(event: MouseEvent): void {
+    if (import.meta.env.DEV) return;
+    const target = event.target as HTMLElement | null;
+    const inField = target?.closest("input, textarea, [contenteditable='true'], .cm-editor") != null;
+    const selected = (window.getSelection()?.toString() ?? "") !== "";
+    if (!inField && !selected) event.preventDefault();
+  }
+
   function selectTocEntry(index: number): void {
     const entry = doc?.toc[index];
     if (!entry || !doc) return;
@@ -1608,7 +1623,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} onmouseup={onMouseUp} />
+<svelte:window onkeydown={onKeydown} onmouseup={onMouseUp} oncontextmenu={onContextMenu} />
 
 {#snippet sidebarTabs()}
   <SidebarTabs tab={shown.left ?? "contents"} ontab={(tab) => setSidebars(chooseTab(tab))} />
