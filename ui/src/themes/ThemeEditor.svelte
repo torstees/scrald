@@ -3,6 +3,7 @@
   // user theme's colors, fonts, layout, and element styles. Every change is
   // previewed on the document at once; nothing is written until Save, which
   // changes only the edited keys in theme.toml (comments stay).
+  import { hasMod } from "../lib/platform";
   import { restoreFocus } from "../lib/focus";
   import { onMount } from "svelte";
   import type { ContrastProblem, ThemeChange, ThemeDetails, ThemeEditorValues, ThemeFontValue } from "../lib/types";
@@ -133,7 +134,7 @@
       event.preventDefault();
       event.stopPropagation();
       oncancel();
-    } else if (event.key === "Enter" && event.ctrlKey) {
+    } else if (event.key === "Enter" && hasMod(event)) {
       event.preventDefault();
       void save();
     }

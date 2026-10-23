@@ -4,6 +4,7 @@
   // place; each change is a minimal text edit in memory (§8.3), saved with
   // Ctrl+S like any edit. Keys the engine can't change safely are read-only
   // and say why.
+  import { hasMod, keyLabel } from "../lib/platform";
   import { tick } from "svelte";
   import type { Flavor, FrontMatter, PropertiesPlacement, PropertyChange } from "../lib/types";
   import { FLAVOR_NAMES } from "../status/flavor";
@@ -105,7 +106,7 @@
     if (event.key === "Escape") {
       event.preventDefault();
       cancelEdit();
-    } else if (event.key === "Enter" && (!multiline || event.ctrlKey)) {
+    } else if (event.key === "Enter" && (!multiline || hasMod(event))) {
       event.preventDefault();
       void commitText(key, original, typed);
     }
@@ -247,7 +248,7 @@
               {#if onraw}
                 <button
                   class="sk-raw-link"
-                  title={`Can't be edited here: ${row.reason}. Opens the whole file at this key (Ctrl+E).`}
+                  title={keyLabel(`Can't be edited here: ${row.reason}. Opens the whole file at this key (Ctrl+E).`)}
                   onclick={() => onraw?.(row.offset ?? frontMatter?.range.start ?? 0)}>Edit in raw mode</button
                 >
               {/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
   // "Contents | Properties": the left sidebar's tabs when the properties
   // panel shares it (DESIGN.md §8.2).
+  import { keyLabel } from "../lib/platform";
   import { tick } from "svelte";
   import type { Panel } from "./layout";
 
@@ -47,7 +48,7 @@
       role="tab"
       aria-selected={tab === t.id}
       tabindex={tab === t.id ? 0 : -1}
-      title={`${t.label} (${t.keys})`}
+      title={`${t.label} (${keyLabel(t.keys)})`}
       onclick={() => ontab(t.id)}>{t.label}</button
     >
   {/each}

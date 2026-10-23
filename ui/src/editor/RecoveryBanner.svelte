@@ -2,6 +2,7 @@
   // Offered when a document opens and Scrald has unsaved changes to it from
   // a run that stopped before they were saved (DESIGN.md §9.3). Compare
   // restores them into raw mode's merge view, beside the file.
+  import { keyLabel } from "../lib/platform";
   import type { RecoveredChanges } from "../lib/types";
   import { savedWhen } from "./recovered";
 
@@ -32,7 +33,7 @@
       <button class="primary" onclick={ondone} disabled={busy} title="The text on the right stays as unsaved changes">
         Done
       </button>
-      <button onclick={onusefile} disabled={busy} title="Ctrl+Z brings the recovered text back">
+      <button onclick={onusefile} disabled={busy} title={keyLabel("Ctrl+Z brings the recovered text back")}>
         Use the file
       </button>
     </div>
@@ -48,7 +49,7 @@
         class="primary"
         onclick={onrestore}
         disabled={busy}
-        title="They become unsaved changes; Ctrl+Z goes back to the file"
+        title={keyLabel("They become unsaved changes; Ctrl+Z goes back to the file")}
       >
         Restore
       </button>

@@ -3,7 +3,7 @@
   // `SHORTCUT_GROUPS`. Escape, the × button, or clicking outside closes it.
   import { trapFocus } from "../lib/focus";
   import { onMount } from "svelte";
-  import { keyParts, SHORTCUT_GROUPS } from "./shortcuts";
+  import { keyParts, SHORTCUT_GROUPS, shownKeys } from "./shortcuts";
 
   interface Props {
     onclose: () => void;
@@ -37,7 +37,7 @@
           <dl>
             {#each group.shortcuts as shortcut (shortcut.action)}
               <dt>
-                {#each shortcut.keys as keys, i (keys)}
+                {#each shownKeys(shortcut) as keys, i (keys)}
                   {#if i > 0}<span class="or">or</span>{/if}
                   <span class="combo">
                     {#each keyParts(keys) as part, j (j)}

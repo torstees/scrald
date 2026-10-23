@@ -2,6 +2,7 @@
   // Theme switcher (DESIGN.md §7.6): Ctrl+T. Arrow keys preview themes live
   // on the current document; Enter keeps the selection for this document,
   // Escape puts the original theme back.
+  import { keyLabel } from "../lib/platform";
   import { trapFocus } from "../lib/focus";
   import { onMount, untrack } from "svelte";
   import type { ContrastProblem, ResolvedTheme, ThemeSummary } from "../lib/types";
@@ -201,7 +202,7 @@
     <footer>
       <div class="actions">
         <button class="primary" onclick={() => act(onchoose)}>Use for this document</button>
-        <button onclick={() => act(onsavetodocument)} title="Writes scrald-theme into the front matter (save with Ctrl+S)"
+        <button onclick={() => act(onsavetodocument)} title={keyLabel("Writes scrald-theme into the front matter (save with Ctrl+S)")}
           >Save to document</button
         >
         <button onclick={() => act(onmakedefault)}>Make default</button>

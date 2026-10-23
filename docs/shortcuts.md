@@ -2,6 +2,8 @@
 
 `F1`, `Ctrl+/`, or ? in the status bar shows these in Scrald too.
 
+On a Mac, press `Cmd` where these pages say `Ctrl`, and `Option` for `Alt`. Three are different: Back is `Cmd+[`, Forward is `Cmd+]`, and Redo is `Cmd+Shift+Z`. Scrald's own list and tooltips show the Mac's keys.
+
 ## Documents
 
 | Keys | Action |

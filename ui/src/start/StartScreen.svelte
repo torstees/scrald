@@ -4,6 +4,7 @@
   // of the theme each was last shown in, and anything else the app puts in
   // `children` (recovered changes). Files can also be dropped anywhere on
   // the window.
+  import { keyLabel } from "../lib/platform";
   import type { Snippet } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { assetUrl } from "../lib/commands";
@@ -111,10 +112,10 @@
   <div class="column">
     <h1>Scrald</h1>
     <div class="open-row">
-      <button class="primary" onclick={onpick} title="Open a Markdown file (Ctrl+O)">Open…</button>
-      <button class="primary" onclick={onnew} title="Create a Markdown file (Ctrl+N)">New document…</button>
+      <button class="primary" onclick={onpick} title={keyLabel("Open a Markdown file (Ctrl+O)")}>Open…</button>
+      <button class="primary" onclick={onnew} title={keyLabel("Create a Markdown file (Ctrl+N)")}>New document…</button>
       <span class="hint">or drop a Markdown file anywhere on this window</span>
-      <button class="link" onclick={onsettings} title="Settings (Ctrl+,)">Settings</button>
+      <button class="link" onclick={onsettings} title={keyLabel("Settings (Ctrl+,)")}>Settings</button>
       <button class="link" onclick={onshortcuts} title="Keyboard shortcuts (F1)">Keyboard shortcuts</button>
     </div>
     {#if message}<p class="message">{message}</p>{/if}

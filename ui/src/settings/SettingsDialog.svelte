@@ -2,6 +2,7 @@
   // Global settings (DESIGN.md §10), opened with Ctrl+, or the ⚙ button.
   // Each change applies at once, in every window; there's no Save button.
   // Escape, the × button, or clicking outside closes it.
+  import { MOD } from "../lib/platform";
   import { trapFocus } from "../lib/focus";
   import { onMount } from "svelte";
   import type { NewDocumentOptions, PropertiesPlacement, ThemeSummary, TypographyDefaults } from "../lib/types";
@@ -186,7 +187,7 @@
           <input type="checkbox" checked={autosave} onchange={(e) => onautosave(e.currentTarget.checked)} />
           Autosave
         </label>
-        <p class="hint">Saves a document 5 seconds after your last edit. When off, <kbd>Ctrl</kbd>+<kbd>S</kbd> saves, and closing asks first.</p>
+        <p class="hint">Saves a document 5 seconds after your last edit. When off, <kbd>{MOD}</kbd>+<kbd>S</kbd> saves, and closing asks first.</p>
       </section>
 
       <section>
@@ -200,7 +201,7 @@
             />
             Check "Remember this folder" to start with
           </label>
-          <p class="hint">Remembered folders are offered first when you create a document (<kbd>Ctrl</kbd>+<kbd>N</kbd>), each with the template you last used there.</p>
+          <p class="hint">Remembered folders are offered first when you create a document (<kbd>{MOD}</kbd>+<kbd>N</kbd>), each with the template you last used there.</p>
           {#if rememberedFolders.length > 0}
             <ul class="folders">
               {#each rememberedFolders as folder (folder.path)}
