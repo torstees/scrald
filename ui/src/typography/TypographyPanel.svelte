@@ -1,5 +1,6 @@
 <script lang="ts">
   // Text sizing and zoom controls (DESIGN.md §7.4), opened from the status bar.
+  import { keyLabel } from "../lib/platform";
   import Popover from "../status/Popover.svelte";
   import { formatZoom, MAX_ZOOM, MIN_ZOOM, type TextSizing } from "./typography";
 
@@ -47,9 +48,9 @@
   <div class="row">
     <span class="label">Zoom</span>
     <div class="zoom">
-      <button onclick={onzoomout} disabled={zoom <= MIN_ZOOM} aria-label="Zoom out" title="Zoom out (Ctrl+−)">−</button>
-      <button class="value" onclick={onzoomreset} title="Reset to 100% (Ctrl+0)">{formatZoom(zoom)}</button>
-      <button onclick={onzoomin} disabled={zoom >= MAX_ZOOM} aria-label="Zoom in" title="Zoom in (Ctrl+=)">+</button>
+      <button onclick={onzoomout} disabled={zoom <= MIN_ZOOM} aria-label="Zoom out" title={keyLabel("Zoom out (Ctrl+−)")}>−</button>
+      <button class="value" onclick={onzoomreset} title={keyLabel("Reset to 100% (Ctrl+0)")}>{formatZoom(zoom)}</button>
+      <button onclick={onzoomin} disabled={zoom >= MAX_ZOOM} aria-label="Zoom in" title={keyLabel("Zoom in (Ctrl+=)")}>+</button>
     </div>
   </div>
 

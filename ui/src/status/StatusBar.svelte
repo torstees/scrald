@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { keyLabel } from "../lib/platform";
   import type { Flavor, FlavorSource } from "../lib/types";
   import { FLAVOR_NAMES } from "./flavor";
   import FlavorMenu from "./FlavorMenu.svelte";
@@ -88,7 +89,7 @@
     class="toc"
     onclick={ontoggletoc}
     aria-pressed={tocVisible}
-    title={`${tocVisible ? "Hide" : "Show"} contents (Ctrl+\\)`}
+    title={keyLabel(`${tocVisible ? "Hide" : "Show"} contents (Ctrl+\\)`)}
     aria-label="Toggle contents">☰</button
   >
   {#if canGoBack || canGoForward}
@@ -125,9 +126,9 @@
     >
   {/if}
   {#if themeName}
-    <button class="theme" onclick={onthemeclick} title="Change theme (Ctrl+T)">{themeName}</button>
+    <button class="theme" onclick={onthemeclick} title={keyLabel("Change theme (Ctrl+T)")}>{themeName}</button>
   {/if}
-  <button class="theme" data-popover-toggle="typography" onclick={ontypographyclick} title="Text size and zoom (Ctrl+wheel, Ctrl+=, Ctrl+−, Ctrl+0)"
+  <button class="theme" data-popover-toggle="typography" onclick={ontypographyclick} title={keyLabel("Text size and zoom (Ctrl+wheel, Ctrl+=, Ctrl+−, Ctrl+0)")}
     >{typography}</button
   >
   <button
@@ -147,15 +148,15 @@
     title={`Read: ${formatProgress(progress)}. Whole document: about ${formatReadingTime(wordCount)}.`}
     >{formatProgress(progress)} · {formatTimeLeft(wordCount, progress)}</span
   >
-  <button class="theme help" onclick={onprint} title="Print or save as PDF (Ctrl+P)" aria-label="Print">🖶︎</button>
-  <button class="theme help" onclick={onsettings} title="Settings (Ctrl+,)" aria-label="Settings">⚙</button>
+  <button class="theme help" onclick={onprint} title={keyLabel("Print or save as PDF (Ctrl+P)")} aria-label="Print">🖶︎</button>
+  <button class="theme help" onclick={onsettings} title={keyLabel("Settings (Ctrl+,)")} aria-label="Settings">⚙</button>
   <button class="theme help" onclick={onshortcuts} title="Keyboard shortcuts (F1)" aria-label="Keyboard shortcuts">?</button>
   {#if propertiesShown !== null}
     <button
       class="toc"
       onclick={ontoggleproperties}
       aria-pressed={propertiesShown}
-      title={`${propertiesShown ? "Hide" : "Show"} properties (Ctrl+Shift+\\)`}
+      title={keyLabel(`${propertiesShown ? "Hide" : "Show"} properties (Ctrl+Shift+\\)`)}
       aria-label="Toggle properties">◨</button
     >
   {/if}

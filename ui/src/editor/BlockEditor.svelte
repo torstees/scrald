@@ -3,6 +3,7 @@
   // block's Markdown source in place of its rendered HTML. Clicking outside,
   // Escape, or Ctrl+Enter commits. CodeMirror is loaded only when a block is
   // first edited.
+  import { keyLabel } from "../lib/platform";
   import { onDestroy, onMount } from "svelte";
   import type { EditorView } from "@codemirror/view";
 
@@ -73,7 +74,7 @@
   onDestroy(() => view?.destroy());
 </script>
 
-<div class="sk-block-editor" bind:this={host} aria-label="Edit block (Ctrl+Enter or Escape to finish)">
+<div class="sk-block-editor" bind:this={host} aria-label={keyLabel("Edit block (Ctrl+Enter or Escape to finish)")}>
   {#if failed}<p class="sk-editor-error">{failed}</p>{/if}
 </div>
 

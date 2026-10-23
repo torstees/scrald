@@ -3,6 +3,8 @@
   // edits (DESIGN.md §9.3): keep mine, load the disk version, or compare the
   // two side by side in raw mode.
 
+  import { keyLabel } from "../lib/platform";
+
   interface Props {
     /** "changed": someone else edited the file; "missing": it's gone. */
     state: "changed" | "missing";
@@ -19,7 +21,7 @@
 
 <div class="sk-conflict" role="alert" aria-busy={busy}>
   {#if state === "missing"}
-    <p>The file was moved or deleted. Your changes are still here; <code>Ctrl+S</code> writes the file again.</p>
+    <p>The file was moved or deleted. Your changes are still here; <code>{keyLabel("Ctrl+S")}</code> writes the file again.</p>
     <div class="sk-conflict-actions">
       <button onclick={onkeep} disabled={busy}>OK</button>
     </div>
@@ -38,7 +40,7 @@
       <button class="primary" onclick={onkeep} disabled={busy} title="Saving will replace the disk version">
         Keep mine
       </button>
-      <button onclick={onload} disabled={busy} title="Your changes can be brought back with Ctrl+Z">
+      <button onclick={onload} disabled={busy} title={keyLabel("Your changes can be brought back with Ctrl+Z")}>
         Load disk version
       </button>
       <button onclick={oncompare} disabled={busy}>Compare</button>

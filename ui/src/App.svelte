@@ -71,6 +71,7 @@
   } from "./lib/commands";
   import { afterPaint } from "./lib/idle";
   import { launchMessage } from "./lib/launch";
+  import { hasMod, IS_MAC, keyLabel } from "./lib/platform";
   import type {
     DocumentModel,
     RecentDocument,
@@ -346,7 +347,7 @@
       const bom = doc.hasBom ? 3 : 0;
       raw = { ...current, startByte: Math.max(0, offset - bom), resetKey: 0, compareWith: null, mount: 0 };
       rawMode = true;
-      showNotice("Raw mode: Ctrl+E returns to reading");
+      showNotice(keyLabel("Raw mode: Ctrl+E returns to reading"));
     } catch (e) {
       showNotice(`Could not open raw mode: ${String(e)}`);
     }
@@ -517,7 +518,7 @@
       await keepLocalVersion();
       const wasChanged = conflict === "changed";
       await endConflict();
-      if (wasChanged) showNotice("Keeping your version: Ctrl+S replaces the file on disk");
+      if (wasChanged) showNotice(keyLabel("Keeping your version: Ctrl+S replaces the file on disk"));
     } catch (e) {
       showNotice(`Could not keep your version: ${String(e)}`);
     } finally {
@@ -547,8 +548,8 @@
         // In raw mode, Ctrl+Z is the editor's own undo, which starts afresh.
         showNotice(
           rawMode
-            ? "Loaded the disk version. After Ctrl+E, Ctrl+Z brings your changes back."
-            : "Loaded the disk version. Ctrl+Z brings your changes back.",
+            ? keyLabel("Loaded the disk version. After Ctrl+E, Ctrl+Z brings your changes back.")
+            : keyLabel("Loaded the disk version. Ctrl+Z brings your changes back."),
         );
       } catch (e) {
         showNotice(`Could not load the disk version: ${String(e)}`);
@@ -645,8 +646,8 @@
         await applyEdit(opened);
         showNotice(
           rawMode
-            ? "Restored your unsaved changes. Ctrl+S saves them."
-            : "Restored your unsaved changes. Ctrl+S saves them; Ctrl+Z goes back to the file.",
+            ? keyLabel("Restored your unsaved changes. Ctrl+S saves them.")
+            : keyLabel("Restored your unsaved changes. Ctrl+S saves them; Ctrl+Z goes back to the file."),
         );
       } catch (e) {
         showNotice(`Could not restore the changes: ${String(e)}`);
@@ -715,7 +716,7 @@
       await finishRecoveryCompare();
       // Like an edit of the user's own: autosave may save it now.
       noteEdit();
-      showNotice("Kept the recovered changes as unsaved changes. Ctrl+S saves them.");
+      showNotice(keyLabel("Kept the recovered changes as unsaved changes. Ctrl+S saves them."));
     } finally {
       recoveryBusy = false;
     }
@@ -733,7 +734,7 @@
         dirty = result.dirty;
       });
       await finishRecoveryCompare();
-      showNotice("Back to the file's text. After Ctrl+E, Ctrl+Z brings the recovered changes back.");
+      showNotice(keyLabel("Back to the file's text. After Ctrl+E, Ctrl+Z brings the recovered changes back."));
     } catch (e) {
       showNotice(`Could not go back to the file: ${String(e)}`);
     } finally {
@@ -877,8 +878,9 @@
       if (focused && !doc) void refreshStartLists();
     });
     // Ctrl+wheel and trackpad pinch zoom the text, not the whole webview.
+    // Pinch arrives as Ctrl+wheel everywhere; a Mac also zooms on Cmd+wheel.
     const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey || !doc) return;
+      if (!(event.ctrlKey || hasMod(event)) || !doc) return;
       event.preventDefault();
       typography.wheel(event);
     };
@@ -1498,7 +1500,7 @@
       if (event.key === "Escape") shortcutsOpen = settingsOpen = false;
       return;
     }
-    if (event.ctrlKey && !event.shiftKey && doc && !rawMode && (event.key === "f" || event.key === "F")) {
+    if (hasMod(event) && !event.shiftKey && doc && !rawMode && (event.key === "f" || event.key === "F")) {
       event.preventDefault();
       openSearch();
       return;
@@ -1508,23 +1510,23 @@
       search.step(event.shiftKey ? -1 : 1);
       return;
     }
-    if (event.ctrlKey && !event.shiftKey && (event.key === "o" || event.key === "O")) {
+    if (hasMod(event) && !event.shiftKey && (event.key === "o" || event.key === "O")) {
       event.preventDefault();
       void pickAndOpen();
       return;
     }
-    if (event.ctrlKey && !event.shiftKey && (event.key === "p" || event.key === "P")) {
+    if (hasMod(event) && !event.shiftKey && (event.key === "p" || event.key === "P")) {
       // Always taken, so the webview never prints the page unprepared.
       event.preventDefault();
       openPrint();
       return;
     }
-    if (event.ctrlKey && !event.shiftKey && (event.key === "n" || event.key === "N")) {
+    if (hasMod(event) && !event.shiftKey && (event.key === "n" || event.key === "N")) {
       event.preventDefault();
       void openNewDocument();
       return;
     }
-    if (event.ctrlKey && (event.key === "s" || event.key === "S")) {
+    if (hasMod(event) && (event.key === "s" || event.key === "S")) {
       event.preventDefault();
       // Commit a property or block being edited first: both commit on blur,
       // and `save` waits for the edit to land. Raw mode sends its text
@@ -1536,7 +1538,7 @@
         .then(() => (dirty ? save() : undefined));
       return;
     }
-    if (event.ctrlKey && doc && (event.key === "e" || event.key === "E")) {
+    if (hasMod(event) && doc && (event.key === "e" || event.key === "E")) {
       event.preventDefault();
       void (rawMode ? exitRawMode() : enterRawMode());
       return;
@@ -1545,7 +1547,7 @@
     // their own undo for what's being typed.
     const target = event.target as HTMLElement | null;
     const inEditor = target?.closest("input, textarea, [contenteditable='true'], .cm-editor") != null;
-    if (event.ctrlKey && doc && !inEditor) {
+    if (hasMod(event) && doc && !inEditor) {
       const key = event.key.toLowerCase();
       if (key === "z" && !event.shiftKey) {
         event.preventDefault();
@@ -1564,25 +1566,37 @@
       togglePanel(panel);
       return;
     }
-    if (event.ctrlKey && doc && (event.key === "=" || event.key === "+")) {
+    if (hasMod(event) && doc && (event.key === "=" || event.key === "+")) {
       event.preventDefault();
       typography.zoomIn();
-    } else if (event.ctrlKey && doc && (event.key === "-" || event.key === "_")) {
+    } else if (hasMod(event) && doc && (event.key === "-" || event.key === "_")) {
       event.preventDefault();
       typography.zoomOut();
-    } else if (event.ctrlKey && doc && event.key === "0") {
+    } else if (hasMod(event) && doc && event.key === "0") {
       event.preventDefault();
       typography.resetZoom();
-    } else if (event.ctrlKey && (event.key === "t" || event.key === "T")) {
+    } else if (hasMod(event) && (event.key === "t" || event.key === "T")) {
       event.preventDefault();
       void openSwitcher();
-    } else if (event.altKey && event.key === "ArrowLeft") {
+    } else if (goesBack(event)) {
       event.preventDefault();
       void goBack();
-    } else if (event.altKey && event.key === "ArrowRight") {
+    } else if (goesForward(event)) {
       event.preventDefault();
       void goForward();
     }
+  }
+
+  /**
+   * Back and Forward from the keyboard: Alt+Left and Alt+Right, or Cmd+[ and
+   * Cmd+] on a Mac, where Option+Left moves the cursor by a word.
+   */
+  function goesBack(event: KeyboardEvent): boolean {
+    return IS_MAC ? event.metaKey && event.key === "[" : event.altKey && event.key === "ArrowLeft";
+  }
+
+  function goesForward(event: KeyboardEvent): boolean {
+    return IS_MAC ? event.metaKey && event.key === "]" : event.altKey && event.key === "ArrowRight";
   }
 
   /** Mouse side buttons: 3 is Back, 4 is Forward. */

@@ -1,12 +1,19 @@
-// Every keyboard shortcut, grouped as the reference dialog shows them (F1).
+// Every keyboard shortcut, grouped as the reference dialog shows them (F1),
+// written as on Windows; a Mac shows Cmd for Ctrl (`shownKeys`).
 // Keep this in step with the handlers: the window's in `App.svelte`, and
 // each panel's own (`SearchBar`, `BlockEditor`, `ThemeSwitcher`, ...), and
 // with the user documentation's `docs/shortcuts.md` (a test compares them).
+import { hasMod, IS_MAC, keyLabel } from "../lib/platform";
 import type { Panel } from "../sidebar/layout";
 
 export interface Shortcut {
   /** Alternatives, each written like "Ctrl+Shift+Z". */
   keys: string[];
+  /**
+   * What a Mac uses instead, where it isn't just Cmd for Ctrl and Option for
+   * Alt (Option+Left moves by a word there, so Back is Cmd+[ as in Safari).
+   */
+  mac?: string[];
   action: string;
 }
 
@@ -25,8 +32,16 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["Ctrl+N"], action: "Create a new document" },
       { keys: ["Ctrl+S"], action: "Save" },
       { keys: ["Ctrl+P"], action: "Print or save as PDF" },
-      { keys: ["Alt+Left", "Mouse back button"], action: "Back to the previous document" },
-      { keys: ["Alt+Right", "Mouse forward button"], action: "Forward" },
+      {
+        keys: ["Alt+Left", "Mouse back button"],
+        mac: ["Cmd+[", "Mouse back button"],
+        action: "Back to the previous document",
+      },
+      {
+        keys: ["Alt+Right", "Mouse forward button"],
+        mac: ["Cmd+]", "Mouse forward button"],
+        action: "Forward",
+      },
       { keys: ["F1", "Ctrl+/"], action: "Show these shortcuts" },
       { keys: ["Ctrl+,"], action: "Settings" },
     ],
@@ -58,7 +73,11 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["Ctrl+Enter", "Esc"], action: "Finish editing the block" },
       { keys: ["Ctrl+E"], action: "Switch to raw mode and back" },
       { keys: ["Ctrl+Z"], action: "Undo" },
-      { keys: ["Ctrl+Y", "Ctrl+Shift+Z"], action: "Redo" },
+      {
+        keys: ["Ctrl+Y", "Ctrl+Shift+Z"],
+        mac: ["Cmd+Shift+Z"],
+        action: "Redo",
+      },
     ],
   },
   {
@@ -91,6 +110,12 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   },
 ];
 
+/** A shortcut's alternatives as this platform's user presses them. */
+export function shownKeys(shortcut: Shortcut, mac = IS_MAC): string[] {
+  if (mac && shortcut.mac) return shortcut.mac;
+  return shortcut.keys.map((keys) => keyLabel(keys, mac));
+}
+
 /**
  * The keys of one shortcut, to show one per box: "Ctrl+Shift+Z" is
  * ["Ctrl", "Shift", "Z"], and "Ctrl++" is ["Ctrl", "+"].
@@ -104,15 +129,21 @@ export function keyParts(keys: string): string[] {
  * for properties. The physical key counts too: on many non-US layouts the
  * backslash isn't on it.
  */
-export function togglesPanel(event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "altKey" | "shiftKey">): Panel | null {
-  if (!event.ctrlKey || event.altKey) return null;
+export function togglesPanel(
+  event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+  mac = IS_MAC,
+): Panel | null {
+  if (!hasMod(event, mac) || event.altKey) return null;
   if (event.key !== "\\" && event.key !== "|" && event.code !== "Backslash") return null;
   return event.shiftKey ? "properties" : "contents";
 }
 
 /** Whether a key press opens the settings dialog: Ctrl+, (the physical key too). */
-export function opensSettings(event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "altKey" | "shiftKey">): boolean {
-  return event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === "," || event.code === "Comma");
+export function opensSettings(
+  event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+  mac = IS_MAC,
+): boolean {
+  return hasMod(event, mac) && !event.altKey && !event.shiftKey && (event.key === "," || event.code === "Comma");
 }
 
 /**
@@ -121,9 +152,10 @@ export function opensSettings(event: Pick<KeyboardEvent, "key" | "code" | "ctrlK
  * it to comment lines in or out.
  */
 export function opensShortcuts(
-  event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "altKey">,
+  event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey">,
   inCodeEditor: boolean,
+  mac = IS_MAC,
 ): boolean {
   if (event.key === "F1") return true;
-  return !inCodeEditor && event.ctrlKey && !event.altKey && (event.key === "/" || event.code === "Slash");
+  return !inCodeEditor && hasMod(event, mac) && !event.altKey && (event.key === "/" || event.code === "Slash");
 }

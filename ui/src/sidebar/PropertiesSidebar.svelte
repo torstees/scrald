@@ -2,6 +2,7 @@
   // The properties panel in a sidebar (DESIGN.md §8.2): as a tab beside
   // Contents at the left, or on its own at the right. It uses the UI's text
   // size, like Contents, not the reading column's size and zoom.
+  import { keyLabel } from "../lib/platform";
   import type { Snippet } from "svelte";
   import PropertiesPanel from "../frontmatter/PropertiesPanel.svelte";
   import PlacementSelect from "../frontmatter/PlacementSelect.svelte";
@@ -34,7 +35,7 @@
     <span class="actions">
       <PlacementSelect placement={side} {onplacement} />
       {#if onclose}
-        <button class="close" aria-label="Hide properties" title="Hide properties (Ctrl+Shift+\)" onclick={onclose}>×</button>
+        <button class="close" aria-label="Hide properties" title={keyLabel("Hide properties (Ctrl+Shift+\\)")} onclick={onclose}>×</button>
       {/if}
     </span>
   </header>
