@@ -177,6 +177,7 @@ fn main() -> anyhow::Result<()> {
             commands::set_typography_defaults,
             commands::resolve_link,
             commands::open_external,
+            commands::print_window,
             commands::report_timing,
         ])
         .setup(move |app| {

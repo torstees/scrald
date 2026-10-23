@@ -10,7 +10,8 @@
   import type { BlockEditing } from "../editor/blocks";
   import { assetUrl } from "../lib/commands";
   import { contentId } from "../lib/ids";
-  import { richContent } from "../render/renderers";
+  import { renderRich, richContent } from "../render/renderers";
+  import { loadImages, unfold } from "../print/prepare";
   import PropertiesPanel from "../frontmatter/PropertiesPanel.svelte";
   import type { PropertyEditor } from "../frontmatter/properties";
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
@@ -541,6 +542,24 @@
     noteScrolled();
   }
 
+  /**
+   * Gets the whole document ready to print (DESIGN.md §10): every section
+   * mounted, math, diagrams, and music drawn, images loaded, and folded
+   * callouts and `<details>` opened. Resolves to a function that folds them
+   * again. Sections stay mounted, as they would once idle mounting ends.
+   */
+  export async function prepareForPrint(): Promise<() => void> {
+    popover = null;
+    if (mounted.some((m) => !m)) {
+      mounted = doc.sections.map(() => true);
+      await tick();
+    }
+    if (!scroller) return () => {};
+    await renderRich(scroller);
+    await loadImages(scroller);
+    return unfold(scroller);
+  }
+
   /** The reading position as of the last scroll or jump (not re-measured now). */
   export function stableAnchor(): ScrollAnchor | null {
     return lastAnchor;
@@ -806,5 +825,25 @@
 
   .sk-placeholder {
     content-visibility: visible;
+  }
+
+  /* Printing (DESIGN.md §10): the column at the theme's text size, on the
+     page instead of in a scrolling box. Zoom and fit are for the window. */
+  @media print {
+    .sk-scroller {
+      height: auto;
+      overflow: visible;
+      padding: 0;
+    }
+
+    .sk-column {
+      padding: 0;
+      font-size: var(--sk-font-size) !important;
+    }
+
+    .sk-section {
+      content-visibility: visible;
+      contain-intrinsic-size: none !important;
+    }
   }
 </style>

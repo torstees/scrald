@@ -360,6 +360,11 @@ export function openExternal(url: string): Promise<void> {
   return invoke("open_external", { url });
 }
 
+/** Opens the system's print dialog for this window (DESIGN.md §10). */
+export function printWindow(): Promise<void> {
+  return invoke("print_window");
+}
+
 /** Calls `handler` with the path whenever this window's document changes on disk. */
 export function onDocumentChanged(handler: (path: string) => void): Promise<UnlistenFn> {
   return listen<string>("document-changed", (event) => handler(event.payload));

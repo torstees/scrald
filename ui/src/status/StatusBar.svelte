@@ -46,6 +46,7 @@
     progress: number;
     /** Opens the keyboard shortcut reference. */
     onshortcuts: () => void;
+    onprint: () => void;
   }
 
   let {
@@ -74,6 +75,7 @@
     onsettings,
     progress,
     onshortcuts,
+    onprint,
   }: Props = $props();
 
   let flavorMenuOpen = $state(false);
@@ -145,6 +147,7 @@
     title={`Read: ${formatProgress(progress)}. Whole document: about ${formatReadingTime(wordCount)}.`}
     >{formatProgress(progress)} · {formatTimeLeft(wordCount, progress)}</span
   >
+  <button class="theme help" onclick={onprint} title="Print or save as PDF (Ctrl+P)" aria-label="Print">🖶︎</button>
   <button class="theme help" onclick={onsettings} title="Settings (Ctrl+,)" aria-label="Settings">⚙</button>
   <button class="theme help" onclick={onshortcuts} title="Keyboard shortcuts (F1)" aria-label="Keyboard shortcuts">?</button>
   {#if propertiesShown !== null}
