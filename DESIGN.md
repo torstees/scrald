@@ -710,6 +710,8 @@ Scrald is developed and tested on Windows first. macOS and Linux support is the 
 
 `scrald-core` is the exception: it has no GUI dependencies, so it is supported on Windows, macOS, and Linux **from the start**. CI runs its tests on all three platforms from M0 onward, which catches portability slips (hard-coded `\` separators, case-sensitive file names, path normalization) as they're written rather than at M10.
 
+As implemented (M10): CI now also builds and tests the whole workspace, `scrald-app` and the frontend included, on macOS and Linux as well as Windows (the `app` job in `.github/workflows/ci.yml`). The Linux runner installs Tauri's WebKitGTK and GTK development packages first. This checks that the app compiles and its tests pass on each platform; running it there is still checked by hand.
+
 Known differences to plan for when that milestone starts:
 
 - **Webviews.** macOS uses WKWebView and Linux uses WebKitGTK, not Chromium-based WebView2. The large-document strategy in section 4 relies on `content-visibility: auto` and `requestIdleCallback`, so their availability and behavior on each engine must be checked, with fallbacks where needed (for example a `setTimeout`-based idle scheduler). Performance must be re-measured against the section 4 budget on each platform.
