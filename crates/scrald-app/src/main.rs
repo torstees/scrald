@@ -169,6 +169,8 @@ fn main() -> anyhow::Result<()> {
             commands::set_document_flavor,
             commands::properties_open,
             commands::set_properties_open,
+            commands::front_settings,
+            commands::set_front_settings,
             commands::properties_placement,
             commands::set_properties_placement,
             commands::autosave,

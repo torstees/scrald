@@ -48,6 +48,14 @@ pub struct DocumentModel {
     /// section. Includes inline footnotes (`^[...]`, Pandoc), which have no
     /// block of their own.
     pub footnotes: Vec<Footnote>,
+    /// The front matter's cover image, when it names a local image file
+    /// that exists (§8.1). It's also in `images`, so it can be served. The
+    /// reader may show it above the first block (#189).
+    pub cover: Option<ImageAsset>,
+    /// The front matter's title when the text doesn't show it near the
+    /// start (`opening::missing_title`); the reader may show it as a
+    /// heading above the first block when there's no cover (#189).
+    pub missing_title: Option<String>,
 }
 
 /// A footnote, rendered for display.
@@ -309,11 +317,16 @@ pub fn parse_document_cached(
     let mut asset_ctx =
         AssetContext::for_document(&path, assets_dir, parse_options.allow_remote_images);
     // The vault index is only built when something could use it.
-    let vault = (obsidian && (body.contains("[[") || body.contains("![") || body.contains("<img")))
-        .then(|| match &parse_options.vault {
-            Some(cached) if cached.serves(&path) => Arc::clone(cached),
-            _ => Arc::new(VaultIndex::for_document(&path)),
-        });
+    let cover_src = front_matter.as_ref().and_then(|fm| fm.cover.clone());
+    let vault = (obsidian
+        && (cover_src.is_some()
+            || body.contains("[[")
+            || body.contains("![")
+            || body.contains("<img")))
+    .then(|| match &parse_options.vault {
+        Some(cached) if cached.serves(&path) => Arc::clone(cached),
+        _ => Arc::new(VaultIndex::for_document(&path)),
+    });
     asset_ctx.vault = vault.clone();
     let mut images = ImageCollector::default();
 
@@ -621,6 +634,19 @@ pub fn parse_document_cached(
     footnotes.sort_by_key(|f| f.number);
     *cache = renderer.into_cache();
 
+    // What the reader may show before the first block (#189).
+    let cover = cover_src
+        .and_then(|src| assets::resolve_cover(&src, &asset_ctx))
+        .map(|file| images.asset_for(file));
+    let first_block_text = blocks
+        .first()
+        .map(|b| &text[b.source.start - bom_len..b.source.end - bom_len]);
+    let missing_title = crate::opening::missing_title(
+        front_matter.as_ref().and_then(|fm| fm.title.as_deref()),
+        &toc,
+        first_block_text,
+    );
+
     Ok(DocumentModel {
         path,
         has_bom: decoded.has_bom,
@@ -637,6 +663,8 @@ pub fn parse_document_cached(
         flavor,
         flavor_source,
         footnotes,
+        cover,
+        missing_title,
     })
 }
 
@@ -1289,6 +1317,52 @@ not counted
             html.contains("sk-image-missing") && html.contains("c.jpg"),
             "{html}"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn model_has_the_cover_and_a_missing_title() {
+        let dir = std::env::temp_dir().join(format!("scrald-opening-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("art")).unwrap();
+        std::fs::write(dir.join("art/cover.png"), "x").unwrap();
+        let path = dir.join("doc.md");
+        let parse_at = |text: &str| parse_document(path.clone(), text.as_bytes()).unwrap();
+
+        // The cover is one of the served images, once even if a block uses it too.
+        let doc = parse_at(
+            "---
+title: Winter
+cover: art/cover.png
+---
+Text
+
+![c](art/cover.png)
+",
+        );
+        let cover = doc.cover.clone().unwrap();
+        assert_eq!(cover.path, dir.join("art").join("cover.png"));
+        assert_eq!(doc.images, vec![cover]);
+        assert_eq!(doc.missing_title.as_deref(), Some("Winter"));
+
+        // A missing cover file, or a title the text starts with.
+        let doc = parse_at(
+            "---
+title: Winter
+cover: gone.png
+---
+# Winter
+
+Text
+",
+        );
+        assert_eq!((doc.cover, doc.missing_title), (None, None));
+        // No front matter: nothing to show.
+        let doc = parse(
+            "# Hello
+",
+        );
+        assert_eq!((doc.cover, doc.missing_title), (None, None));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

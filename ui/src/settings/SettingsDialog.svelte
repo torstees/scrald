@@ -5,7 +5,14 @@
   import { MOD } from "../lib/platform";
   import { trapFocus } from "../lib/focus";
   import { onMount } from "svelte";
-  import type { NewDocumentOptions, PropertiesPlacement, ThemeSummary, TypographyDefaults } from "../lib/types";
+  import type {
+    FrontChoice,
+    FrontSettings,
+    NewDocumentOptions,
+    PropertiesPlacement,
+    ThemeSummary,
+    TypographyDefaults,
+  } from "../lib/types";
   import { formatZoom, ZOOM_STEPS, type TextSizing } from "../typography/typography";
 
   interface Props {
@@ -17,12 +24,15 @@
     propertiesOpen: boolean;
     propertiesPlacement: PropertiesPlacement;
     autosave: boolean;
+    /** Whether documents show their cover and a missing title (#189). */
+    front: FrontSettings;
     ondefaulttheme: (id: string | null) => void;
     ontypography: (defaults: TypographyDefaults) => void;
     oncontentsdepth: (depth: number) => void;
     onpropertiesopen: (open: boolean) => void;
     onpropertiesplacement: (placement: PropertiesPlacement) => void;
     onautosave: (enabled: boolean) => void;
+    onfront: (settings: FrontSettings) => void;
     /** Remembered folders and the "Remember this folder" default; null while loading. */
     newDocument: NewDocumentOptions | null;
     onremembernewfolders: (remember: boolean) => void;
@@ -40,12 +50,14 @@
     propertiesOpen,
     propertiesPlacement,
     autosave,
+    front,
     ondefaulttheme,
     ontypography,
     oncontentsdepth,
     onpropertiesopen,
     onpropertiesplacement,
     onautosave,
+    onfront,
     newDocument,
     onremembernewfolders,
     onforgetfolder,
@@ -179,6 +191,26 @@
           Show the properties open
         </label>
         <p class="hint">A document's front matter. At the left or right, a document without any can have properties added.</p>
+        <label class="row">
+          <span class="label">Cover image</span>
+          <select value={front.cover} onchange={(e) => onfront({ ...front, cover: e.currentTarget.value as FrontChoice })}>
+            <option value="theme">As the theme says</option>
+            <option value="show">Always show</option>
+            <option value="hide">Never show</option>
+          </select>
+        </label>
+        <label class="row">
+          <span class="label">Missing title</span>
+          <select value={front.title} onchange={(e) => onfront({ ...front, title: e.currentTarget.value as FrontChoice })}>
+            <option value="theme">As the theme says</option>
+            <option value="show">Always show</option>
+            <option value="hide">Never show</option>
+          </select>
+        </label>
+        <p class="hint">
+          A cover named in the front matter shows above the text. Without one, a front matter title the text doesn't
+          start with shows as a heading. Neither changes the file.
+        </p>
       </section>
 
       <section>

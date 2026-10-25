@@ -175,6 +175,10 @@ export interface DocumentModel {
   flavorSource: FlavorSource;
   /** Every footnote in numbered order, including inline (`^[...]`) ones. */
   footnotes: Footnote[];
+  /** The front matter's cover image, if it names one that exists (also in `images`). */
+  cover: ImageAsset | null;
+  /** The front matter's title, if the text doesn't show it near the start. */
+  missingTitle: string | null;
 }
 
 /** Mirrors `LinkTarget` (crates/scrald-core/src/links.rs, serde `tag = "kind"`). */
@@ -269,6 +273,8 @@ export interface ThemeEditorValues {
   hrGlyph: string | null;
   numbering: boolean;
   h1Rule: boolean;
+  frontCover: boolean;
+  frontTitle: boolean;
 }
 
 /** Mirrors `ThemeDetails` (crates/scrald-app/src/commands.rs). */
@@ -329,6 +335,9 @@ export interface ThemeStyle {
   appearance: Appearance;
   css: string;
   numbering: boolean;
+  /** Whether the theme shows a document's cover, and a missing title (#189). */
+  frontCover: boolean;
+  frontTitle: boolean;
   layout: ThemeLayout;
 }
 
@@ -436,6 +445,15 @@ export type SaveOutcome = "saved" | "conflict";
 
 /** Where the properties panel goes (DESIGN.md §8.2); mirrors `PropertiesPlacement` in state.rs. */
 export type PropertiesPlacement = "top" | "left" | "right";
+
+/** Whether to show the cover or a missing title (#189); mirrors `FrontChoice` in state.rs. */
+export type FrontChoice = "theme" | "show" | "hide";
+
+/** Mirrors `FrontSettings` (crates/scrald-app/src/state.rs). */
+export interface FrontSettings {
+  cover: FrontChoice;
+  title: FrontChoice;
+}
 
 /** Mirrors `FolderChoice` (crates/scrald-app/src/commands.rs). */
 export interface FolderChoice {

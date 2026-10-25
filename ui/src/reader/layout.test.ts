@@ -34,6 +34,8 @@ function doc(blocks: Block[], sections: Section[]): DocumentModel {
     flavor: "gfm",
     flavorSource: "default",
     footnotes: [],
+    cover: null,
+    missingTitle: null,
   };
 }
 

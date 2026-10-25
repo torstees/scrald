@@ -56,6 +56,7 @@ fn editable(path: &[&str]) -> bool {
         ["elements", "blockquote", "style" | "italic"] => true,
         ["elements", "hr", "style" | "glyph"] => true,
         ["elements", "headings", "numbering" | "h1_rule"] => true,
+        ["elements", "front", "cover" | "title"] => true,
         _ => false,
     }
 }
@@ -197,6 +198,8 @@ pub struct EditorValues {
     pub hr_glyph: Option<String>,
     pub numbering: bool,
     pub h1_rule: bool,
+    pub front_cover: bool,
+    pub front_title: bool,
 }
 
 impl EditorValues {
@@ -261,6 +264,8 @@ impl EditorValues {
             hr_glyph: e.hr.glyph.clone(),
             numbering: e.headings.numbering,
             h1_rule: e.headings.h1_rule,
+            front_cover: e.front.cover,
+            front_title: e.front.title,
         }
     }
 }
@@ -380,5 +385,19 @@ body = { family = "Literata", source = "google", weights = [400, 700] }
         assert_eq!(body.source, FontSource::Google);
         assert_eq!(values.fonts[1].family, None);
         assert_eq!(values.measure, 66);
+        // The cover and missing title are on unless a theme says otherwise.
+        assert!(values.front_cover && values.front_title);
+    }
+
+    #[test]
+    fn the_cover_and_title_can_be_turned_off() {
+        let edited = apply_changes(THEME, &[set("elements.front.title", json!(false))]).unwrap();
+        assert!(edited.contains(
+            "[elements.front]
+title = false"
+        ));
+        let theme = ThemeFile::parse(&edited).unwrap();
+        assert!(theme.elements.front.cover);
+        assert!(!theme.elements.front.title);
     }
 }

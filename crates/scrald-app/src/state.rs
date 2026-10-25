@@ -87,6 +87,10 @@ const AUTOSAVE: &str = "editing.autosave";
 /// (DESIGN.md §10).
 const CONTENTS_DEPTH: &str = "contents.depth";
 
+/// Settings key: whether documents show their cover and a missing title
+/// (#189).
+const FRONT: &str = "reader.front";
+
 /// Settings key: whether "Remember this folder" starts checked in the New
 /// document dialog (DESIGN.md §11).
 const REMEMBER_NEW_FOLDERS: &str = "editing.remember_new_folders";
@@ -129,6 +133,27 @@ pub enum PropertiesPlacement {
     Left,
     /// A sidebar of its own at the right.
     Right,
+}
+
+/// Whether the reader shows something before a document's first block
+/// (#189); mirrors `FrontChoice` in ui/src/lib/types.ts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FrontChoice {
+    /// As the theme says (`[elements.front]`).
+    #[default]
+    Theme,
+    Show,
+    Hide,
+}
+
+/// The user's choices for the cover and the missing title, which override
+/// the theme's (the built-in themes can't be edited).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FrontSettings {
+    pub cover: FrontChoice,
+    pub title: FrontChoice,
 }
 
 /// A reading position (DESIGN.md §4); mirrors `ScrollAnchor` in ui/src/reader/anchor.ts.
@@ -378,6 +403,16 @@ impl StateStore {
 
     pub fn set_contents_depth(&self, depth: u8) -> anyhow::Result<()> {
         self.set_setting(CONTENTS_DEPTH, &depth.clamp(1, 6))
+    }
+
+    /// Whether documents show their cover and a missing title; the theme's
+    /// choice for both unless the user changed it.
+    pub fn front_settings(&self) -> anyhow::Result<FrontSettings> {
+        Ok(self.get_setting(FRONT)?.unwrap_or_default())
+    }
+
+    pub fn set_front_settings(&self, settings: FrontSettings) -> anyhow::Result<()> {
+        self.set_setting(FRONT, &settings)
     }
 
     /// The global default theme's id, if the user chose one.
@@ -1180,6 +1215,18 @@ mod tests {
         store.set_sample_template_written().unwrap();
         assert!(store.remember_new_folders().unwrap());
         assert!(store.sample_template_written().unwrap());
+    }
+
+    #[test]
+    fn front_settings_default_to_the_theme() {
+        let store = StateStore::in_memory().unwrap();
+        assert_eq!(store.front_settings().unwrap(), FrontSettings::default());
+        let hide_cover = FrontSettings {
+            cover: FrontChoice::Hide,
+            title: FrontChoice::Theme,
+        };
+        store.set_front_settings(hide_cover).unwrap();
+        assert_eq!(store.front_settings().unwrap(), hide_cover);
     }
 
     #[test]
