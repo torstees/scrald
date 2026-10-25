@@ -67,7 +67,8 @@ Built-in themes can't be changed, but **Duplicate to customize** in the switcher
 - the colors, each with a color picker. An empty color is worked out from the others, and the box shows what it would be;
 - the fonts for body text, headings, code, and the interface, from the fonts installed on your computer or from Google Fonts;
 - line length, text size, line height, paragraph spacing, and text sizing;
-- the quote style, the divider, heading numbers, and the rule under the title.
+- the quote style, the divider, heading numbers, and the rule under the title;
+- whether the document's cover, and a missing title, are shown.
 
 Each change shows on the document at once, and nothing is written until you **Save** (or press `Ctrl+Enter`). `Esc` or **Cancel** puts the theme back.
 

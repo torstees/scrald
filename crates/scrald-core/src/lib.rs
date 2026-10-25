@@ -17,6 +17,7 @@ pub mod highlight;
 pub mod links;
 pub mod newdoc;
 pub mod obsidian;
+pub mod opening;
 pub mod pandoc;
 pub mod recovery;
 pub mod render;

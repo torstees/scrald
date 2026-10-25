@@ -57,6 +57,8 @@
     onAutosaveChanged,
     defaultTheme as defaultThemeSetting,
     contentsDepth as contentsDepthSetting,
+    frontSettings,
+    setFrontSettings,
     typographyDefaults,
     setContentsDepth,
     onSettingsChanged,
@@ -74,6 +76,7 @@
   import { hasMod, IS_MAC, keyLabel } from "./lib/platform";
   import type {
     DocumentModel,
+    FrontSettings,
     RecentDocument,
     Flavor,
     OpenedDocument,
@@ -103,6 +106,7 @@
   import { NavHistory } from "./nav/history";
   import { TOP_ANCHOR, type ScrollAnchor } from "./reader/anchor";
   import Reader from "./reader/Reader.svelte";
+  import { frontContent } from "./reader/front";
   import ConflictBanner from "./editor/ConflictBanner.svelte";
   import RecoveryBanner from "./editor/RecoveryBanner.svelte";
   import RecoveredList from "./editor/RecoveredList.svelte";
@@ -165,6 +169,11 @@
   let theme = $state<ResolvedTheme | null>(null);
   let themeName = $state<string | null>(null);
   let numbering = $state(false);
+  // The cover or missing title before the first block (#189): the shown
+  // theme's choice, unless the user's settings override it.
+  let themeFront = $state({ frontCover: true, frontTitle: true });
+  let frontChoices = $state<FrontSettings>({ cover: "theme", title: "theme" });
+  const front = $derived(doc ? frontContent(doc, themeFront, frontChoices) : null);
   let switcherOpen = $state(false);
   let themeList = $state<ThemeSummary[]>([]);
   let themeFolder = $state<string | null>(null);
@@ -799,6 +808,8 @@
         contentsDepth = await contentsDepthSetting();
       } else if (name === "properties.placement") {
         propertiesPlacement = await propertiesPlacementSetting();
+      } else if (name === "reader.front") {
+        frontChoices = await frontSettings();
       } else if (name === "theme.default") {
         defaultThemeId = await defaultThemeSetting();
         await followDefaultTheme();
@@ -847,6 +858,9 @@
     const unlistenAutosave = onAutosaveChanged(applyAutosave);
     void contentsDepthSetting()
       .then((depth) => (contentsDepth = depth))
+      .catch(() => {});
+    void frontSettings()
+      .then((choices) => (frontChoices = choices))
       .catch(() => {});
     const unlistenSettings = onSettingsChanged((name) => void applySetting(name));
     // Drag and drop (DESIGN.md §11): Tauri hands over the dropped files'
@@ -1219,6 +1233,7 @@
       void refreshRichForTheme();
       themeName = style.name;
       numbering = style.numbering;
+      themeFront = { frontCover: style.frontCover, frontTitle: style.frontTitle };
       typography.setTheme(style.layout);
     } catch (e) {
       showNotice(`Could not load theme ${id}: ${String(e)}`);
@@ -1363,6 +1378,7 @@
     applyTheme(preview.style);
     themeName = preview.style.name;
     numbering = preview.style.numbering;
+    themeFront = { frontCover: preview.style.frontCover, frontTitle: preview.style.frontTitle };
     typography.setTheme(preview.style.layout);
     return { values: preview.values, contrast: preview.contrast };
   }
@@ -1738,6 +1754,7 @@
           {keepPosition}
           onpropertiestoggle={togglePropertiesPanel}
           onrawat={(offset) => void enterRawMode(offset)}
+          {front}
         />
       {/if}
     </main>
@@ -1876,12 +1893,14 @@
       {propertiesOpen}
       {propertiesPlacement}
       {autosave}
+      front={frontChoices}
       ondefaulttheme={(id) => changeSetting("the default theme", () => setDefaultTheme(id))}
       ontypography={(defaults) => changeSetting("the text size", () => typography.applyDefaults(defaults, true))}
       oncontentsdepth={(depth) => changeSetting("the contents depth", () => setContentsDepth(depth))}
       onpropertiesopen={togglePropertiesPanel}
       onpropertiesplacement={(placement) => void placeProperties(placement)}
       onautosave={changeAutosave}
+      onfront={(choices) => changeSetting("the cover and title setting", () => setFrontSettings(choices))}
       newDocument={newDocumentSettings}
       onremembernewfolders={(remember) => void changeNewDocumentFolders(() => setRememberNewFolders(remember))}
       onforgetfolder={(path) => void changeNewDocumentFolders(() => forgetNewDocumentFolder(path))}

@@ -19,8 +19,8 @@ use tauri_plugin_opener::OpenerExt;
 use crate::protocol::AssetRegistry;
 use crate::session::{DiskState, SaveOutcome, Sessions, Step};
 use crate::state::{
-    CoverImage, DEFAULT_THEME, DocumentMemory, PropertiesPlacement, RecentDocument, ScrollAnchor,
-    StateStore, TypographyDefaults,
+    CoverImage, DEFAULT_THEME, DocumentMemory, FrontSettings, PropertiesPlacement, RecentDocument,
+    ScrollAnchor, StateStore, TypographyDefaults,
 };
 use crate::themes::ThemeService;
 use crate::vaults::VaultCache;
@@ -130,6 +130,10 @@ pub struct ThemeStyle {
     pub css: String,
     /// Whether the theme numbers headings (the TOC shows numbers too).
     pub numbering: bool,
+    /// Whether the theme shows a document's cover, and its title when the
+    /// text doesn't start with it (#189); the user's settings can override.
+    pub front_cover: bool,
+    pub front_title: bool,
     /// Layout numbers the frontend needs for text sizing and zoom.
     pub layout: ThemeLayout,
 }
@@ -887,6 +891,8 @@ fn style_for(
         name: theme.file.meta.name.clone(),
         appearance: theme.file.meta.appearance,
         numbering: theme.file.elements.headings.numbering,
+        front_cover: theme.file.elements.front.cover,
+        front_title: theme.file.elements.front.title,
         layout: ThemeLayout {
             measure: theme.file.layout.measure,
             font_size: theme.file.layout.font_size,
@@ -1001,8 +1007,8 @@ pub fn set_typography_defaults(
 }
 
 /// Event sent to every window when a global setting changes, with the
-/// setting's name: "theme.default", "typography", "contents.depth", or
-/// "properties.placement".
+/// setting's name: "theme.default", "typography", "contents.depth",
+/// "properties.placement", or "reader.front".
 /// (Autosave has its own event; `properties.open` isn't announced, since
 /// it's only how the panel starts and open windows keep theirs.)
 pub const SETTINGS_CHANGED: &str = "settings-changed";
@@ -1027,6 +1033,23 @@ pub fn set_contents_depth(
 ) -> Result<(), CommandError> {
     store.set_contents_depth(depth)?;
     settings_changed(&app, "contents.depth")
+}
+
+/// Whether documents show their cover and a missing title: the theme's
+/// choice unless the user overrides it (#189).
+#[tauri::command]
+pub fn front_settings(store: tauri::State<'_, StateStore>) -> Result<FrontSettings, CommandError> {
+    Ok(store.front_settings()?)
+}
+
+#[tauri::command]
+pub fn set_front_settings(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, StateStore>,
+    settings: FrontSettings,
+) -> Result<(), CommandError> {
+    store.set_front_settings(settings)?;
+    settings_changed(&app, "reader.front")
 }
 
 /// The global default theme's id; `null` when the built-in light or dark

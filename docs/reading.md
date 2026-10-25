@@ -15,6 +15,14 @@ The document fills the middle of the window. Around it:
 
 `Ctrl+\` shows or hides the contents, and `Ctrl+Shift+\` the properties.
 
+## The cover and the title
+
+If a document's front matter names a cover image (see [Front matter](front-matter.md)), the cover is shown above the text, the way a book opens. In print it gets a page of its own.
+
+If there's no cover, and the front matter has a `title` that the text doesn't start with, the title is shown as a heading above the text. It counts as there if one of the first three blocks is a heading with the same words (ignoring case and punctuation), or one that contains them, like "Chapter 1: The Long Winter" for "The Long Winter".
+
+Neither changes the file. The added title isn't in the contents and can't be edited by double-clicking; change it in the properties. Each theme decides whether to show them (both on in the built-in themes), and **Settings** can always show or never show either one.
+
 ## The contents
 
 The **Depth** menu at the top of the contents chooses how many heading levels it lists, from one to all. For a novel, one or two levels keep the list short. Depth is one setting for every document.
@@ -84,7 +92,7 @@ When a document changes on disk while it's open, and you haven't changed it in S
 `Ctrl+,` or ⚙ opens the settings:
 
 - **Appearance:** the default theme, or following the system's light or dark mode.
-- **Reading:** text size and zoom for documents without their own, **Fill window**, the contents depth, and where the properties go.
+- **Reading:** text size and zoom for documents without their own, **Fill window**, the contents depth, where the properties go, and whether the cover and a missing title are shown (as the theme says, always, or never).
 - **Editing:** autosave. See [Editing and saving](editing.md).
 - **New documents:** the folders to remember.
 

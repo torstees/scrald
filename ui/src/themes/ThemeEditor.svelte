@@ -413,6 +413,22 @@ ${describeProblems(low)}`}
       />
       <span>Rule under the title</span>
     </label>
+    <label class="row check">
+      <input
+        type="checkbox"
+        checked={values.frontCover}
+        onchange={(e) => set("elements.front.cover", e.currentTarget.checked)}
+      />
+      <span>Show the document's cover</span>
+    </label>
+    <label class="row check">
+      <input
+        type="checkbox"
+        checked={values.frontTitle}
+        onchange={(e) => set("elements.front.title", e.currentTarget.checked)}
+      />
+      <span>Show a title the text doesn't start with</span>
+    </label>
   </section>
 
   <footer>

@@ -5,6 +5,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ScrollAnchor } from "../reader/anchor";
 import type {
+  FrontSettings,
   LaunchInfo,
   LinkTarget,
   OpenedDocument,
@@ -308,8 +309,17 @@ export function setContentsDepth(depth: number): Promise<void> {
   return invoke("set_contents_depth", { depth });
 }
 
+/** Whether documents show their cover and a missing title (#189). */
+export function frontSettings(): Promise<FrontSettings> {
+  return invoke<FrontSettings>("front_settings");
+}
+
+export function setFrontSettings(settings: FrontSettings): Promise<void> {
+  return invoke("set_front_settings", { settings });
+}
+
 /** A global setting another window (or this one) changed. */
-export type SettingName = "theme.default" | "typography" | "contents.depth" | "properties.placement";
+export type SettingName = "theme.default" | "typography" | "contents.depth" | "properties.placement" | "reader.front";
 
 /** Calls `handler` with the setting's name whenever a global setting changes, in any window. */
 export function onSettingsChanged(handler: (name: SettingName) => void): Promise<UnlistenFn> {

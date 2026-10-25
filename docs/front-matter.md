@@ -35,7 +35,7 @@ Every other key is kept and shown in the properties too.
 
 ## Cover images
 
-A cover image is shown in place of the theme swatch on the start screen. Scrald takes the first of these keys that's set: `cover`, `cover_image`, `cover-image`, `coverImage`, `image`, `banner`, `feature_image`, `featured_image`, `featureImage`, `featuredImage`, `hero_image`, `heroImage`, `hero`, `thumbnail`, `images`.
+A cover image is shown above the document's text (see "The cover and the title" in [Reading](reading.md)), and in place of the theme swatch on the start screen. Scrald takes the first of these keys that's set: `cover`, `cover_image`, `cover-image`, `coverImage`, `image`, `banner`, `feature_image`, `featured_image`, `featureImage`, `featuredImage`, `hero_image`, `heroImage`, `hero`, `thumbnail`, `images`.
 
 The value can be a path, a list (the first item is used), a map with `image`, `src`, `url`, or `path` (as Hugo themes write it), or Obsidian's `"[[cover.jpg]]"`. It's found the way the document's images are. Only images on your computer are used, not ones from the web.
 

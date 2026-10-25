@@ -545,6 +545,22 @@ body {
   margin: 0;
 }
 
+/* The cover image before the first block (#189). The width and height
+   attributes reserve its space before it loads; a tall cover is kept to
+   most of a screen, letterboxed rather than stretched. */
+.sk-cover {
+  margin: 0 0 2em;
+}
+
+.sk-cover img {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 80vh;
+  object-fit: contain;
+}
+
 /* Endnotes section at the end of the document (DESIGN.md §10). */
 .sk-endnotes {
   margin-top: 3em;
@@ -628,6 +644,11 @@ body {
 
   .sk-block :is(h1, h2, h3, h4, h5, h6) {
     break-after: avoid;
+  }
+
+  /* A cover gets a page of its own, like a book's. */
+  .sk-cover {
+    break-after: page;
   }
 
   /* The properties, the endnotes' ↩ links, and search matches are for the screen. */

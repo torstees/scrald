@@ -21,6 +21,7 @@
   import type { SearchOptions } from "../search/matcher";
   import { blocksInRange, locateMatch, type MatchLocation } from "../search/results";
   import type { ReadingPosition } from "../status/progress";
+  import type { FrontContent } from "./front";
 
   interface Props {
     doc: DocumentModel;
@@ -65,6 +66,8 @@
     onpropertiestoggle?: (open: boolean) => void;
     /** Opens raw mode at a byte offset in the file. */
     onrawat?: ((offset: number) => void) | null;
+    /** The cover or missing title to show before the first block (#189). */
+    front?: FrontContent;
   }
 
   let {
@@ -87,6 +90,7 @@
     keepPosition = false,
     onpropertiestoggle,
     onrawat = null,
+    front = null,
   }: Props = $props();
 
   /** How long scrolling must pause before the position counts as settled. */
@@ -167,7 +171,7 @@
     if (!blockEditing || editing) return;
     const target = event.target as Element | null;
     // Not in the properties panel or endnotes, and not on a control.
-    if (target?.closest(".sk-properties, .sk-endnotes, input, button, a")) return;
+    if (target?.closest(".sk-properties, .sk-front, .sk-endnotes, input, button, a")) return;
     const el = target?.closest<HTMLElement>(".sk-section > .sk-block[data-block]");
     const block = el ? doc.blocks[Number(el.dataset.block)] : undefined;
     if (!block || block.kind.type === "footnoteDefinition") return;
@@ -722,6 +726,20 @@
         editor={propertyEditor}
         onraw={onrawat}
       />
+    {/if}
+    <!-- Not a block: it has no source, so it's never a reading position, an
+         edit, or a search result, like the properties panel above it. -->
+    {#if front?.kind === "cover"}
+      <figure class="sk-block sk-front sk-cover">
+        <img
+          src={assetUrl(assetToken, front.image.id)}
+          width={front.image.width}
+          height={front.image.height}
+          alt=""
+        />
+      </figure>
+    {:else if front?.kind === "title"}
+      <header class="sk-block sk-front"><h1>{front.text}</h1></header>
     {/if}
     {#each doc.sections as section, i (section.id)}
       {#if mounted[i]}

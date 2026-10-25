@@ -215,6 +215,8 @@ pub struct Elements {
     pub hr: Hr,
     #[serde(default)]
     pub headings: Headings,
+    #[serde(default)]
+    pub front: Front,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -261,6 +263,27 @@ pub struct Headings {
     pub numbering: bool,
     /// A rule under H1.
     pub h1_rule: bool,
+}
+
+/// What the reader shows before a document's first block (#189). Both are
+/// on unless a theme turns them off; the user's settings can override them.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Front {
+    /// The front matter's cover image, above the text.
+    pub cover: bool,
+    /// The front matter's title as a heading, when there's no cover and the
+    /// text doesn't start with the title.
+    pub title: bool,
+}
+
+impl Default for Front {
+    fn default() -> Self {
+        Front {
+            cover: true,
+            title: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

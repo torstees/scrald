@@ -92,7 +92,7 @@ mono    = { family = "JetBrains Mono", fallback = ["Cascadia Code", "Consolas"] 
 
 ## Elements
 
-The `[elements]` sections set how quotes, dividers, and headings look:
+The `[elements]` sections set how quotes, dividers, and headings look, and what shows before the text:
 
 ```toml
 [elements.blockquote]
@@ -107,7 +107,13 @@ glyph = "❧"            # for "ornament": 1 to 8 characters
 [elements.headings]
 numbering = true       # number headings 1, 1.1, 1.1.1 (below the title)
 h1_rule = false        # a rule under the title
+
+[elements.front]
+cover = true           # show the front matter's cover image above the text
+title = true           # without a cover, show a title the text doesn't start with
 ```
+
+Both `[elements.front]` keys are on unless a theme turns them off. The user's settings can override them either way (see "The cover and the title" in [Reading](reading.md)).
 
 ## Syntax
 
