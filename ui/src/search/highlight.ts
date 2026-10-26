@@ -3,6 +3,7 @@
 // DOM (keyed by content, DESIGN.md §9.1) is never changed.
 
 import { matchSpans, type SearchOptions } from "./matcher";
+import { supports } from "../lib/support";
 
 /**
  * Content the reader draws itself (math, diagrams, music) and controls it
@@ -54,14 +55,21 @@ export function matchRanges(root: Element, needle: string, options: SearchOption
 const ALL = "sk-search";
 const CURRENT = "sk-search-current";
 
-/** Whether this webview supports custom highlights (WebView2 does). */
-function supported(): boolean {
-  return typeof CSS !== "undefined" && "highlights" in CSS && typeof Highlight !== "undefined";
+/** Whether this webview can paint matches with the Custom Highlight API. */
+export function highlightsSupported(): boolean {
+  return supports("customHighlights");
 }
 
-/** Paints `ranges` as matches and `current` as the current one; styled in app.css. */
-export function paintMatches(ranges: Range[], current: Range | null): void {
-  if (!supported()) return;
+/**
+ * Paints `ranges` as matches and `current` as the current one; styled in
+ * app.css. Without the Highlight API (older WebKit, DESIGN.md §11.1) they're
+ * drawn as boxes in `layer` instead, an overlay in the reading column.
+ */
+export function paintMatches(ranges: Range[], current: Range | null, layer: HTMLElement | null): void {
+  if (!highlightsSupported()) {
+    if (layer) drawMarks(layer, ranges, current);
+    return;
+  }
   CSS.highlights.set(ALL, new Highlight(...ranges));
   if (current) {
     CSS.highlights.set(CURRENT, new Highlight(current));
@@ -70,10 +78,38 @@ export function paintMatches(ranges: Range[], current: Range | null): void {
   }
 }
 
-export function clearMatches(): void {
-  if (!supported()) return;
+export function clearMatches(layer: HTMLElement | null): void {
+  if (!highlightsSupported()) {
+    layer?.replaceChildren();
+    return;
+  }
   CSS.highlights.delete(ALL);
   CSS.highlights.delete(CURRENT);
+}
+
+/**
+ * The fallback: a box over each line of each match, placed relative to
+ * `layer`. Nothing in the blocks changes, and focus and the selection stay
+ * where they are (the find bar keeps its typing).
+ */
+function drawMarks(layer: HTMLElement, ranges: Range[], current: Range | null): void {
+  const origin = layer.getBoundingClientRect();
+  const marks = document.createDocumentFragment();
+  const add = (range: Range, className: string) => {
+    for (const rect of range.getClientRects()) {
+      if (rect.width === 0 || rect.height === 0) continue;
+      const mark = document.createElement("div");
+      mark.className = className;
+      mark.style.left = `${rect.left - origin.left}px`;
+      mark.style.top = `${rect.top - origin.top}px`;
+      mark.style.width = `${rect.width}px`;
+      mark.style.height = `${rect.height}px`;
+      marks.append(mark);
+    }
+  };
+  for (const range of ranges) add(range, "sk-search-mark");
+  if (current) add(current, "sk-search-mark sk-search-mark-current");
+  layer.replaceChildren(marks);
 }
 
 /** Opens any collapsed callouts or `<details>` around `node`, so a match inside is visible. */

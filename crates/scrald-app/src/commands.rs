@@ -1572,6 +1572,21 @@ pub fn report_timing(name: String, ms: f64) {
     tracing::info!(name, ms = (ms * 10.0).round() / 10.0, "frontend timing");
 }
 
+/// Logs the web features the reader uses that this window's webview lacks
+/// (DESIGN.md §11.1), so checking WKWebView or WebKitGTK only needs the log.
+#[tauri::command]
+pub fn report_webview(user_agent: String, missing: Vec<String>) {
+    if missing.is_empty() {
+        tracing::info!(user_agent, "webview has every feature the reader uses");
+    } else {
+        tracing::warn!(
+            user_agent,
+            missing = missing.join(", "),
+            "webview lacks features; using fallbacks"
+        );
+    }
+}
+
 /// What a window was opened with: the file from the command line (of this
 /// process, or of a later launch handed over to it), or nothing.
 // Rust note: `#[derive(...)]` asks the compiler to generate trait impls:

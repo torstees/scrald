@@ -616,6 +616,22 @@ body {
   color: var(--sk-color-background);
 }
 
+/* The same, drawn as boxes over the text where the webview has no Highlight
+   API (search/highlight.ts). They sit on top, so the current match is
+   outlined rather than filled. */
+.sk-search-mark {
+  position: absolute;
+  background-color: var(--sk-color-highlight-bg);
+  border-bottom: 2px solid var(--sk-color-accent);
+  box-sizing: border-box;
+}
+
+.sk-search-mark-current {
+  background-color: color-mix(in srgb, var(--sk-color-accent) 30%, transparent);
+  outline: 2px solid var(--sk-color-accent);
+  border-bottom: none;
+}
+
 /*
  * Printing (DESIGN.md §10). Only the document prints: App.svelte and
  * Reader.svelte hide the app around it and lay the column out on the page,
@@ -654,7 +670,8 @@ body {
   /* The properties, the endnotes' ↩ links, and search matches are for the screen. */
   .sk-properties,
   .sk-backref,
-  .sk-footnote-popover {
+  .sk-footnote-popover,
+  .sk-search-mark {
     display: none !important;
   }
 
