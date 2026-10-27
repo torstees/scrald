@@ -17,11 +17,13 @@
   import { afterPaint, whenIdle, type CancelIdle } from "../lib/idle";
   import { batchByBlocks, blockKeys, estimateSectionHeights, mountOrder, sectionBlocks } from "./layout";
   import { blockIndexAtOffset, firstBoxBelow, fractionInto, TOP_ANCHOR, type ScrollAnchor } from "./anchor";
-  import { clearMatches, matchRanges, paintMatches, revealNode } from "../search/highlight";
+  import { clearMatches, highlightsSupported, matchRanges, paintMatches, revealNode } from "../search/highlight";
   import type { SearchOptions } from "../search/matcher";
   import { blocksInRange, locateMatch, type MatchLocation } from "../search/results";
   import type { ReadingPosition } from "../status/progress";
   import type { FrontContent } from "./front";
+  import { ScrollKeeper } from "./anchoring";
+  import { supports } from "../lib/support";
 
   interface Props {
     doc: DocumentModel;
@@ -114,7 +116,7 @@
   const keys = $derived(blockKeys(doc));
   onDestroy(() => {
     cancelIdle?.();
-    clearMatches();
+    clearMatches(searchMarks ?? null);
   });
   let shownPath: string | null = null;
 
@@ -305,6 +307,7 @@
     // captured as exactly this, since the panel isn't a block.)
     if (block.id === doc.blocks[0]?.id && anchor.fraction === 0 && offsetY === 0) {
       scroller.scrollTop = 0;
+      jumped();
       noteScrolled();
       return;
     }
@@ -312,6 +315,7 @@
     if (!el) return;
     const { top, height } = extentOf(el);
     scroller.scrollTop += top - scroller.getBoundingClientRect().top - offsetY + anchor.fraction * height;
+    jumped();
     noteScrolled();
   }
 
@@ -323,6 +327,46 @@
   }
 
   let column: HTMLElement | undefined = $state();
+  // Where search matches are drawn when the webview can't paint them itself.
+  const drawnMatches = !highlightsSupported();
+  let searchMarks: HTMLElement | undefined = $state();
+
+  // Webviews without scroll anchoring (DESIGN.md §11.1) get it by hand: the
+  // block at the top of the screen stays put when content above it changes
+  // size. Off where the browser does it, and then the CSS below asks it to.
+  const nativeAnchoring = supports("scrollAnchoring");
+  // Without content-visibility, every mounted section is laid out; the class
+  // only matters when a test build forces that (src/lib/support.ts).
+  const plainSections = !supports("contentVisibility");
+  let keeper: ScrollKeeper | null = null;
+
+  $effect(() => {
+    const element = column;
+    const box = scroller;
+    if (nativeAnchoring || !element || !box) return;
+    const own = new ScrollKeeper(box, anchorElement, () => element.getBoundingClientRect().height);
+    keeper = own;
+    own.reset();
+    const observer = new ResizeObserver(() => own.correct());
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      if (keeper === own) keeper = null;
+    };
+  });
+
+  /** The block at the top of the screen, or its section while that isn't mounted. */
+  function anchorElement(): HTMLElement | null {
+    if (!scroller) return null;
+    const found = blockAt(scroller.getBoundingClientRect().top);
+    if (!found) return null;
+    return found.element ?? sectionElements()[found.sectionIndex] ?? null;
+  }
+
+  /** After the reader scrolls somewhere itself: that's the place to keep. */
+  function jumped(): void {
+    keeper?.reset();
+  }
 
   /**
    * Smoothly scales the text column with a CSS transform (no reflow), keeping
@@ -379,6 +423,7 @@
     if (!heading) return;
     revealNode(heading);
     heading.scrollIntoView({ block: "start" });
+    jumped();
     noteScrolled();
   }
 
@@ -490,7 +535,7 @@
 
   function paintSearch(): void {
     if (!search || !scroller) {
-      clearMatches();
+      clearMatches(searchMarks ?? null);
       return;
     }
     const view = scroller.getBoundingClientRect();
@@ -504,7 +549,7 @@
     if (notes && notes.bottom > view.top - view.height && notes.top < view.bottom + view.height) {
       for (const hit of search.results.footnotes) ranges.push(...rangesIn({ kind: "footnote", index: hit.index }));
     }
-    paintMatches(ranges, currentRange());
+    paintMatches(ranges, currentRange(), searchMarks ?? null);
   }
 
   /** Makes match number `i` the current one and, unless `scroll` is false, scrolls it into view. */
@@ -542,6 +587,7 @@
         const view = scroller.getBoundingClientRect();
         scroller.scrollTop += rect.top - (view.top + view.height / 3);
       }
+      jumped();
     }
     noteScrolled();
   }
@@ -571,6 +617,7 @@
 
   function onScroll(): void {
     popover = null;
+    keeper?.record();
     window.clearTimeout(settleTimer);
     settleTimer = window.setTimeout(() => onscrollsettled?.(), SETTLE_MS);
     if (scrollFrame) return;
@@ -604,6 +651,7 @@
     const endnote = endnotes?.querySelector(`[id="${CSS.escape(contentId(id))}"]`);
     if (endnote) {
       endnote.scrollIntoView({ block: "start" });
+      jumped();
       noteScrolled();
       return;
     }
@@ -611,6 +659,7 @@
     if (blockId === null) return;
     await scrollToBlock(blockId);
     scroller?.querySelector(`[id="${CSS.escape(contentId(id))}"]`)?.scrollIntoView({ block: "start" });
+    jumped();
   }
 
   /** Finds the block whose rendered HTML defines `id` (headings, footnotes). */
@@ -711,11 +760,13 @@
   onfocusout={scheduleHide}
   onblur={() => (quietFocus = false)}
   data-quiet-focus={quietFocus || undefined}
+  data-manual-anchoring={nativeAnchoring ? undefined : true}
+  data-plain-sections={plainSections || undefined}
   role="document"
   aria-label="Document"
   tabindex="0"
 >
-  <article bind:this={column} class="sk-column" class:fill={fillWindow} style:font-size={fontSize === null ? null : `${fontSize}px`}>
+  <article bind:this={column} class="sk-column" class:fill={fillWindow} class:drawn-matches={drawnMatches} style:font-size={fontSize === null ? null : `${fontSize}px`}>
     {#if doc.frontMatter && propertiesAtTop}
       <PropertiesPanel
         frontMatter={doc.frontMatter}
@@ -800,6 +851,9 @@
         {@html popover.html}
       </div>
     {/if}
+    {#if drawnMatches}
+      <div class="sk-search-marks" bind:this={searchMarks} aria-hidden="true"></div>
+    {/if}
   </article>
 </div>
 
@@ -837,11 +891,31 @@
     padding: 2.5rem 0 40vh;
   }
 
+  /* Search matches drawn as boxes (no Highlight API): placed relative to the column. */
+  .sk-column.drawn-matches {
+    position: relative;
+  }
+
+  .sk-search-marks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
   .sk-section {
     content-visibility: auto;
   }
 
   .sk-placeholder {
+    content-visibility: visible;
+  }
+
+  /* The reader keeps its place itself (ScrollKeeper); the browser mustn't too. */
+  .sk-scroller[data-manual-anchoring] {
+    overflow-anchor: none;
+  }
+
+  .sk-scroller[data-plain-sections] .sk-section {
     content-visibility: visible;
   }
 

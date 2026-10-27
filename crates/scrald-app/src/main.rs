@@ -181,6 +181,7 @@ fn main() -> anyhow::Result<()> {
             commands::open_external,
             commands::print_window,
             commands::report_timing,
+            commands::report_webview,
         ])
         .setup(move |app| {
             app.manage(open_state_store(app.handle()));

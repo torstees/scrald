@@ -6,6 +6,7 @@
     openDocument,
     openExternal,
     reportTiming,
+    reportWebview,
     resolveLink,
     saveReadingPosition,
     setRemoteImages,
@@ -71,6 +72,7 @@
     setDocumentText,
     printWindow,
   } from "./lib/commands";
+  import { missingFeatures } from "./lib/support";
   import { afterPaint } from "./lib/idle";
   import { launchMessage } from "./lib/launch";
   import { hasMod, IS_MAC, keyLabel } from "./lib/platform";
@@ -835,6 +837,8 @@
 
   onMount(() => {
     void refreshThemeList().catch(() => {});
+    // Which fallbacks this webview needs, for the log (DESIGN.md §11.1).
+    reportWebview(missingFeatures());
     // Closing with unsaved changes asks first (DESIGN.md §9.3).
     const unlistenClose = getCurrentWindow().onCloseRequested(async (event) => {
       if (!dirty) return;

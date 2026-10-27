@@ -387,6 +387,13 @@ export function reportTiming(name: string, ms: number): void {
   });
 }
 
+/** Sends the web features this webview lacks to the backend log. Never throws. */
+export function reportWebview(missing: string[]): void {
+  invoke("report_webview", { userAgent: navigator.userAgent, missing }).catch(() => {
+    // Diagnostics only.
+  });
+}
+
 /** Folders, templates, and defaults for the New document dialog (DESIGN.md §11). */
 export function newDocumentOptions(): Promise<NewDocumentOptions> {
   return invoke<NewDocumentOptions>("new_document_options");

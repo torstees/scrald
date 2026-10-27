@@ -75,6 +75,8 @@ Logging: set `RUST_LOG` to override the default filter (`info,scrald=debug,scral
 
 Performance checks (DESIGN.md §4): the frontend reports `ipc_open_document`, `first_screen`, and `full_mount` timings into the backend log via the `report_timing` command. Measure with a release build (`npm run tauri -- build --no-bundle`), `SCRALD_LOG_FILE` set, and the generated fixtures in `target/fixtures/`.
 
+Webview fallbacks (DESIGN.md §11.1): at startup each window logs which of the web features the reader relies on its webview lacks (`report_webview`). To try the fallbacks on Windows, build with `VITE_SCRALD_FALLBACKS` set to `all` or a comma list (`idleCallback`, `contentVisibility`, `scrollAnchoring`, `customHighlights`), in a separate `CARGO_TARGET_DIR`. Never set it for a real build.
+
 ## Work tracking
 
 Work is tracked in GitHub issues on `torstees/scrald`, not in `TODO.md`:
