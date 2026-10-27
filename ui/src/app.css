@@ -429,6 +429,61 @@ body {
   content: "📄 ";
 }
 
+/* A note shown in place of its embed (#117): its content in a box, under a
+   title that opens the note. Read-only; the block itself is the embed line. */
+.sk-block .sk-embed {
+  border: 1px solid var(--sk-color-border);
+  border-left: 3px solid var(--sk-color-accent);
+  border-radius: 6px;
+  padding: 0.3em 1em 0.6em;
+  margin: 0.5em 0;
+}
+
+.sk-block .sk-embed-title {
+  font-family: var(--sk-font-ui);
+  font-size: 0.85em;
+  color: var(--sk-color-muted);
+  padding: 0.3em 0;
+  border-bottom: 1px solid var(--sk-color-border);
+  margin-bottom: 0.4em;
+}
+
+.sk-block .sk-embed-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sk-block .sk-embed-title a::before {
+  content: "📄 ";
+}
+
+.sk-block .sk-embed-title a:hover {
+  color: var(--sk-color-link);
+  text-decoration: underline;
+}
+
+.sk-block .sk-embed-body > :first-child {
+  margin-top: 0;
+}
+
+.sk-block .sk-embed-body > :last-child {
+  margin-bottom: 0;
+}
+
+.sk-block .sk-embed-notes {
+  font-size: 0.85em;
+  color: var(--sk-color-muted);
+  border-top: 1px solid var(--sk-color-border);
+  padding-top: 0.4em;
+}
+
+.sk-block .sk-embed-notice {
+  font-family: var(--sk-font-ui);
+  font-size: 0.9em;
+  color: var(--sk-color-muted);
+  padding: 0.5em 1em;
+}
+
 /* Block-reference anchors (`^id`) are invisible jump targets. */
 .sk-block .sk-block-ref {
   display: inline;

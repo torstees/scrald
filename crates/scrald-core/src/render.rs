@@ -38,41 +38,8 @@ impl Renderer {
     /// the same document. `into_cache` gives it back afterwards.
     pub fn with_cache(allow_remote_images: bool, mut cache: RenderCache) -> Self {
         cache.start(allow_remote_images);
-        let mut sanitizer = ammonia::Builder::default();
+        let mut sanitizer = allowlist();
         sanitizer
-            // Task list checkboxes. They render disabled; reading never edits.
-            .add_tags(["input"])
-            .add_tag_attributes("input", ["type", "checked", "disabled"])
-            // Footnote references and back-links point at these ids.
-            .add_tag_attributes("li", ["id"])
-            // Math (`$x$`, `$$x$$`, ```math) is marked for KaTeX to find later.
-            .add_tag_attributes("span", ["data-math-style"])
-            .add_tag_attributes("code", ["data-math-style"])
-            .add_tag_attributes(
-                "a",
-                [
-                    "id",
-                    "data-footnote-ref",
-                    "data-footnote-backref",
-                    "data-footnote-backref-idx",
-                    "aria-label",
-                ],
-            )
-            // Images from core's asset pipeline (assets.rs).
-            .add_tag_attributes("img", ["data-asset", "loading", "referrerpolicy"])
-            // `data:` is allowed as a scheme only so `data:image/...` images
-            // work; the filter below removes it everywhere else. `file:` is
-            // how resolved wikilinks point at notes; clicks go through the
-            // app's link handler, which only opens Markdown files.
-            .add_url_schemes(["data", "file"])
-            // Foldable callouts.
-            .add_tag_attributes("details", ["open"])
-            // A figure's percentage width (Pandoc `width=40%`); the filter
-            // below allows nothing else in it.
-            .add_tag_attributes("figure", ["style"])
-            // `language-rust` on code blocks, `footnotes` sections, Pandoc
-            // `{#id .class}` attributes, and so on. Ids get `ID_PREFIX`.
-            .add_generic_attributes(["class", "id"])
             .id_prefix(Some(ID_PREFIX))
             .attribute_filter(move |element, attribute, value| {
                 filter_attribute(element, attribute, value, allow_remote_images).map(Into::into)
@@ -159,6 +126,48 @@ impl Renderer {
                 .to_string()
         })
     }
+}
+
+/// The tags and attributes Scrald's HTML may keep, without a filter or id
+/// prefix: the renderer adds both, and transclusion (`transclude.rs`) its own.
+pub(crate) fn allowlist() -> ammonia::Builder<'static> {
+    let mut sanitizer = ammonia::Builder::default();
+    sanitizer
+        // Task list checkboxes. They render disabled; reading never edits.
+        .add_tags(["input"])
+        .add_tag_attributes("input", ["type", "checked", "disabled"])
+        // Footnote references and back-links point at these ids.
+        .add_tag_attributes("li", ["id"])
+        // Math (`$x$`, `$$x$$`, ```math) is marked for KaTeX to find later.
+        .add_tag_attributes("span", ["data-math-style"])
+        .add_tag_attributes("code", ["data-math-style"])
+        .add_tag_attributes(
+            "a",
+            [
+                "id",
+                "data-footnote-ref",
+                "data-footnote-backref",
+                "data-footnote-backref-idx",
+                "aria-label",
+            ],
+        )
+        // Images from core's asset pipeline (assets.rs).
+        .add_tag_attributes("img", ["data-asset", "loading", "referrerpolicy"])
+        // `data:` is allowed as a scheme only so `data:image/...` images
+        // work; `filter_attribute` removes it everywhere else. `file:` is
+        // how resolved wikilinks point at notes; clicks go through the
+        // app's link handler, which only opens Markdown files.
+        .add_url_schemes(["data", "file"])
+        // Foldable callouts.
+        .add_tag_attributes("details", ["open"])
+        // A figure's percentage width (Pandoc `width=40%`);
+        // `filter_attribute` allows nothing else in it.
+        .add_tag_attributes("figure", ["style"])
+        // `language-rust` on code blocks, `footnotes` sections, Pandoc
+        // `{#id .class}` attributes, and so on. The renderer prefixes ids
+        // with `ID_PREFIX`.
+        .add_generic_attributes(["class", "id"]);
+    sanitizer
 }
 
 /// Tags whose contents the HTML parser reads as plain text, up to their end
@@ -255,7 +264,7 @@ pub fn wrap_children_as_html(node: Node<'_>, open: &str, close: &str, options: &
 /// drop the attribute.
 // Rust note: the returned `Option<&str>` borrows from `value` (the only
 // borrowed input that could be returned); Rust infers that link itself here.
-fn filter_attribute<'v>(
+pub(crate) fn filter_attribute<'v>(
     element: &str,
     attribute: &str,
     value: &'v str,

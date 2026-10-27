@@ -536,7 +536,7 @@ fn parse_size(options: &str) -> Option<(u32, Option<u32>)> {
 }
 
 /// Splits `Note#Heading` into the note and the fragment.
-fn split_target(target: &str) -> (&str, Option<&str>) {
+pub(crate) fn split_target(target: &str) -> (&str, Option<&str>) {
     match target.split_once('#') {
         Some((note, fragment)) => (note, Some(fragment)),
         None => (target, None),
@@ -545,7 +545,7 @@ fn split_target(target: &str) -> (&str, Option<&str>) {
 
 /// The text Obsidian shows for a link without an alias: `Note`,
 /// `Note > Heading`, or just `Heading` for a link within the note.
-fn display_label(target: &str) -> String {
+pub(crate) fn display_label(target: &str) -> String {
     match split_target(target) {
         ("", Some(fragment)) => fragment.trim_start_matches('^').to_string(),
         (note, Some(fragment)) => format!("{note} > {}", fragment.trim_start_matches('^')),

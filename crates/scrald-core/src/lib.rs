@@ -26,6 +26,7 @@ pub mod search;
 pub mod source;
 pub mod theme;
 pub mod toc;
+pub mod transclude;
 pub mod yaml_edit;
 
 use std::path::{Path, PathBuf};

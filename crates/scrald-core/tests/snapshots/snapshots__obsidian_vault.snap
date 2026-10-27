@@ -20,7 +20,9 @@ section 1: heading=Some(10) level=2 blocks=10..13
 <p><img data-asset="0" alt="fjord.png" loading="lazy" width="300" height="150"></p>
 
 --- block 3 Paragraph @159..170 section=0
-<p><a class="sk-embed-card" href="file:///<vault>/Voyage.md" title="Embedded note (opens it)" rel="noopener noreferrer">Voyage</a></p>
+<div class="sk-embed"><div class="sk-embed-title"><a href="file:///<vault>/Voyage.md" title="Open this note">Voyage</a></div><div class="sk-embed-body"><h1>Voyage</h1>
+<p>The long crossing.</p>
+</div></div>
 
 --- block 4 Paragraph @172..188 section=0
 <p><span class="sk-image-placeholder sk-image-missing" title="Image not found: missing.png
