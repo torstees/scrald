@@ -31,7 +31,7 @@ In the flavor menu, **Auto** shows the flavor in use and where it came from, suc
 | Callouts `> [!tip]-`, foldable | | ✓ | |
 | Wikilinks `[[Note]]`, `[[Note\|text]]`, `[[Note#Heading]]` | | ✓ | |
 | Image embeds `![[picture.png\|300]]` | | ✓ | |
-| Note embeds `![[Other note]]` (as a link) | | ✓ | |
+| Note embeds `![[Other note]]`, `![[Note#Heading]]`, `![[Note#^id]]` | | ✓ | |
 | `==highlight==` | | ✓ | |
 | `%%comments%%` (hidden) | | ✓ | |
 | `#tags` | | ✓ | |
@@ -46,6 +46,23 @@ In the flavor menu, **Auto** shows the flavor in use and where it came from, suc
 | Smart quotes and dashes | | | ✓ |
 
 In GFM and Obsidian, `~text~` is strikethrough; in Pandoc it's subscript, and `~~text~~` is strikethrough.
+
+## Embedded notes
+
+In the Obsidian flavor, an embed on a line of its own shows the other note's content in place, in a box with the note's name at the top. Clicking the name opens the note.
+
+```markdown
+![[Saga]]
+![[Saga#The return]]
+![[Saga#^oath]]
+```
+
+- `![[Saga]]` shows the whole note, `![[Saga#The return]]` that heading and everything under it, and `![[Saga#^oath]]` the paragraph or list that ends with `^oath`. Text after `|` replaces the name at the top: `![[Saga|The saga]]`.
+- **It's for reading.** Double-clicking edits the embed line itself (`![[Saga]]`), not the note. To change the note, open it.
+- **It stays up to date.** When the note changes on disk, the embed shows the change.
+- **Search finds its text**, but Contents, the word count, and reading progress are the document's own.
+- **Embeds inside embeds** are shown too, up to three levels deep; deeper ones are links. A note that would end up inside itself isn't shown again. A document shows at most 30 embedded notes.
+- An embed in the middle of a sentence (`see ![[Saga]] for more`) stays a link to the note.
 
 ## Math
 

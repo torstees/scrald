@@ -56,6 +56,14 @@ pub struct DocumentModel {
     /// start (`opening::missing_title`); the reader may show it as a
     /// heading above the first block when there's no cover (#189).
     pub missing_title: Option<String>,
+    /// Every note shown in place of an embed (#117), nested ones included,
+    /// once each: the app watches them for live reload.
+    #[serde(skip)]
+    pub embeds: Vec<PathBuf>,
+    /// How many notes were shown in place, nested ones included, counted
+    /// against `transclude::MAX_PER_DOCUMENT`.
+    #[serde(skip)]
+    pub transclusions: usize,
 }
 
 /// A footnote, rendered for display.
@@ -85,6 +93,13 @@ pub struct ParseOptions {
     /// A prebuilt vault index (the app caches one per vault), used when it
     /// covers this document; otherwise one is built during the parse.
     pub vault: Option<Arc<VaultIndex>>,
+    /// For a note being shown inside another (#117): the documents it's
+    /// embedded in and itself, outermost first. Empty for a document opened
+    /// on its own.
+    pub embedded_in: Vec<PathBuf>,
+    /// How many notes this parse may still show in place; `None` means
+    /// `transclude::MAX_PER_DOCUMENT`.
+    pub embed_budget: Option<usize>,
 }
 
 /// One top-level Markdown block, rendered on its own.
@@ -160,6 +175,16 @@ pub struct FeatureFlags {
     pub has_code: bool,
     /// ABC music notation in ```abc fences (rendered with abcjs).
     pub has_abc: bool,
+}
+
+impl FeatureFlags {
+    /// Adds what `other` needs, for content brought in from another note.
+    pub fn merge(&mut self, other: FeatureFlags) {
+        self.has_math |= other.has_math;
+        self.has_mermaid |= other.has_mermaid;
+        self.has_code |= other.has_code;
+        self.has_abc |= other.has_abc;
+    }
 }
 
 /// What the start screen's recent list shows for a document besides its
@@ -343,6 +368,18 @@ pub fn parse_document_cached(
     // Headings marked `{-}` or `{.unnumbered}` (Pandoc) get no outline
     // number. Indices into `toc`, since one block can hold several headings.
     let mut unnumbered: Vec<usize> = Vec::new();
+    // Notes shown in place of embeds (#117): this document and the notes
+    // it's inside (for loops), and how many more may be shown.
+    let chain = if parse_options.embedded_in.is_empty() {
+        vec![path.clone()]
+    } else {
+        parse_options.embedded_in.clone()
+    };
+    let mut embed_budget = parse_options
+        .embed_budget
+        .unwrap_or(crate::transclude::MAX_PER_DOCUMENT);
+    let mut embeds: Vec<PathBuf> = Vec::new();
+    let mut transclusions = 0;
 
     // comrak moves footnote definitions to the end of the document. Put
     // blocks back in source order so ranges tile the file and edits splice
@@ -431,6 +468,26 @@ pub fn parse_document_cached(
                 .filter_map(|&node| inner_heading(node, pandoc, &index))
                 .collect()
         };
+        // A note embedded on a line of its own is shown in place (#117).
+        let mut embedded = None;
+        if let (Some(vault), [only]) = (&vault, group)
+            && matches!(only.data().value, NodeValue::Paragraph)
+            && let Some((target, label)) = crate::transclude::lone_embed(source_text)
+        {
+            let ctx = crate::transclude::EmbedContext {
+                doc_path: &path,
+                vault,
+                allow_remote_images: parse_options.allow_remote_images,
+                chain: &chain,
+            };
+            embedded = crate::transclude::transclude(
+                &target,
+                label.as_deref(),
+                &ctx,
+                embed_budget,
+                &mut images,
+            );
+        }
         let mut words = 0;
         for &node in group {
             words += count_words(node);
@@ -488,6 +545,17 @@ pub fn parse_document_cached(
         } else {
             renderer.render_group(group, &options)
         };
+        if let Some(shown) = embedded {
+            html = shown.html;
+            features.merge(shown.features);
+            embed_budget = embed_budget.saturating_sub(shown.count);
+            transclusions += shown.count;
+            for file in shown.files {
+                if !embeds.contains(&file) {
+                    embeds.push(file);
+                }
+            }
+        }
         if kind == BlockKind::Table {
             // A Pandoc caption (`Table: ... {.center}`) goes inside the
             // table; its id goes on the table and its classes on the box.
@@ -665,6 +733,8 @@ pub fn parse_document_cached(
         footnotes,
         cover,
         missing_title,
+        embeds,
+        transclusions,
     })
 }
 

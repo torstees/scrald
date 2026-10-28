@@ -3,6 +3,7 @@
   import {
     launchInfo,
     onDocumentChanged,
+    onEmbedChanged,
     openDocument,
     openExternal,
     reportTiming,
@@ -884,6 +885,11 @@
     const unlisten = onDocumentChanged((path) => {
       if (doc && path === doc.path) void onDiskChanged();
     });
+    // A note shown inside the document changed (#117): show it again in
+    // place. Raw mode shows the document's own text, so it waits until then.
+    const unlistenEmbeds = onEmbedChanged(() => {
+      if (doc && !rawMode) void refreshEmbeds();
+    });
     // Theme hot reload (DESIGN.md §7.1): re-apply when a user theme changes.
     const unlistenThemes = onThemesChanged(() => {
       if (theme && !switcherOpen && !themeEditing) void showTheme(theme.id);
@@ -907,6 +913,7 @@
       void unlisten.then((stop) => stop());
       void unlistenClose.then((stop) => stop());
       void unlistenThemes.then((stop) => stop());
+      void unlistenEmbeds.then((stop) => stop());
       void unlistenAutosave.then((stop) => stop());
       void unlistenSettings.then((stop) => stop());
       wideQuery.removeEventListener("change", onWideChange);
@@ -1105,6 +1112,16 @@
     assetToken = opened.assetToken;
     doc = opened.document;
     dirty = opened.dirty;
+  }
+
+  /** Shows the document's embedded notes as they are now, without moving the reader. */
+  async function refreshEmbeds(): Promise<void> {
+    await pendingEdits;
+    try {
+      await applyEdit(await reparseDocument());
+    } catch (e) {
+      showNotice(`Could not show the embedded note: ${String(e)}`);
+    }
   }
 
   /** Re-parses the document from memory (keeping unsaved edits) in place. */

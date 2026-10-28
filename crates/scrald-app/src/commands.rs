@@ -257,6 +257,7 @@ async fn parse_in_background(
             allow_remote_images,
             flavor,
             vault: vaults.for_document(&path),
+            ..ParseOptions::default()
         };
         let doc = scrald_core::parse_document_cached(path, &bytes, &options, &mut cache);
         (doc, cache)
@@ -299,6 +300,15 @@ fn finish_open(
     let theme = resolve_document_theme(window, store, themes, &doc, &memory);
     let files = doc.images.iter().map(|image| image.path.clone()).collect();
     let asset_token = registry.register(window.label(), files);
+    // Notes shown inside the document reload live too (#117); like the
+    // document's own watch, a failure here never blocks reading.
+    let watchers = window.state::<DocumentWatchers>();
+    if let Err(error) = watchers.watch_embeds(window.app_handle(), window.label(), &doc.embeds) {
+        tracing::warn!(
+            error = format!("{error:#}"),
+            "live reload of embedded notes unavailable"
+        );
+    }
     Ok(OpenedDocument {
         asset_token,
         document: doc,

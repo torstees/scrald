@@ -94,7 +94,7 @@ pub fn is_markdown(path: &Path) -> bool {
 
 /// The scheme of a URL (`https` in `https://...`). A single letter before
 /// the colon is a Windows drive (`C:`), not a scheme.
-fn scheme_of(href: &str) -> Option<&str> {
+pub(crate) fn scheme_of(href: &str) -> Option<&str> {
     let colon = href.find(':')?;
     let scheme = &href[..colon];
     let valid = scheme.len() > 1

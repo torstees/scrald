@@ -375,6 +375,11 @@ export function printWindow(): Promise<void> {
   return invoke("print_window");
 }
 
+/** Calls `handler` with the note's path whenever a note shown inside this window's document changes on disk (#117). */
+export function onEmbedChanged(handler: (path: string) => void): Promise<UnlistenFn> {
+  return listen<string>("embed-changed", (event) => handler(event.payload));
+}
+
 /** Calls `handler` with the path whenever this window's document changes on disk. */
 export function onDocumentChanged(handler: (path: string) => void): Promise<UnlistenFn> {
   return listen<string>("document-changed", (event) => handler(event.payload));
