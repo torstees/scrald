@@ -2,6 +2,8 @@
 
 ## What Scrald keeps, and where
 
+<img src="art/data.svg" alt="The Skald guards a locked chest" width="200" align="right" class="right">
+
 Scrald keeps everything in your user profile, never next to your documents:
 
 | What | Where |

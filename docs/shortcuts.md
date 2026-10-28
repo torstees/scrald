@@ -1,5 +1,7 @@
 # Keyboard shortcuts
 
+<img src="art/shortcuts.svg" alt="Odin's ravens carry keyboard keys" width="200" align="right" class="right">
+
 `F1`, `Ctrl+/`, or ? in the status bar shows these in Scrald too.
 
 On a Mac, press `Cmd` where these pages say `Ctrl`, and `Option` for `Alt`. Three are different: Back is `Cmd+[`, Forward is `Cmd+]`, and Redo is `Cmd+Shift+Z`. Scrald's own list and tooltips show the Mac's keys.

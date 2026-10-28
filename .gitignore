@@ -29,3 +29,7 @@ ui/dist/
 
 # Tauri generated files
 crates/scrald-app/gen/schemas/
+
+# Brand art scripts (assets/brand/src) and local design previews
+__pycache__/
+Claude outputs/

@@ -1,5 +1,7 @@
 # Printing and PDF
 
+<img src="art/printing.svg" alt="The Skald shows off a fresh print" width="200" align="right" class="right">
+
 `Ctrl+P`, or 🖶 in the status bar, opens the **Print** panel. After it comes your system's print dialog, where you choose a printer or save a PDF.
 
 ## The Print panel

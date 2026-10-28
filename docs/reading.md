@@ -2,6 +2,8 @@
 
 ## The window
 
+<img src="art/reading.svg" alt="The Skald reads a big book" width="200" align="right" class="right">
+
 The document fills the middle of the window. Around it:
 
 - **Contents** at the left: every heading, with the current one highlighted as you scroll. Click one to jump there.
@@ -96,4 +98,4 @@ When a document changes on disk while it's open, and you haven't changed it in S
 - **Editing:** autosave. See [Editing and saving](editing.md).
 - **New documents:** the folders to remember.
 
-Changes apply at once, to every open window.
+Changes apply at once, to every open window. **About Scrald**, at the bottom, shows the version and a link to the source.

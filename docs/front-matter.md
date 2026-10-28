@@ -1,5 +1,7 @@
 # Front matter
 
+<img src="art/front-matter.svg" alt="The Skald proclaims a document's front matter" width="200" align="right" class="right">
+
 Front matter is a block of YAML at the very top of a document, between `---` lines:
 
 ```yaml

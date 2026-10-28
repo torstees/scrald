@@ -2,6 +2,8 @@
 
 ## Installing
 
+<img src="art/getting-started.svg" alt="The Skald waves hello" width="200" align="right" class="right">
+
 Scrald doesn't have a published release yet, so for now it's built from source on Windows 11. You'll need:
 
 - [Rust](https://rustup.rs) (stable, with the MSVC toolchain);
@@ -44,6 +46,7 @@ Starting Scrald without a file shows the start screen:
 - ☆ pins a document to the top, and × takes it off the list, which also forgets what Scrald remembered about it (theme, position, zoom).
 - A file that has moved or been deleted is dimmed and marked "Not found".
 - **New document…**, **Open…**, **Settings**, and **Keyboard shortcuts**.
+- **About Scrald**, beside the name: the version, where the name comes from, and a link to the source. Settings has it too.
 
 If Scrald stopped while a document had unsaved changes, the start screen lists those changes first, so you can restore them. See "Crash recovery" in [Editing and saving](editing.md).
 
