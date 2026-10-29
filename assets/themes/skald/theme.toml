@@ -1,0 +1,67 @@
+# Skald: an old book printed from woodblocks. Ink on warm paper, IM Fell type,
+# blackletter titles, madder-red accents, and a carved rule with a shield
+# between sections. Its fonts ship in assets/fonts (SIL Open Font License).
+
+[meta]
+name = "Skald"
+author = "Scrald"
+schema = 1
+appearance = "light"
+
+[colors]
+background    = "#ede5d0"
+foreground    = "#232733"
+muted         = "#5d5546"
+accent        = "#933a28"
+link          = "#3a5a80"
+selection     = "#dcc99a"
+border        = "#cdbf9e"
+code_bg       = "#e4d9bd"
+quote_bar     = "#c8912f"
+highlight_bg  = "#e3b86266"
+ui_background = "#e4d9bf"
+
+[palette]
+black   = "#232733"
+red     = "#9a3c2a"
+green   = "#4f622b"
+yellow  = "#7e541a"
+blue    = "#3a5a80"
+magenta = "#7a4466"
+cyan    = "#36625b"
+white   = "#d9ceb3"
+
+[fonts.body]
+family = "IM Fell English"
+source = "theme"
+fallback = ["Palatino Linotype", "Book Antiqua", "Georgia"]
+files = [
+  { path = "assets/fonts/IMFellEnglish-Regular.woff2", weight = 400 },
+  { path = "assets/fonts/IMFellEnglish-Italic.woff2", weight = 400, italic = true },
+]
+
+[fonts.heading]
+family = "IM Fell English SC"
+source = "theme"
+fallback = ["Palatino Linotype", "Georgia"]
+files = [{ path = "assets/fonts/IMFellEnglishSC-Regular.woff2", weight = 400 }]
+
+[layout]
+measure = 64
+font_size = 20
+line_height = 1.65
+paragraph_spacing = 0.9
+
+[elements.blockquote]
+style = "bar"
+italic = true
+
+[elements.hr]
+style = "image"
+image = "assets/divider.svg"
+
+[elements.headings]
+h1_rule = false
+
+[css]
+file = "theme.css"

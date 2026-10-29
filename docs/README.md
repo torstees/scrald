@@ -1,5 +1,7 @@
 # Scrald
 
+<img src="art/longship.svg" alt="The longship of pages: a ship whose hull is a bound book and whose sail is a manuscript page" width="100%" class="center">
+
 Scrald is a themeable Markdown reader with light editing. It's built for anything from technical notes and Obsidian vaults to full-length novels, and it opens a 500,000-word document in well under a second.
 
 The name plays on *scrawled*, *skald* (the Norse poet), and *skål* (the Viking toast).

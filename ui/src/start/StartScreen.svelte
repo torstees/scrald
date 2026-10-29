@@ -3,8 +3,11 @@
   // New document buttons, pinned and recent documents with their cover image or a swatch
   // of the theme each was last shown in, and anything else the app puts in
   // `children` (recovered changes). Files can also be dropped anywhere on
-  // the window.
+  // the window. The Skald waves from beside the name, and the longship
+  // fills the empty list on a first run.
   import { keyLabel } from "../lib/platform";
+  import skaldUrl from "../assets/art/skald-hello.svg";
+  import longshipUrl from "../assets/art/longship.svg";
   import type { Snippet } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { assetUrl } from "../lib/commands";
@@ -25,10 +28,12 @@
     /** Opens the keyboard shortcut reference. */
     onshortcuts: () => void;
     onsettings: () => void;
+    /** Opens About Scrald. */
+    onabout: () => void;
     children?: Snippet;
   }
 
-  let { documents, themes, message, onpick, onnew, onopen, onpin, onforget, onshortcuts, onsettings, children }: Props = $props();
+  let { documents, themes, message, onpick, onnew, onopen, onpin, onforget, onshortcuts, onsettings, onabout, children }: Props = $props();
 
   const groups = $derived(splitPinned(documents));
   const themesById = $derived(new Map(themes.map((t) => [t.id, t])));
@@ -110,7 +115,16 @@
 
 <div class="sk-start">
   <div class="column">
-    <h1>Scrald</h1>
+    <header class="brand">
+      <img class="skald" src={skaldUrl} alt="" width="104" height="104" />
+      <div>
+        <h1>Scrald</h1>
+        <p class="tagline">
+          A themed Markdown reader. Skål! <span aria-hidden="true">·</span>
+          <button class="link" onclick={onabout}>About Scrald</button>
+        </p>
+      </div>
+    </header>
     <div class="open-row">
       <button class="primary" onclick={onpick} title={keyLabel("Open a Markdown file (Ctrl+O)")}>Open…</button>
       <button class="primary" onclick={onnew} title={keyLabel("Create a Markdown file (Ctrl+N)")}>New document…</button>
@@ -133,6 +147,15 @@
       {#if groups.recent.length > 0}
         {@render list(groups.recent)}
       {:else}
+        {#if groups.pinned.length === 0}
+          <img
+            class="longship"
+            src={longshipUrl}
+            alt="A longship whose hull is a bound book and whose sail is a manuscript page"
+            width="960"
+            height="400"
+          />
+        {/if}
         <p class="empty">
           {groups.pinned.length > 0 ? "No other documents yet." : "Documents you open will be listed here."}
         </p>
@@ -156,10 +179,36 @@
     padding: 3rem 1.5rem;
   }
 
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0 0 1.25rem;
+  }
+
+  .skald {
+    flex: none;
+    width: 6.5em;
+    height: 6.5em;
+  }
+
   h1 {
     font-family: var(--sk-font-heading);
     font-size: 2rem;
-    margin: 0 0 1rem;
+    margin: 0;
+  }
+
+  .tagline {
+    margin: 0.15em 0 0;
+  }
+
+  /* A first run: the ship sails where the list will be. */
+  .longship {
+    display: block;
+    width: 100%;
+    max-width: 34rem;
+    height: auto;
+    margin: 0.75rem auto;
   }
 
   h2 {
@@ -175,6 +224,7 @@
   }
 
   .hint,
+  .tagline,
   .message,
   .empty,
   .path,

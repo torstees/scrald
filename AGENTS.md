@@ -21,9 +21,11 @@ The maintainer is an experienced developer (10+ years C++, 10 years Python, some
 crates/scrald-core/   # pure Rust library, no Tauri or GUI dependencies
 crates/scrald-app/    # Tauri application (tauri.conf.json, capabilities/, icons/ live here)
 ui/                   # Svelte + TypeScript frontend (npm workspace)
-assets/               # source artwork, e.g. icon-source.png (regenerate icons with
-                      #   `npm run tauri -- icon assets/icon-source.png -o crates/scrald-app/icons`,
-                      #   then delete the android/, ios/, and Square*/StoreLogo outputs)
+assets/               # source artwork; icon-source.png is the 1024 px app icon
+  brand/              # the brand art and the Python scripts that draw it (see its README); regenerate
+                      #   the app icons with `python assets/brand/src/make_app_icons.py`, not `tauri icon`,
+                      #   which would replace the simplified 16-48 px art with plain downscales
+  themes/skald/       # an example user theme with its own fonts and divider (core test: example_themes.rs)
 .github/workflows/    # CI
 package.json          # root npm workspace + Tauri CLI
 justfile              # task shortcuts (`just` lists them)

@@ -1,5 +1,7 @@
 # Themes
 
+<img src="art/themes.svg" alt="The Skald with shields painted in Scrald's themes" width="200" align="right" class="right">
+
 A theme sets a document's colors, fonts, text size, line length, and spacing, and how quotes, dividers, and headings look.
 
 ## Built-in themes
@@ -58,6 +60,12 @@ The folder's name is the theme's id. A theme with the same id as a built-in them
 Scrald notices changes to this folder while it runs, so a saved `theme.toml` shows at once. A theme with mistakes is still listed in the switcher, with what's wrong and the line it's on.
 
 See the [theme.toml reference](theme-reference.md) for every setting.
+
+### The Skald theme
+
+Scrald's source comes with one theme to copy into your themes folder: **Skald**, an old book printed from woodblocks. It has ink on warm paper, IM Fell type with blackletter titles, madder-red accents, and a carved rule with a shield between sections. Its fonts come with it (under the SIL Open Font License), so it looks the same on every computer.
+
+To install it, copy the `assets/themes/skald` folder from [Scrald's source](https://github.com/torstees/scrald) into your themes folder, so you have `themes\skald\theme.toml`. It's also a good example of a theme with its own fonts, an image divider, and a `theme.css`.
 
 ### The theme editor
 

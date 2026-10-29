@@ -39,6 +39,8 @@
     onforgetfolder: (path: string) => void;
     /** Picks a folder to remember. */
     onaddfolder: () => void;
+    /** Opens About Scrald (the dialog closes first). */
+    onabout: () => void;
     onclose: () => void;
   }
 
@@ -62,6 +64,7 @@
     onremembernewfolders,
     onforgetfolder,
     onaddfolder,
+    onabout,
     onclose,
   }: Props = $props();
 
@@ -254,10 +257,31 @@
         {/if}
       </section>
     </div>
+    <footer>
+      <button class="about" onclick={onabout}>About Scrald</button>
+    </footer>
   </div>
 </div>
 
 <style>
+  footer {
+    padding: 0.5em 1em 0.7em;
+    border-top: 1px solid var(--sk-color-border);
+  }
+
+  button.about {
+    font: inherit;
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--sk-color-link);
+    cursor: pointer;
+  }
+
+  button.about:hover {
+    text-decoration: underline;
+  }
+
   .backdrop {
     position: fixed;
     inset: 0;

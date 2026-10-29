@@ -1,5 +1,7 @@
 # Editing and saving
 
+<img src="art/editing.svg" alt="The Skald writes with his quill-horn" width="200" align="right" class="right">
+
 Scrald is a reader first, but small changes don't need another program.
 
 ## Editing a block

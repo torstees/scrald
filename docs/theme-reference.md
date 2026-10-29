@@ -1,5 +1,7 @@
 # theme.toml reference
 
+<img src="art/theme-reference.svg" alt="A shield hammered out on the anvil" width="200" align="right" class="right">
+
 A theme is a folder in Scrald's `themes` folder (see [Themes](themes.md)):
 
 ```

@@ -1,5 +1,7 @@
 # Markdown flavors and syntax
 
+<img src="art/markdown.svg" alt="The Skald juggles three scrolls, one per Markdown flavor" width="200" align="right" class="right">
+
 Markdown comes in dialects. Scrald reads three, called flavors:
 
 - **GFM:** GitHub-flavored Markdown, the most common.

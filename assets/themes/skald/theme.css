@@ -1,0 +1,31 @@
+/* Skald: blackletter for the title, set like the opening of a saga. */
+
+@font-face {
+  font-family: "Skald Fraktur";
+  src: url("assets/fonts/UnifrakturMaguntia-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+.sk-block h1 {
+  font-family: "Skald Fraktur", var(--sk-font-heading);
+  font-weight: 400;
+  font-size: 2.4em;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+}
+
+/* IM Fell has no bold; small caps headings read better without a fake one. */
+.sk-block h2,
+.sk-block h3,
+.sk-block h4 {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* The divider is a little wider than the default image rule. */
+.sk-block hr {
+  height: 2em;
+  margin: 2.2em 0;
+}

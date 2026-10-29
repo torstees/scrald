@@ -127,6 +127,7 @@
   import SearchBar from "./search/SearchBar.svelte";
   import { SearchController } from "./search/controller.svelte";
   import ShortcutsDialog from "./shortcuts/ShortcutsDialog.svelte";
+  import AboutDialog from "./about/AboutDialog.svelte";
   import { opensSettings, opensShortcuts, togglesPanel } from "./shortcuts/shortcuts";
   import SettingsDialog from "./settings/SettingsDialog.svelte";
   import NewDocumentDialog from "./newdoc/NewDocumentDialog.svelte";
@@ -148,6 +149,7 @@
   let searchBar: SearchBar | undefined = $state();
   let shortcutsOpen = $state(false);
   let settingsOpen = $state(false);
+  let aboutOpen = $state(false);
   // The print panel's starting choices while it's open (DESIGN.md §10).
   let printPanel = $state<PrintOptions | null>(null);
   // The choices of the last print in this window, which the next starts with.
@@ -1519,13 +1521,13 @@
     if (switcherOpen || unsavedPrompt) return;
     if (opensShortcuts(event, (event.target as HTMLElement | null)?.closest(".cm-editor") != null)) {
       event.preventDefault();
-      settingsOpen = false;
+      settingsOpen = aboutOpen = false;
       shortcutsOpen = !shortcutsOpen;
       return;
     }
     if (opensSettings(event)) {
       event.preventDefault();
-      shortcutsOpen = false;
+      shortcutsOpen = aboutOpen = false;
       if (settingsOpen) settingsOpen = false;
       else void openSettings();
       return;
@@ -1533,8 +1535,8 @@
     // The reference, settings, and New document are modal: other shortcuts
     // wait until they close (the New document dialog handles its own Escape).
     if (newDocument || printPanel) return;
-    if (shortcutsOpen || settingsOpen) {
-      if (event.key === "Escape") shortcutsOpen = settingsOpen = false;
+    if (shortcutsOpen || settingsOpen || aboutOpen) {
+      if (event.key === "Escape") shortcutsOpen = settingsOpen = aboutOpen = false;
       return;
     }
     if (hasMod(event) && !event.shiftKey && doc && !rawMode && (event.key === "f" || event.key === "F")) {
@@ -1889,6 +1891,7 @@
         onforget={forgetRecent}
         onshortcuts={() => (shortcutsOpen = true)}
         onsettings={openSettings}
+        onabout={() => (aboutOpen = true)}
       >
         {#if recoveredList.length > 0}
           <RecoveredList
@@ -1904,6 +1907,9 @@
   {/if}
   {#if shortcutsOpen}
     <ShortcutsDialog onclose={() => (shortcutsOpen = false)} />
+  {/if}
+  {#if aboutOpen}
+    <AboutDialog onclose={() => (aboutOpen = false)} />
   {/if}
   {#if settingsOpen}
     <SettingsDialog
@@ -1926,6 +1932,10 @@
       onremembernewfolders={(remember) => void changeNewDocumentFolders(() => setRememberNewFolders(remember))}
       onforgetfolder={(path) => void changeNewDocumentFolders(() => forgetNewDocumentFolder(path))}
       onaddfolder={() => void addNewDocumentFolder()}
+      onabout={() => {
+        settingsOpen = false;
+        aboutOpen = true;
+      }}
       onclose={() => (settingsOpen = false)}
     />
   {/if}
