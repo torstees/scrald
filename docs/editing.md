@@ -32,6 +32,8 @@ While there are unsaved changes, the window title starts with "• ". `Ctrl+S` s
 
 Closing the window, opening another document, or going back asks whether to **Save**, **Don't save**, or **Cancel**.
 
+On a Mac, **Quit Scrald** (`Cmd+Q`) closes each window the same way: windows without unsaved changes close, and each one with changes asks. Cancelling keeps Scrald open with that window. Quitting from the Dock, or logging out, doesn't ask yet; the changes are kept as recovered changes (see "Crash recovery" below) and offered the next time you open the document.
+
 Saving writes the whole file to a temporary file next to it and then swaps it in, so a failed save never leaves half a file. Only what you changed differs: line endings (Windows or Unix) and a byte order mark are kept as they were.
 
 ### Autosave
