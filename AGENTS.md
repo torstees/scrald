@@ -73,7 +73,7 @@ When adding a common task, add a recipe to the `justfile` and a row here. Keep r
 
 Before `cargo clippy` or `cargo build` on a fresh checkout, build the frontend once (`npm run build --workspace ui`, or any `tauri dev`/`build` run): Tauri's `generate_context!` needs `ui/dist` to exist.
 
-Logging: set `RUST_LOG` to override the default filter (`info,scrald=debug,scrald_core=debug`), e.g. `RUST_LOG=trace`. Log output appears in the terminal for debug builds. Release builds have no console on Windows; set `SCRALD_LOG_FILE=path/to/log.txt` to write the log to a file instead.
+Logging: set `RUST_LOG` to override the default filter (`info,scrald=debug,scrald_core=debug`), e.g. `RUST_LOG=trace`. `RUST_LOG=info,scrald=trace` also logs every file the custom protocols serve (document images, theme assets, Google fonts). Log output appears in the terminal for debug builds. Release builds have no console on Windows; set `SCRALD_LOG_FILE=path/to/log.txt` to write the log to a file instead.
 
 Performance checks (DESIGN.md §4): the frontend reports `ipc_open_document`, `first_screen`, and `full_mount` timings into the backend log via the `report_timing` command. Measure with a release build (`npm run tauri -- build --no-bundle`), `SCRALD_LOG_FILE` set, and the generated fixtures in `target/fixtures/`.
 

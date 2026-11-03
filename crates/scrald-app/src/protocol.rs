@@ -131,15 +131,20 @@ pub fn respond(registry: &AssetRegistry, request: &Request<Vec<u8>>) -> Response
         return status(StatusCode::NOT_FOUND);
     };
     match std::fs::read(&file) {
-        Ok(bytes) => Response::builder()
-            .header(header::CONTENT_TYPE, mime_for(&file))
-            // SVGs could contain script; this keeps them inert even if opened directly.
-            .header(
-                header::CONTENT_SECURITY_POLICY,
-                "default-src 'none'; style-src 'unsafe-inline'",
-            )
-            .body(bytes)
-            .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR)),
+        Ok(bytes) => {
+            // Silent unless asked for (`RUST_LOG=scrald=trace`): what a
+            // platform's webview requested and got, for checking it (#113).
+            tracing::trace!(uri = %request.uri(), path = %file.display(), bytes = bytes.len(), "served asset");
+            Response::builder()
+                .header(header::CONTENT_TYPE, mime_for(&file))
+                // SVGs could contain script; this keeps them inert even if opened directly.
+                .header(
+                    header::CONTENT_SECURITY_POLICY,
+                    "default-src 'none'; style-src 'unsafe-inline'",
+                )
+                .body(bytes)
+                .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR))
+        }
         Err(e) => {
             tracing::warn!(path = %file.display(), error = %e, "could not read asset");
             status(StatusCode::NOT_FOUND)
