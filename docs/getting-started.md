@@ -32,7 +32,8 @@ just bundle
 
 Scrald reads `.md`, `.markdown`, and `.mdown` files, plus `.mkd`, `.mkdn`, and `.txt` when you open them yourself.
 
-- **From File Explorer:** right-click a Markdown file and choose **Open with** > **Scrald**. The installer adds Scrald to that list but doesn't make it the default. To make it the default, choose **Always** in the **Open with** prompt, or set it in Windows Settings > Apps > Default apps.
+- **From File Explorer (Windows):** right-click a Markdown file and choose **Open with** > **Scrald**. The installer adds Scrald to that list but doesn't make it the default. To make it the default, choose **Always** in the **Open with** prompt, or set it in Windows Settings > Apps > Default apps.
+- **From Finder (macOS):** Control-click a Markdown file and choose **Open With** > **Scrald**, or drop it on Scrald's icon in the Dock. If you've never picked an app for Markdown files, macOS may make Scrald the one a double-click uses. To choose another, or to make Scrald the default, select a file, choose **File** > **Get Info**, pick the app under **Open with**, and click **Change All…**.
 - **From Scrald:** `Ctrl+O`, or **Open…** on the start screen. The file dialog starts in the open document's folder.
 - **By dropping it:** drop a Markdown file anywhere on a Scrald window.
 - **From a terminal:** `scrald path/to/file.md`.

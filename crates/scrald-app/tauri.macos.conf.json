@@ -1,6 +1,21 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "targets": ["app", "dmg"]
+    "targets": ["app", "dmg"],
+    "fileAssociations": [
+      {
+        "name": "Markdown document",
+        "ext": ["md", "markdown"],
+        "contentTypes": ["net.daringfireball.markdown"],
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "name": "Markdown document (.mdown)",
+        "ext": ["mdown"],
+        "role": "Editor",
+        "rank": "Alternate"
+      }
+    ]
   }
 }

@@ -1658,33 +1658,85 @@ impl LaunchInfo {
 // to name it.
 #[tauri::command]
 pub fn launch_info(window: tauri::Window, launches: tauri::State<'_, Launches>) -> LaunchInfo {
-    launches.get(window.label())
+    launches.read(window.label())
 }
 
-/// What each window was opened with, by window label.
+/// What each window was opened with, by window label, and whether its page
+/// has read it yet.
 #[derive(Default)]
 pub struct Launches {
-    inner: std::sync::Mutex<std::collections::HashMap<String, LaunchInfo>>,
+    inner: std::sync::Mutex<std::collections::HashMap<String, Launch>>,
+}
+
+#[derive(Clone)]
+struct Launch {
+    info: LaunchInfo,
+    read: bool,
+}
+
+// Rust note: implementing `Default` by hand instead of deriving it, because
+// a window without launch info shows the start screen, titled "Scrald",
+// where a derived default would have an empty title.
+impl Default for Launch {
+    fn default() -> Self {
+        Launch {
+            info: LaunchInfo::from_arg(None),
+            read: false,
+        }
+    }
 }
 
 impl Launches {
     pub fn set(&self, window: &str, launch: LaunchInfo) {
+        let launch = Launch {
+            info: launch,
+            read: false,
+        };
         self.lock().insert(window.to_string(), launch);
     }
 
     /// The window's launch info; nothing (the start screen) if it has none.
     pub fn get(&self, window: &str) -> LaunchInfo {
-        self.lock()
-            .get(window)
-            .cloned()
-            .unwrap_or_else(|| LaunchInfo::from_arg(None))
+        match self.lock().get(window) {
+            Some(launch) => launch.info.clone(),
+            None => LaunchInfo::from_arg(None),
+        }
+    }
+
+    /// Like `get`, for the window's page: from now on the window has shown
+    /// what it was opened with, so `replace_unread` leaves it alone.
+    pub fn read(&self, window: &str) -> LaunchInfo {
+        let mut launches = self.lock();
+        let launch = launches.entry(window.to_string()).or_default();
+        launch.read = true;
+        launch.info.clone()
+    }
+
+    /// Gives `window` a new launch if it was opened on the start screen and
+    /// its page hasn't read that yet, and says whether it did. On macOS a
+    /// file opened from Finder arrives after the app has started (DESIGN.md
+    /// §11.1): the first window then shows the file instead of the start
+    /// screen. Checking and replacing under one lock means the page reads
+    /// either the old launch or the new one, never misses the new one.
+    pub fn replace_unread(&self, window: &str, launch: LaunchInfo) -> bool {
+        let mut launches = self.lock();
+        let Some(current) = launches.get_mut(window) else {
+            return false;
+        };
+        // A window already given a file keeps it; a second file opens a
+        // window of its own.
+        if current.read || current.info.path.is_some() {
+            return false;
+        }
+        current.info = launch;
+        true
     }
 
     pub fn forget(&self, window: &str) {
         self.lock().remove(window);
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, LaunchInfo>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, Launch>> {
         self.inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -1750,5 +1802,25 @@ mod tests {
         assert_eq!(launches.get("window-1").path, None);
         launches.forget("main");
         assert_eq!(launches.get("main").path, None);
+    }
+
+    #[test]
+    fn a_launch_is_replaced_only_until_its_page_reads_it() {
+        let launches = Launches::default();
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let opened = LaunchInfo::from_arg(Some(manifest.clone()));
+        // A window that was never set up can't be given one.
+        assert!(!launches.replace_unread("main", opened.clone()));
+
+        launches.set("main", LaunchInfo::from_arg(None));
+        assert!(launches.replace_unread("main", opened.clone()));
+        // A second file doesn't take the first one's place.
+        let other = LaunchInfo::from_arg(Some(PathBuf::from("other.md")));
+        assert!(!launches.replace_unread("main", other));
+        assert_eq!(launches.read("main").path, Some(manifest));
+
+        // Once read, the window keeps what it showed.
+        assert!(!launches.replace_unread("main", LaunchInfo::from_arg(None)));
+        assert!(launches.get("main").exists);
     }
 }

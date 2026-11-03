@@ -32,7 +32,6 @@ fn main() -> anyhow::Result<()> {
     let launch = LaunchInfo::from_arg(std::env::args_os().nth(1).map(PathBuf::from));
     tracing::info!(path = ?launch.path, exists = launch.exists, "starting Scrald");
 
-    let first_launch = launch.clone();
     let launches = Launches::default();
     launches.set("main", launch);
 
@@ -190,6 +189,9 @@ fn main() -> anyhow::Result<()> {
             if let Some(webview_window) = app.get_webview_window("main") {
                 // Geometry and window events work with the plain `Window`.
                 let window = webview_window.as_ref().window();
+                // Read now rather than at startup: on macOS a file opened
+                // from Finder may already have replaced the start screen.
+                let first_launch = app.state::<Launches>().get("main");
                 window::show_placed(&window, &first_launch, &[])?;
             }
 
@@ -212,13 +214,27 @@ fn main() -> anyhow::Result<()> {
             start_crash_recovery(app.handle());
             Ok(())
         })
-        .run(app_context())
+        .build(app_context())
         // Rust note: `.context(...)` (from anyhow) wraps an error with a
         // message; together with `?` it propagates the error out of `main`,
         // like rethrowing with extra detail.
-        .context("error while running the Tauri application")?;
+        .context("error while starting the Tauri application")?
+        .run(on_run_event);
 
     Ok(())
+}
+
+/// Handles app-wide events from the event loop. On macOS, files opened from
+/// Finder arrive here instead of on the command line (DESIGN.md §11.1).
+fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    #[cfg(target_os = "macos")]
+    if let tauri::RunEvent::Opened { urls } = event {
+        tracing::info!(?urls, "files opened by the system");
+        window::open_files(app, window::file_paths(&urls));
+    }
+    // Nothing to handle elsewhere; this keeps the parameters "used".
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, event);
 }
 
 /// The app's configuration. With `SCRALD_DATA_DIR` set (automated and manual
