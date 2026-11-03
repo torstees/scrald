@@ -67,7 +67,7 @@ Run these from the repository root. The `justfile` wraps the common ones (run `j
 | Frontend tests | `just test-ui` | `npm test` |
 | Release build (no installer) | `just build` | `npm run tauri -- build --no-bundle` |
 | Release build + log to file | `just run-release file.md` | builds, then runs the release exe with `SCRALD_LOG_FILE=target/scrald.log` |
-| Release build + Windows installer | `just bundle` | `npm run tauri build` (writes `target/release/bundle/nsis/Scrald_<version>_x64-setup.exe`; NSIS is downloaded once into `target/.tauri/`) |
+| Release build + installer | `just bundle` | `npm run tauri build`. Windows: writes `target/release/bundle/nsis/Scrald_<version>_x64-setup.exe` (NSIS is downloaded once into `target/.tauri/`). macOS: writes `target/release/bundle/macos/Scrald.app` and `target/release/bundle/dmg/Scrald_<version>_aarch64.dmg`, unsigned; the targets come from `crates/scrald-app/tauri.macos.conf.json`, which Tauri merges over `tauri.conf.json` on macOS only |
 
 When adding a common task, add a recipe to the `justfile` and a row here. Keep recipes to plain `cargo`/`npm` commands (one per line, no `&&`), so they run under both PowerShell (`windows-shell`) and sh.
 

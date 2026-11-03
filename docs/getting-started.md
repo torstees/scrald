@@ -4,12 +4,14 @@
 
 <img src="art/getting-started.svg" alt="The Skald waves hello" width="200" align="right" class="right">
 
-Scrald doesn't have a published release yet, so for now it's built from source on Windows 11. You'll need:
+Scrald doesn't have a published release yet, so for now it's built from source, on Windows 11 or macOS. You'll need:
 
-- [Rust](https://rustup.rs) (stable, with the MSVC toolchain);
+- [Rust](https://rustup.rs) (stable; on Windows, with the MSVC toolchain);
 - [Node.js](https://nodejs.org) (LTS);
-- Visual Studio Build Tools with the C++ workload;
-- [just](https://github.com/casey/just) (`winget install Casey.Just`).
+- on Windows, Visual Studio Build Tools with the C++ workload; on macOS, the Xcode Command Line Tools (`xcode-select --install`);
+- [just](https://github.com/casey/just) (`winget install Casey.Just` on Windows, `brew install just` on macOS).
+
+After installing Rust, open a new terminal, so that `cargo` is on your path.
 
 From a copy of the [repository](https://github.com/torstees/scrald), install the frontend's packages:
 
@@ -23,7 +25,8 @@ Then build the installer:
 just bundle
 ```
 
-It's written to `target/release/bundle/nsis/`, named like `Scrald_0.1.0_x64-setup.exe`. It installs Scrald for your user account only, so it doesn't need administrator rights.
+- **On Windows,** it's written to `target/release/bundle/nsis/`, named like `Scrald_0.1.0_x64-setup.exe`. It installs Scrald for your user account only, so it doesn't need administrator rights.
+- **On macOS,** you get `Scrald.app` in `target/release/bundle/macos/` and a disk image, named like `Scrald_0.1.0_aarch64.dmg`, in `target/release/bundle/dmg/`. Open the disk image and drag Scrald to Applications. The app isn't signed yet, so the first time, macOS may refuse to open it: Control-click it, choose **Open**, then **Open** again.
 
 ## Opening documents
 
