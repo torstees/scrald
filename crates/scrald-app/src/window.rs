@@ -56,6 +56,62 @@ pub fn open_window(app: &AppHandle, launch: LaunchInfo) -> anyhow::Result<()> {
     show_placed(&window, &launch, &open)
 }
 
+/// Opens files the system hands to the running app: on macOS, a file opened
+/// from Finder (or with `open`) arrives as an "opened" event rather than on
+/// the command line, both when it starts Scrald and while Scrald is running
+/// (DESIGN.md §11.1). Runs on the event loop's thread.
+///
+/// At startup the first window is still on its way to showing the start
+/// screen, so the first file goes there instead of into a second window.
+/// Every other file opens like a file from a later launch: in a window of
+/// its own, or by focusing the window that already shows it.
+// Rust note: `#[cfg(...)]` compiles an item only on matching targets, like
+// `#ifdef __APPLE__`; the other platforms never see it, so it can't be an
+// unused-code warning there.
+#[cfg(target_os = "macos")]
+pub fn open_files(app: &AppHandle, paths: Vec<PathBuf>) {
+    for path in paths {
+        let launch = LaunchInfo::from_arg(Some(path));
+        if app
+            .state::<Launches>()
+            .replace_unread("main", launch.clone())
+        {
+            tracing::info!(path = ?launch.path, "opened file goes to the first window");
+            // Before setup, the window isn't shown yet, and setup places it
+            // with this launch; after, it's titled and placed for the file now.
+            if let Some(main) = app.get_webview_window("main")
+                && main.is_visible().unwrap_or(false)
+            {
+                let window = main.as_ref().window();
+                if let Err(error) = show_placed(&window, &launch, &[]) {
+                    tracing::warn!(error = format!("{error:#}"), "could not place the window");
+                }
+            }
+            continue;
+        }
+        tracing::info!(path = ?launch.path, "file opened by the system");
+        let app = app.clone();
+        // New windows are built off the event loop's thread, as in main.rs.
+        std::thread::spawn(move || {
+            if let Err(error) = open_window(&app, launch) {
+                tracing::warn!(error = format!("{error:#}"), "could not open a window");
+            }
+        });
+    }
+}
+
+/// The local files among the URLs the system asked the app to open; other
+/// URLs (Scrald registers no URL schemes) are skipped.
+// Rust note: `filter_map` keeps the `Some` results and drops the `None`s;
+// `.ok()` turns the `Result` from `to_file_path` into an `Option`.
+#[cfg(any(target_os = "macos", test))]
+pub fn file_paths(urls: &[tauri::Url]) -> Vec<PathBuf> {
+    urls.iter()
+        .filter(|url| url.scheme() == "file")
+        .filter_map(|url| url.to_file_path().ok())
+        .collect()
+}
+
 /// Titles a new (hidden) window, moves it to where its document's window was
 /// last (or the last window's size and place), and shows it. `open` lists
 /// the positions of the other windows, which it steps away from.
@@ -398,6 +454,14 @@ mod tests {
         assert_eq!(tracker.window_showing(&crate_dir.join("build.rs")), None);
         tracker.forget("main");
         assert_eq!(tracker.window_showing(&crate_dir.join("Cargo.toml")), None);
+    }
+
+    #[test]
+    fn only_file_urls_become_paths() {
+        let file = std::path::absolute(Path::new("notes").join("a b.md")).expect("absolute");
+        let file_url = tauri::Url::from_file_path(&file).expect("file URL");
+        let web = tauri::Url::parse("https://example.com/a.md").expect("URL");
+        assert_eq!(file_paths(&[web, file_url]), vec![file]);
     }
 
     #[test]
