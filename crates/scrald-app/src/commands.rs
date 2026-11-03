@@ -1718,6 +1718,10 @@ impl Launches {
     /// §11.1): the first window then shows the file instead of the start
     /// screen. Checking and replacing under one lock means the page reads
     /// either the old launch or the new one, never misses the new one.
+    // Rust note: `cfg_attr(condition, attr)` applies `attr` only where the
+    // condition holds. Only macOS calls this, but it stays compiled (and
+    // tested) everywhere, so elsewhere it's allowed to be unused.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn replace_unread(&self, window: &str, launch: LaunchInfo) -> bool {
         let mut launches = self.lock();
         let Some(current) = launches.get_mut(window) else {
