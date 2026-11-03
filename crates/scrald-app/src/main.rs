@@ -4,6 +4,8 @@
 
 mod commands;
 mod fonts;
+#[cfg(target_os = "macos")]
+mod menu;
 mod newdoc;
 mod protocol;
 mod session;
@@ -35,7 +37,14 @@ fn main() -> anyhow::Result<()> {
     let launches = Launches::default();
     launches.set("main", launch);
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // On macOS, the default menu with a Quit that asks about unsaved changes.
+    // Rust note: a second `let builder` shadows the first (a new variable
+    // with the same name), so the macOS-only step needs no `mut`.
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(menu::build).on_menu_event(menu::on_menu_event);
+
+    builder
         // Registered first, so a second launch hands its file to this process
         // and exits before anything else starts (DESIGN.md §11).
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
