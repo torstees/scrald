@@ -4,6 +4,7 @@
     launchInfo,
     onDocumentChanged,
     onEmbedChanged,
+    onShowAbout,
     openDocument,
     openExternal,
     reportTiming,
@@ -892,6 +893,8 @@
     const unlistenEmbeds = onEmbedChanged(() => {
       if (doc && !rawMode) void refreshEmbeds();
     });
+    // About Scrald in the macOS app menu (#199).
+    const unlistenAbout = onShowAbout(showAboutFromMenu);
     // Theme hot reload (DESIGN.md §7.1): re-apply when a user theme changes.
     const unlistenThemes = onThemesChanged(() => {
       if (theme && !switcherOpen && !themeEditing) void showTheme(theme.id);
@@ -916,6 +919,7 @@
       void unlistenClose.then((stop) => stop());
       void unlistenThemes.then((stop) => stop());
       void unlistenEmbeds.then((stop) => stop());
+      void unlistenAbout.then((stop) => stop());
       void unlistenAutosave.then((stop) => stop());
       void unlistenSettings.then((stop) => stop());
       wideQuery.removeEventListener("change", onWideChange);
@@ -1516,6 +1520,19 @@
       searchedPath = current?.path ?? null;
     });
   });
+
+  /**
+   * Shows About when the macOS app menu asks (#199). The shortcut list and
+   * settings give way to it, as settings does for its own About link. A
+   * dialog holding a choice or typed input (the unsaved-changes question,
+   * the theme switcher, New document, print) stays, and About waits for the
+   * next click.
+   */
+  function showAboutFromMenu(): void {
+    if (unsavedPrompt || switcherOpen || newDocument || printPanel) return;
+    shortcutsOpen = settingsOpen = false;
+    aboutOpen = true;
+  }
 
   function onKeydown(event: KeyboardEvent): void {
     if (switcherOpen || unsavedPrompt) return;

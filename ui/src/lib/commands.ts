@@ -380,6 +380,11 @@ export function onEmbedChanged(handler: (path: string) => void): Promise<Unliste
   return listen<string>("embed-changed", (event) => handler(event.payload));
 }
 
+/** Calls `handler` when the macOS app menu's About Scrald asks this window to show the About dialog (#199). */
+export function onShowAbout(handler: () => void): Promise<UnlistenFn> {
+  return listen("show-about", () => handler());
+}
+
 /** Calls `handler` with the path whenever this window's document changes on disk. */
 export function onDocumentChanged(handler: (path: string) => void): Promise<UnlistenFn> {
   return listen<string>("document-changed", (event) => handler(event.payload));
