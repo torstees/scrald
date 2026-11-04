@@ -13,9 +13,11 @@ default:
 
 # --- Setup -----------------------------------------------------------------
 
-# Install frontend dependencies (root npm workspace, includes ui/)
+# Install frontend dependencies (root npm workspace, includes ui/) exactly as
+# package-lock.json lists them, without rewriting it. To add or update a
+# package, run `npm install <package>` instead.
 install:
-    npm install
+    npm ci
 
 # --- Run the app -----------------------------------------------------------
 

@@ -39,19 +39,20 @@ Logic belongs in `scrald-core` whenever it can be tested without a window. `scra
 
 ## Environment
 
-- Development happens on **native Windows 11** in a normal NTFS directory, not WSL. The shell is PowerShell or Git Bash. Write commands that work in both where practical, and never assume Linux-only tools.
-- Toolchain: Rust stable via rustup (MSVC target), Node.js LTS, Visual Studio Build Tools (C++ workload). WebView2 is part of Windows 11.
+- Development moved to **macOS on Apple silicon** in November 2026, after starting on **native Windows 11** (a normal NTFS directory, not WSL); both stay supported. The shell is zsh on the Mac, PowerShell or Git Bash on Windows. Write commands that work in all of them where practical, and never assume Linux-only tools.
+- Toolchain: Rust stable via rustup and Node.js LTS everywhere. macOS: the Xcode Command Line Tools (`xcode-select --install`); WKWebView is part of macOS. Windows: the MSVC target and Visual Studio Build Tools (C++ workload); WebView2 is part of Windows 11.
+- Install frontend packages with `just install` (`npm ci`), which installs exactly what `package-lock.json` lists and leaves it alone. Different npm versions write the lock file slightly differently, so `npm install` on another machine can change it without any package changing. Use `npm install <package>` only when adding or updating a dependency, and commit the lock file with it.
 - The maintainer's editor is Zed. Don't add VS Code-specific config files.
 - Keep code free of Windows-only APIs unless isolated behind a clear module boundary, so macOS and Linux builds remain possible.
 - `scrald-core` must pass its tests on Windows, macOS, and Linux at all times (CI checks this). CI also builds and tests the app and frontend on all three, so app code must compile everywhere too. Use `std::path` APIs, never string-concatenated `\` separators, and don't assume a case-insensitive file system.
 
 ## Commands
 
-Run these from the repository root. The `justfile` wraps the common ones (run `just` to list recipes; needs [just](https://github.com/casey/just), e.g. `winget install Casey.Just`). The underlying commands work in both PowerShell and Git Bash. The root `package.json` is an npm workspace containing `ui/`, so one `npm install` at the root installs everything.
+Run these from the repository root. The `justfile` wraps the common ones (run `just` to list recipes; needs [just](https://github.com/casey/just): `brew install just` on a Mac, `winget install Casey.Just` on Windows). The underlying commands work in zsh, PowerShell, and Git Bash. The root `package.json` is an npm workspace containing `ui/`, so one `just install` at the root installs everything.
 
 | Task | `just` recipe | Underlying command |
 |---|---|---|
-| Install frontend deps | `just install` | `npm install` |
+| Install frontend deps | `just install` | `npm ci` (installs exactly what `package-lock.json` lists; see Environment) |
 | Run app in dev mode | `just dev` | `npm run tauri dev` |
 | Run app with a file | `just open path/to/file.md` | `npm run tauri -- dev -- -- /absolute/path/to/file.md` (the app's working directory is `crates/scrald-app`, so pass an absolute path) |
 | Open a large fixture | `just large 250k` | generates fixtures if needed, then opens `target/fixtures/large-250k.md` |
@@ -136,6 +137,7 @@ Each completed chunk of work (usually a few related sub-issues) goes up as a pul
 - **YAML front matter** is edited with minimal text edits, never by parsing and re-serializing the whole block.
 - **Security.** All rendered HTML is sanitized. The asset protocol serves only resolved document assets and theme assets. No remote scripts, ever.
 - **Performance.** Before and after changes to parsing, rendering, or the reader's DOM structure, check the large fixtures. Don't introduce whole-document work on the frontend's main thread.
+- **Test documents go in `scratch/`** at the repository root, which git ignores: the maintainer's test notes and vaults, copies of public-domain books for real-world reading, and anything an agent writes to try something by hand. Create it if it's missing, and keep agent-made files in their own subfolder (`scratch/agent/`) so they don't mix with the maintainer's.
 - **Don't modify files outside the repository** and never run the app against the maintainer's real documents in automated steps. Use fixtures, and set `SCRALD_DATA_DIR=target/test-data` when launching the app so its state database (recent documents, positions, window geometry) stays out of the maintainer's real app data. Scrald is single-instance: a launch hands its file to a Scrald that is already running. With `SCRALD_DATA_DIR` set it only looks for another Scrald using the same data folder, so a test run never reaches the maintainer's own window, but still check for running `scrald` processes first.
 
 ## When in doubt
