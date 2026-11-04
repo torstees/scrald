@@ -30,5 +30,12 @@ tauri-plugin-dialog.workspace = true
 tauri-plugin-single-instance.workspace = true
 ureq.workspace = true
 
+# macOS only: answering AppKit's applicationShouldTerminate: (src/terminate.rs).
+# Both are already in the build through tao and muda (Tauri's macOS layers),
+# at these versions, so nothing new is compiled.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder"] }
+
 [lints]
 workspace = true

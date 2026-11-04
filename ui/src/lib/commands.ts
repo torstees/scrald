@@ -398,6 +398,16 @@ export function reportTiming(name: string, ms: number): void {
 }
 
 /** Sends the web features this webview lacks to the backend log. Never throws. */
+/**
+ * Tells the app that closing this window was cancelled, so a quit macOS
+ * asked for (Dock, logout, shutdown) is called off instead of left waiting.
+ */
+export function closeCancelled(): void {
+  invoke("close_cancelled").catch(() => {
+    // Nothing waits on it outside macOS.
+  });
+}
+
 export function reportWebview(missing: string[]): void {
   invoke("report_webview", { userAgent: navigator.userAgent, missing }).catch(() => {
     // Diagnostics only.

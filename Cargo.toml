@@ -38,7 +38,11 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 # Lints shared by every crate (each crate opts in with `[lints] workspace = true`).
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# No unsafe code: it's an error everywhere. `deny` rather than `forbid` only so
+# that one macOS file can opt out, with a visible `#![allow(unsafe_code)]` and
+# the reasons beside it (crates/scrald-app/src/terminate.rs, #197). Any other
+# opt-out needs the maintainer's agreement (AGENTS.md).
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 # AGENTS.md: no unwrap() outside tests; use expect("reason") only for true invariants.
