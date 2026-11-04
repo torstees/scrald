@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { keyLabel } from "../lib/platform";
+  import { IS_MAC, keyLabel } from "../lib/platform";
   import type { Flavor, FlavorSource } from "../lib/types";
   import { FLAVOR_NAMES } from "./flavor";
   import FlavorMenu from "./FlavorMenu.svelte";
@@ -93,9 +93,10 @@
     aria-label="Toggle contents">☰</button
   >
   {#if canGoBack || canGoForward}
+    <!-- Not keyLabel: on a Mac these are different keys, not just names (Shortcut.mac). -->
     <span class="nav">
-      <button onclick={onback} disabled={!canGoBack} title="Back (Alt+Left)" aria-label="Back">‹</button>
-      <button onclick={onforward} disabled={!canGoForward} title="Forward (Alt+Right)" aria-label="Forward">›</button>
+      <button onclick={onback} disabled={!canGoBack} title={IS_MAC ? "Back (Cmd+[)" : "Back (Alt+Left)"} aria-label="Back">‹</button>
+      <button onclick={onforward} disabled={!canGoForward} title={IS_MAC ? "Forward (Cmd+])" : "Forward (Alt+Right)"} aria-label="Forward">›</button>
     </span>
   {/if}
   {#if notice}
