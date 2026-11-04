@@ -8,11 +8,19 @@ Scrald keeps everything in your user profile, never next to your documents:
 
 | What | Where |
 |---|---|
-| What it remembers about each document (theme, flavor, position, zoom, window size, title, summary), recent and pinned documents, and settings | `%APPDATA%\io.github.torstees.scrald\scrald.db` |
-| Unsaved changes, for crash recovery (deleted once saved or discarded) | `%APPDATA%\io.github.torstees.scrald\recovery\` |
-| Your themes | `%APPDATA%\io.github.torstees.scrald\themes\` |
-| Your templates for new documents | `%APPDATA%\io.github.torstees.scrald\templates\` |
-| Downloaded Google fonts | `%LOCALAPPDATA%\io.github.torstees.scrald\fonts\` |
+| What it remembers about each document (theme, flavor, position, zoom, window size, title, summary), recent and pinned documents, and settings | `scrald.db` in the data folder |
+| Unsaved changes, for crash recovery (deleted once saved or discarded) | `recovery` in the data folder |
+| Your themes | `themes` in the settings folder |
+| Your templates for new documents | `templates` in the settings folder |
+| Downloaded Google fonts | `fonts` in the cache folder |
+
+Those folders depend on your system:
+
+| | Data folder | Settings folder | Cache folder |
+|---|---|---|---|
+| Windows | `%APPDATA%\io.github.torstees.scrald` | the same | `%LOCALAPPDATA%\io.github.torstees.scrald` |
+| macOS | `~/Library/Application Support/io.github.torstees.scrald` | the same | `~/Library/Caches/io.github.torstees.scrald` |
+| Linux | `~/.local/share/io.github.torstees.scrald` | `~/.config/io.github.torstees.scrald` | `~/.cache/io.github.torstees.scrald` |
 
 The database holds facts about your documents, not their text. The only copies of document text Scrald makes are the recovery files, while there are unsaved changes.
 

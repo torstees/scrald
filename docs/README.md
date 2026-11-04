@@ -12,7 +12,7 @@ The name plays on *scrawled*, *skald* (the Norse poet), and *skål* (the Viking 
 - **Stays fast on long documents.** A 100,000-word file shows its first screen in about a tenth of a second and scrolls smoothly.
 - **Speaks several kinds of Markdown.** GitHub's, Obsidian's, and much of Pandoc's, detected for each document.
 - **Has real themes.** Colors, fonts, line length, and how quotes and dividers look. Bundled themes, your own, and themes imported from terminal color schemes.
-- **Remembers each document:** its theme, flavor, reading position, zoom, and window size.
+- **Remembers each document:** its theme, flavor, reading position, zoom, and window size and place (on Linux under Wayland, only the size: the desktop decides where windows go).
 - **Edits lightly.** Double-click a paragraph to edit its Markdown, or switch the whole document to raw mode. Saves never touch more of the file than you changed.
 
 ## Where to start
