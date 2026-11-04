@@ -186,6 +186,16 @@ On the 100K fixture, a theme switch (previewing themes with the arrow keys in th
 - **Idle mounting.** This webview has no `requestIdleCallback`, so idle mounting runs on its timer fallback (§11.1), one batch after each frame. It still mounts the 500K fixture in under a second.
 - **Nothing else needed a fallback.** `content-visibility` and scroll anchoring are native here, so the slower full-layout path doesn't apply.
 
+Measured 2026-11-04 on Linux (#110; release build, Ubuntu 24.04 with GNOME on Wayland, WebKitGTK 2.52.6, in a UTM virtual machine on the same Mac with 6 cores and an emulated GPU; median of three cold launches each, with a fresh state folder):
+
+| Fixture | Parse + render (Rust) | First screen | Full document mounted |
+|---|---|---|---|
+| 100K words | ~46 ms | ~325 ms | ~589 ms |
+| 250K words | ~99 ms | ~415 ms | ~856 ms |
+| 500K words | ~205 ms | ~582 ms | ~1350 ms |
+
+The 100K fixture is inside the budget. WebKitGTK lacks `requestIdleCallback` and scroll anchoring, so both fallbacks run (§11.1). The VM is the slow part: its GPU is emulated, and WebKitGTK's DMABUF renderer had to be turned off (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) for the page to paint at all, so real hardware should do better. Theme switch and edit times weren't measured here, since they need input in the desktop.
+
 A fixture generator in `scrald-core` produces 100K, 250K, and 500K-word documents with headings, lists, tables, code, images, and math, for benchmarks and manual testing.
 
 ---
@@ -752,6 +762,7 @@ Known differences to plan for when that milestone starts:
   - **`requestIdleCallback`** (missing from Safari): idle mounting runs on a timer, one batch after each frame (`ui/src/lib/idle.ts`).
   - **Scroll anchoring** (`overflow-anchor`, missing from Safari): the reader leans on it whenever something above the screen changes height, as when sections mount in idle time, when `content-visibility` replaces a section's estimated height with its real one as it comes near, and after edits. Without it, the reader does the same itself (`ui/src/reader/anchoring.ts`): it notes the block at the top of the screen and its place in the content after each scroll, and when the column changes size (a ResizeObserver, which runs after layout and before paint), it scrolls by however far that block moved. Jumps the reader makes itself (Contents, links, search, keeping its place on zoom) take the new place as the one to keep. Tried on Windows with anchoring forced off: without the fallback, `PageUp` through sections not yet drawn went nowhere, since the sections above grew by as much; with it, each page joined the last.
   - **The Custom Highlight API** (Safari 17.2 and later): without it, search matches are drawn as boxes in an overlay layer in the reading column, the current one outlined, so the blocks' DOM, the selection, and focus are untouched. (Setting the page's selection instead took focus from the find bar.)
+  - **On Linux** (checked 2026-11-04, WebKitGTK 2.52.6): `requestIdleCallback` and scroll anchoring are missing, so both fallbacks above are in use there; `content-visibility` and the Custom Highlight API are native.
   - **`content-visibility`** (Safari 18 and later): without it every mounted section is laid out, which is slower but correct. WKWebView on macOS has it (checked with #110), so this applies only to older webviews.
 
   A test build can force the fallbacks on with `VITE_SCRALD_FALLBACKS` (`all`, or a comma list of `idleCallback`, `contentVisibility`, `scrollAnchoring`, `customHighlights`), so they can be tried in WebView2. Print's title and page numbers use CSS page margin boxes, which WebKit hasn't supported; if that's still so, pages there print without them (to check with #187).
@@ -766,6 +777,8 @@ Known differences to plan for when that milestone starts:
 - **Custom protocols.** Tauri formats custom-scheme URLs differently per platform, so `scrald-asset://` and `scrald-theme://` URLs must be built in one place rather than as hard-coded strings.
 
   As checked on macOS (#113, 2026-11-03, release build): URLs take the form `scrald-asset://localhost/<token>-<id>` and `scrald-theme://localhost/<theme>/<path>` (on Windows, `http://scrald-asset.localhost/...`; the CSP allows both). The webview loaded and showed Markdown PNG, JPEG, and SVG images, a raw HTML `<img>`, the cover above the text and on the start screen, a user theme's `.woff2` fonts and SVG divider, and a downloaded Google font. With `RUST_LOG=scrald=trace`, each file served is logged (asset, theme asset, or Google font) with its URL and size, so the same check on another platform starts with the log; a refused or missing file is a warning at any level.
+
+  As checked on Linux (#113, 2026-11-04, release build, WebKitGTK 2.52.6): the same URL forms as on macOS, and every file of the macOS check was served (Markdown and raw HTML images, the cover, the Skald theme's fonts and divider, a downloaded Google font).
 - **The app menu** (as implemented, #185; `crates/scrald-app/src/menu.rs`). Tauri gives a Mac app a default menu bar whose items do the native thing. Scrald keeps it, replacing two items in the app menu with its own:
   - **About Scrald** opened the system's About panel (icon, name, version). Scrald's item sends `show-about` to the focused window, which opens Scrald's own About dialog (§10, #199). The shortcut list and settings close for it; the unsaved-changes question, the theme switcher, New document, and print stay, and About waits for the next click.
   - **Quit** (`Cmd+Q`) sent `terminate:`, which ended the app at once: tao doesn't implement `applicationShouldTerminate:`, so no window got a close request, and unsaved changes survived only as a recovery file. Scrald's **Quit Scrald** instead asks every window to close as its close button does: clean windows close, a window with changes asks (or saves, with autosave on), and the app ends with the last window. Cancelling keeps that window open.
