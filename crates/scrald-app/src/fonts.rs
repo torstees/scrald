@@ -151,14 +151,20 @@ impl FontCache {
             .as_deref()
             .and_then(|dir| crate::themes::confined_file(dir, relative));
         match file.map(std::fs::read) {
-            Some(Ok(bytes)) => Response::builder()
-                .header(header::CONTENT_TYPE, "font/woff2")
-                // The page's origin differs from this scheme's, and browsers
-                // load fonts across origins only when the response allows it.
-                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                .body(bytes)
-                .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR)),
-            _ => status(StatusCode::NOT_FOUND),
+            Some(Ok(bytes)) => {
+                tracing::trace!(path = relative, bytes = bytes.len(), "served Google font");
+                Response::builder()
+                    .header(header::CONTENT_TYPE, "font/woff2")
+                    // The page's origin differs from this scheme's, and browsers
+                    // load fonts across origins only when the response allows it.
+                    .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .body(bytes)
+                    .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR))
+            }
+            _ => {
+                tracing::warn!(path = relative, "Google font not in the cache");
+                status(StatusCode::NOT_FOUND)
+            }
         }
     }
 }

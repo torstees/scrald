@@ -213,17 +213,27 @@ impl ThemeService {
             ..
         }) = self.get(id)
         else {
+            tracing::warn!(
+                theme = id,
+                "theme asset request for an unknown or built-in theme"
+            );
             return status(StatusCode::NOT_FOUND);
         };
         match confined_file(&dir, relative) {
             Some(file) => match std::fs::read(&file) {
-                Ok(bytes) => Response::builder()
-                    .header(header::CONTENT_TYPE, crate::protocol::mime_for(&file))
-                    // Theme fonts load across origins (see fonts.rs).
-                    .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                    .body(bytes)
-                    .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR)),
-                Err(_) => status(StatusCode::NOT_FOUND),
+                Ok(bytes) => {
+                    tracing::trace!(uri = %request.uri(), path = %file.display(), bytes = bytes.len(), "served theme asset");
+                    Response::builder()
+                        .header(header::CONTENT_TYPE, crate::protocol::mime_for(&file))
+                        // Theme fonts load across origins (see fonts.rs).
+                        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                        .body(bytes)
+                        .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR))
+                }
+                Err(error) => {
+                    tracing::warn!(path = %file.display(), %error, "could not read theme asset");
+                    status(StatusCode::NOT_FOUND)
+                }
             },
             None => {
                 tracing::warn!(
