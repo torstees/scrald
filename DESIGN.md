@@ -172,6 +172,20 @@ Measured 2026-10-08 (release build, Windows 11, WebView2; time from `open_docume
 
 Section containment plus progressive mount is comfortably inside the budget, so virtualization (item 5) is not needed for now.
 
+Measured 2026-11-03 on macOS (#110; release build, macOS 27.2, WKWebView, Apple M5 Pro; median of three cold launches each, with a fresh state folder):
+
+| Fixture | Parse + render (Rust) | First screen | Full document mounted |
+|---|---|---|---|
+| 100K words | ~48 ms | ~157 ms | ~262 ms |
+| 250K words | ~100 ms | ~251 ms | ~516 ms |
+| 500K words | ~196 ms | ~387 ms | ~955 ms |
+
+On the 100K fixture, a theme switch (previewing themes with the arrow keys in the switcher) took 55 to 100 ms, and a single-block edit took 40 to 55 ms from commit to repaint. Everything is inside the budget.
+
+- **Compared with Windows.** The Windows table is a month older, and core has done more per parse since (transclusion, covers, more Pandoc), so the Rust column isn't a like-for-like comparison. WKWebView takes longer to paint: first screen is about 60 ms later on 100K words, and theme switches took 5 to 15 ms on Windows.
+- **Idle mounting.** This webview has no `requestIdleCallback`, so idle mounting runs on its timer fallback (§11.1), one batch after each frame. It still mounts the 500K fixture in under a second.
+- **Nothing else needed a fallback.** `content-visibility` and scroll anchoring are native here, so the slower full-layout path doesn't apply.
+
 A fixture generator in `scrald-core` produces 100K, 250K, and 500K-word documents with headings, lists, tables, code, images, and math, for benchmarks and manual testing.
 
 ---
@@ -738,7 +752,7 @@ Known differences to plan for when that milestone starts:
   - **`requestIdleCallback`** (missing from Safari): idle mounting runs on a timer, one batch after each frame (`ui/src/lib/idle.ts`).
   - **Scroll anchoring** (`overflow-anchor`, missing from Safari): the reader leans on it whenever something above the screen changes height, as when sections mount in idle time, when `content-visibility` replaces a section's estimated height with its real one as it comes near, and after edits. Without it, the reader does the same itself (`ui/src/reader/anchoring.ts`): it notes the block at the top of the screen and its place in the content after each scroll, and when the column changes size (a ResizeObserver, which runs after layout and before paint), it scrolls by however far that block moved. Jumps the reader makes itself (Contents, links, search, keeping its place on zoom) take the new place as the one to keep. Tried on Windows with anchoring forced off: without the fallback, `PageUp` through sections not yet drawn went nowhere, since the sections above grew by as much; with it, each page joined the last.
   - **The Custom Highlight API** (Safari 17.2 and later): without it, search matches are drawn as boxes in an overlay layer in the reading column, the current one outlined, so the blocks' DOM, the selection, and focus are untouched. (Setting the page's selection instead took focus from the find bar.)
-  - **`content-visibility`** (Safari 18 and later): without it every mounted section is laid out, which is slower but correct; how much slower is for #110.
+  - **`content-visibility`** (Safari 18 and later): without it every mounted section is laid out, which is slower but correct. WKWebView on macOS has it (checked with #110), so this applies only to older webviews.
 
   A test build can force the fallbacks on with `VITE_SCRALD_FALLBACKS` (`all`, or a comma list of `idleCallback`, `contentVisibility`, `scrollAnchoring`, `customHighlights`), so they can be tried in WebView2. Print's title and page numbers use CSS page margin boxes, which WebKit hasn't supported; if that's still so, pages there print without them (to check with #187).
 - **Opening files.** On macOS, files opened from Finder arrive as an "opened" app event, not as command-line arguments, and the single-instance plugin behaves differently. File associations are declared differently on each platform (Info.plist on macOS, `.desktop` files and MIME types on Linux).
