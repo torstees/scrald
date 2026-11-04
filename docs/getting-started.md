@@ -50,7 +50,7 @@ Starting Scrald without a file shows the start screen:
 - ☆ pins a document to the top, and × takes it off the list, which also forgets what Scrald remembered about it (theme, position, zoom).
 - A file that has moved or been deleted is dimmed and marked "Not found".
 - **New document…**, **Open…**, **Settings**, and **Keyboard shortcuts**.
-- **About Scrald**, beside the name: the version, where the name comes from, and a link to the source. Settings has it too.
+- **About Scrald**, beside the name: the version, where the name comes from, and a link to the source. Settings has it too, and on a Mac so does the **Scrald** menu at the top left of the screen.
 
 If Scrald stopped while a document had unsaved changes, the start screen lists those changes first, so you can restore them. See "Crash recovery" in [Editing and saving](editing.md).
 
