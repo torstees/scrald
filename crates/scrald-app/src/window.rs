@@ -7,7 +7,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use anyhow::Context;
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindowBuilder, Window};
+use tauri::{
+    AppHandle, LogicalPosition, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Position,
+    Size, WebviewWindowBuilder, Window,
+};
 
 use crate::commands::{LaunchInfo, Launches};
 use crate::state::{StateStore, WindowGeometry, document_key};
@@ -49,8 +52,11 @@ pub fn open_window(app: &AppHandle, launch: LaunchInfo) -> anyhow::Result<()> {
         .webview_windows()
         .values()
         .filter(|w| w.label() != config.label)
-        .filter_map(|w| w.outer_position().ok())
-        .map(|p| (p.x, p.y))
+        .filter_map(|w| {
+            let position = w.outer_position().ok()?;
+            let scale = w.scale_factor().ok()?;
+            Some(screen_point(position, scale))
+        })
         .collect();
     tracing::info!(window = config.label, path = ?launch.path, "opening a new window");
     show_placed(&window, &launch, &open)
@@ -164,7 +170,40 @@ pub fn cascade(wanted: Rect, open: &[(i32, i32)]) -> Rect {
     rect
 }
 
-/// A rectangle in physical pixels.
+/// Whether window and monitor rectangles are kept in points (logical pixels)
+/// rather than physical pixels. On macOS, a window's physical size depends
+/// on the monitor it's on (a 2x display doubles it), so the same window
+/// measured on two monitors gives two sizes, and a size saved on one comes
+/// back twice as big or half as big on the other. Points are the same on
+/// every monitor there, and the desktop's coordinates are in points. On
+/// Windows, physical pixels are the consistent unit (DESIGN.md §11).
+const USE_POINTS: bool = cfg!(target_os = "macos");
+
+/// A position in screen units (see `USE_POINTS`), from Tauri's physical one
+/// and the scale factor of the monitor it was measured on.
+fn screen_point(position: PhysicalPosition<i32>, scale: f64) -> (i32, i32) {
+    if USE_POINTS {
+        // Rust note: `to_logical::<f64>` picks the number type of the result
+        // with a "turbofish" (`::<T>`), as in `static_cast<double>` in C++.
+        let logical = position.to_logical::<f64>(scale);
+        (logical.x.round() as i32, logical.y.round() as i32)
+    } else {
+        (position.x, position.y)
+    }
+}
+
+/// A size in screen units, as `screen_point` for positions.
+fn screen_size(size: PhysicalSize<u32>, scale: f64) -> (u32, u32) {
+    if USE_POINTS {
+        let logical = size.to_logical::<f64>(scale);
+        (logical.width.round() as u32, logical.height.round() as u32)
+    } else {
+        (size.width, size.height)
+    }
+}
+
+/// A rectangle in screen units: points on macOS, physical pixels elsewhere
+/// (see `USE_POINTS`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rect {
     pub x: i32,
@@ -189,19 +228,40 @@ const MIN_VISIBLE_WIDTH: i64 = 120;
 const MIN_TITLE_BAR: i64 = 40;
 
 /// Returns `window` unchanged if its title bar is reachable on one of
-/// `monitors`; otherwise moves it (shrinking if needed) to the center of the
-/// first monitor, which callers pass as the primary one. With no monitors
-/// known, leaves it alone.
+/// `monitors` and it fits that monitor. One that's reachable but bigger is
+/// shrunk to the monitor and moved onto it. One that isn't reachable is
+/// moved (shrinking if needed) to the center of the first monitor, which
+/// callers pass as the primary one. With no monitors known, leaves it alone.
 pub fn clamp_to_monitors(window: Rect, monitors: &[Rect]) -> Rect {
-    let reachable = monitors.iter().any(|m| {
-        let overlap_x = window.right().min(m.right()) - i64::from(window.x.max(m.x));
-        let title_top = i64::from(window.y);
-        overlap_x >= MIN_VISIBLE_WIDTH
-            && title_top >= i64::from(m.y)
-            && title_top + MIN_TITLE_BAR <= m.bottom()
-    });
-    if reachable {
-        return window;
+    let overlap_x = |m: &Rect| window.right().min(m.right()) - i64::from(window.x.max(m.x));
+    // Of the monitors its title bar is reachable on, the one it overlaps most,
+    // as macOS chooses a window's screen.
+    // Rust note: `filter` then `max_by_key` walks the monitors lazily and
+    // keeps the largest key, as an `Option` (`None` if nothing passed).
+    let reachable_on = monitors
+        .iter()
+        .filter(|m| {
+            let title_top = i64::from(window.y);
+            overlap_x(m) >= MIN_VISIBLE_WIDTH
+                && title_top >= i64::from(m.y)
+                && title_top + MIN_TITLE_BAR <= m.bottom()
+        })
+        .max_by_key(|m| overlap_x(m));
+    if let Some(m) = reachable_on {
+        if window.width <= m.width && window.height <= m.height {
+            return window;
+        }
+        let width = window.width.min(m.width);
+        let height = window.height.min(m.height);
+        // Keep its place where it still fits; otherwise slide it back onto the monitor.
+        let max_x = i64::from(m.x) + i64::from(m.width - width);
+        let max_y = i64::from(m.y) + i64::from(m.height - height);
+        return Rect {
+            x: i64::from(window.x).clamp(i64::from(m.x), max_x) as i32,
+            y: i64::from(window.y).clamp(i64::from(m.y), max_y) as i32,
+            width,
+            height,
+        };
     }
     let Some(primary) = monitors.first() else {
         return window;
@@ -292,13 +352,14 @@ impl WindowTracker {
 /// The window's outer position and inner size: the pair that `set_position`
 /// and `set_size` take back.
 fn current_rect(window: &Window) -> Option<Rect> {
-    let position = window.outer_position().ok()?;
-    let size = window.inner_size().ok()?;
+    let scale = window.scale_factor().ok()?;
+    let (x, y) = screen_point(window.outer_position().ok()?, scale);
+    let (width, height) = screen_size(window.inner_size().ok()?, scale);
     Some(Rect {
-        x: position.x,
-        y: position.y,
-        width: size.width,
-        height: size.height,
+        x,
+        y,
+        width,
+        height,
     })
 }
 
@@ -316,8 +377,21 @@ pub fn apply_geometry(window: &Window, geometry: WindowGeometry) -> tauri::Resul
         }
     }
     let rect = clamp_to_monitors(rect_of(&geometry), &monitors);
-    window.set_size(PhysicalSize::new(rect.width, rect.height))?;
-    window.set_position(PhysicalPosition::new(rect.x, rect.y))?;
+    // Rust note: `Size` and `Position` are enums holding either kind of unit,
+    // so one call takes points or physical pixels.
+    let (size, position) = if USE_POINTS {
+        (
+            Size::Logical(LogicalSize::new(rect.width.into(), rect.height.into())),
+            Position::Logical(LogicalPosition::new(rect.x.into(), rect.y.into())),
+        )
+    } else {
+        (
+            Size::Physical(PhysicalSize::new(rect.width, rect.height)),
+            Position::Physical(PhysicalPosition::new(rect.x, rect.y)),
+        )
+    };
+    window.set_size(size)?;
+    window.set_position(position)?;
     if geometry.maximized {
         window.maximize()?;
     }
@@ -335,12 +409,17 @@ fn rect_of(geometry: &WindowGeometry) -> Rect {
 
 fn monitor_rect(monitor: &tauri::Monitor) -> Rect {
     // The work area excludes the taskbar, so restored windows don't hide under it.
+    // Each monitor's physical numbers are in its own scale, so on macOS
+    // they're turned into points with that monitor's factor.
     let area = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let (x, y) = screen_point(area.position, scale);
+    let (width, height) = screen_size(area.size, scale);
     Rect {
-        x: area.position.x,
-        y: area.position.y,
-        width: area.size.width,
-        height: area.size.height,
+        x,
+        y,
+        width,
+        height,
     }
 }
 
@@ -425,6 +504,47 @@ mod tests {
             height: 3000,
         };
         assert_eq!(clamp_to_monitors(huge, &[PRIMARY]), PRIMARY);
+    }
+
+    #[test]
+    fn reachable_window_bigger_than_its_monitor_shrinks_onto_it() {
+        // Its title bar is on the left monitor, but it's wider than that monitor.
+        let wide = Rect {
+            x: -2400,
+            y: 100,
+            width: 5900,
+            height: 1900,
+        };
+        assert_eq!(clamp_to_monitors(wide, &[PRIMARY, LEFT]), LEFT);
+        // Only a little too tall: it keeps its x, shrinks, and moves up to fit.
+        let tall = Rect {
+            x: 200,
+            y: 300,
+            width: 1000,
+            height: 1100,
+        };
+        assert_eq!(
+            clamp_to_monitors(tall, &[PRIMARY]),
+            Rect {
+                x: 200,
+                y: 0,
+                width: 1000,
+                height: 1040
+            }
+        );
+    }
+
+    #[test]
+    fn points_on_macos_physical_pixels_elsewhere() {
+        let position = PhysicalPosition::new(3000, 400);
+        let size = PhysicalSize::new(2000, 1600);
+        if USE_POINTS {
+            assert_eq!(screen_point(position, 2.0), (1500, 200));
+            assert_eq!(screen_size(size, 2.0), (1000, 800));
+        } else {
+            assert_eq!(screen_point(position, 2.0), (3000, 400));
+            assert_eq!(screen_size(size, 2.0), (2000, 1600));
+        }
     }
 
     #[test]
