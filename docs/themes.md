@@ -49,11 +49,13 @@ The nearest file wins. An unknown theme id is skipped, so a typo falls through t
 
 ## Your own themes
 
-Your themes live in Scrald's `themes` folder, one folder each, holding a `theme.toml`:
+Your themes live in Scrald's `themes` folder, one folder each, holding a `theme.toml`. On Windows that's:
 
 ```
 %APPDATA%\io.github.torstees.scrald\themes\my-theme\theme.toml
 ```
+
+On a Mac it's in `~/Library/Application Support/io.github.torstees.scrald/themes`, and on Linux in `~/.config/io.github.torstees.scrald/themes` (see [Your data](data.md)).
 
 The folder's name is the theme's id. A theme with the same id as a built-in theme replaces it.
 
