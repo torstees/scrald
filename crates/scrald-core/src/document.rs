@@ -353,6 +353,7 @@ pub fn parse_document_cached(
         _ => Arc::new(VaultIndex::for_document(&path)),
     });
     asset_ctx.vault = vault.clone();
+    let no_vault = VaultIndex::default();
     let mut images = ImageCollector::default();
 
     // Rust note: `mem::take` moves the cache out of `*cache` (leaving an
@@ -492,10 +493,16 @@ pub fn parse_document_cached(
         for &node in group {
             words += count_words(node);
             update_features(node, &mut features);
-            if let Some(vault) = &vault {
+            if obsidian {
+                // Tags and block references need no index (#192), so a note
+                // without links or images gets an empty one rather than a
+                // folder scan; its `[[` and `![` checks above keep wikilinks
+                // and embeds from ever reaching the empty one.
+                // Rust note: `as_deref` turns `&Option<Arc<VaultIndex>>`
+                // into `Option<&VaultIndex>`, borrowing through the `Arc`.
                 let link_ctx = obsidian::LinkContext {
                     doc_path: &path,
-                    vault,
+                    vault: vault.as_deref().unwrap_or(&no_vault),
                     assets: &asset_ctx,
                 };
                 obsidian::transform_links(&arena, node, &link_ctx, &mut images);
@@ -1387,6 +1394,21 @@ not counted
             html.contains("sk-image-missing") && html.contains("c.jpg"),
             "{html}"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn obsidian_tags_and_block_refs_without_links_or_images() {
+        // #192: they were styled only when the note also had a link or image.
+        let dir = std::env::temp_dir().join(format!("scrald-tags-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".obsidian")).unwrap();
+        let doc = parse_document(dir.join("note.md"), b"A #idea here. ^ref\n").unwrap();
+        assert_eq!(doc.flavor, Flavor::Obsidian);
+        let html = &doc.blocks[0].html;
+        assert!(html.contains("class=\"sk-tag\""), "{html}");
+        assert!(html.contains("class=\"sk-block-ref\""), "{html}");
+        assert!(!html.contains("^ref"), "{html}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
