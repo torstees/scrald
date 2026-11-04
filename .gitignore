@@ -34,5 +34,14 @@ crates/scrald-app/gen/schemas/
 __pycache__/
 Claude outputs/
 
-# Personal dev
+# Personal dev: editor settings and test documents (scratch/; see AGENTS.md)
 .zed
+scratch
+
+# macOS: Finder metadata, and AppleDouble files on non-Mac drives
+.DS_Store
+._*
+
+# Vim swap files
+*.swp
+*.swo
