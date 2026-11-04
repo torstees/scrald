@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Installed by Scrald's .deb: Ubuntu's MIME database knows *.md and
+     *.markdown as text/markdown but reads *.mdown as plain text. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/markdown">
+    <glob pattern="*.mdown"/>
+  </mime-type>
+</mime-info>

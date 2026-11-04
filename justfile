@@ -83,7 +83,8 @@ bench:
 build:
     npm run tauri -- build --no-bundle
 
-# Build the app and its installer (Windows: target/release/bundle/nsis/; macOS: .app and .dmg under target/release/bundle/)
+# Build the app and its installer (Windows: target/release/bundle/nsis/; macOS: .app and .dmg;
+# Linux: .deb and AppImage; all under target/release/bundle/)
 bundle:
     npm run tauri build
 
