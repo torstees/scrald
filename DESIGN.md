@@ -194,7 +194,7 @@ Measured 2026-11-04 on Linux (#110; release build, Ubuntu 24.04 with GNOME on Wa
 | 250K words | ~99 ms | ~415 ms | ~856 ms |
 | 500K words | ~205 ms | ~582 ms | ~1350 ms |
 
-The 100K fixture is inside the budget. WebKitGTK lacks `requestIdleCallback` and scroll anchoring, so both fallbacks run (§11.1). The VM is the slow part: its GPU is emulated, and WebKitGTK's DMABUF renderer had to be turned off (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) for the page to paint at all, so real hardware should do better. Theme switch and edit times weren't measured here, since they need input in the desktop.
+The 100K fixture is inside the budget. WebKitGTK lacks `requestIdleCallback` and scroll anchoring, so both fallbacks run (§11.1). The VM is the slow part: its GPU is emulated, and WebKitGTK's DMABUF renderer had to be turned off (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) for the page to paint at all (#208), so real hardware should do better. Theme switch and edit times weren't measured here, since they need input in the desktop.
 
 A fixture generator in `scrald-core` produces 100K, 250K, and 500K-word documents with headings, lists, tables, code, images, and math, for benchmarks and manual testing.
 
