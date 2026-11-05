@@ -33,7 +33,7 @@ just bundle
 - **On Windows,** it's written to `target/release/bundle/nsis/`, named like `Scrald_0.1.0_x64-setup.exe`. It installs Scrald for your user account only, so it doesn't need administrator rights.
 - **On macOS,** you get `Scrald.app` in `target/release/bundle/macos/` and a disk image, named like `Scrald_0.1.0_aarch64.dmg`, in `target/release/bundle/dmg/`. Open the disk image and drag Scrald to Applications. The app isn't signed yet, so the first time, macOS may refuse to open it: Control-click it, choose **Open**, then **Open** again.
 - **On Linux,** you get a Debian package in `target/release/bundle/deb/`, named like `Scrald_0.1.0_amd64.deb`, and an AppImage in `target/release/bundle/appimage/`. Install the package with `sudo apt install ./Scrald_0.1.0_amd64.deb` (with your file's name): that adds Scrald to the applications menu and to **Open With** for Markdown files. The AppImage runs from anywhere without installing, but your file manager won't offer it for Markdown files.
-- **If Scrald's window stays blank on Linux,** which happens in virtual machines and with some graphics drivers, start it with `WEBKIT_DISABLE_DMABUF_RENDERER=1 scrald`.
+- **On Linux,** Scrald turns off WebKitGTK's DMABUF renderer, which leaves the window blank in virtual machines and with some graphics drivers. If your graphics work with it and you'd like it back, start Scrald with `WEBKIT_DISABLE_DMABUF_RENDERER=0`.
 
 ## Opening documents
 

@@ -15,6 +15,8 @@ mod terminate;
 mod themes;
 mod vaults;
 mod watcher;
+#[cfg(target_os = "linux")]
+mod webkit_env;
 mod window;
 
 use std::path::{Path, PathBuf};
@@ -31,7 +33,15 @@ const DEFAULT_LOG_FILTER: &str = "info,scrald=debug,scrald_core=debug";
 // Rust note: `anyhow::Result<()>` is `Result<(), anyhow::Error>`, a "success
 // or any error" type. Returning `Err` from `main` prints it and exits non-zero.
 fn main() -> anyhow::Result<()> {
+    // On Linux, restarts with WebKitGTK's DMABUF renderer off unless the
+    // user chose (#208); first, before the log file is opened.
+    #[cfg(target_os = "linux")]
+    let restart_problem = webkit_env::ensure_dmabuf_off();
     init_logging();
+    #[cfg(target_os = "linux")]
+    if let Some(problem) = restart_problem {
+        tracing::warn!(problem, "WebKitGTK's DMABUF renderer stays on");
+    }
 
     let launch = LaunchInfo::from_arg(std::env::args_os().nth(1).map(PathBuf::from));
     tracing::info!(path = ?launch.path, exists = launch.exists, "starting Scrald");
