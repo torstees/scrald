@@ -180,6 +180,8 @@ fn main() -> anyhow::Result<()> {
             commands::default_theme,
             commands::contents_depth,
             commands::set_contents_depth,
+            commands::implicit_figures,
+            commands::set_implicit_figures,
             commands::duplicate_theme,
             commands::pick_terminal_theme,
             commands::import_terminal_theme,
