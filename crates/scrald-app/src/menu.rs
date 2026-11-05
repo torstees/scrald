@@ -91,7 +91,7 @@ fn show_about(app: &AppHandle) {
 /// unsaved changes closes; one with them asks "Save / Don't save / Cancel"
 /// (or saves, with autosave on). The app ends when the last window closes,
 /// so cancelling in one window keeps Scrald running with that window open.
-fn quit(app: &AppHandle) {
+pub fn quit(app: &AppHandle) {
     tracing::info!("quit requested from the menu");
     for (label, window) in app.webview_windows() {
         if let Err(error) = window.close() {

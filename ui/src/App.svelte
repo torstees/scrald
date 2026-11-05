@@ -9,6 +9,7 @@
     openExternal,
     reportTiming,
     reportWebview,
+    closeCancelled,
     resolveLink,
     saveReadingPosition,
     setRemoteImages,
@@ -850,6 +851,8 @@
       if (await confirmLeave("closing")) {
         dirty = false;
         await getCurrentWindow().destroy();
+      } else {
+        closeCancelled();
       }
     });
     void propertiesOpenSetting()

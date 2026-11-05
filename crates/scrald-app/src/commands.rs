@@ -1582,6 +1582,17 @@ pub fn report_timing(name: String, ms: f64) {
     tracing::info!(name, ms = (ms * 10.0).round() / 10.0, "frontend timing");
 }
 
+/// The page's unsaved-changes question on closing was cancelled, or its save
+/// failed, so the window stays open. If macOS asked to quit (Dock, logout,
+/// shutdown), the quit is called off rather than left waiting (#197).
+#[tauri::command]
+pub fn close_cancelled(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    crate::terminate::cancel(&app);
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
 /// Logs the web features the reader uses that this window's webview lacks
 /// (DESIGN.md §11.1), so checking WKWebView or WebKitGTK only needs the log.
 #[tauri::command]

@@ -3733,6 +3733,8 @@ dependencies = [
  "anyhow",
  "fontdb",
  "notify-debouncer-mini",
+ "objc2",
+ "objc2-app-kit",
  "rusqlite",
  "scrald-core",
  "serde",

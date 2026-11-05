@@ -112,6 +112,7 @@ Each completed chunk of work (usually a few related sub-issues) goes up as a pul
 
 ### Rust
 
+- No `unsafe` code. The workspace denies it; the one exception is `crates/scrald-app/src/terminate.rs` (macOS quitting, #197), which allows it for two Objective-C runtime calls. Don't add another `#![allow(unsafe_code)]` without asking the maintainer first.
 - Error handling: `thiserror` for error types in `scrald-core`, `anyhow` in `scrald-app`. No `unwrap()` or `expect()` outside tests, except where an invariant truly cannot fail; then use `expect("reason")` with a reason.
 - Keep functions small and pure in core where possible: input in, output out, no global state.
 - Byte offsets into the original file are `usize` wrapped in a `SourceRange { start, end }` type. Never mix up line/column positions and byte offsets; convert in exactly one place.

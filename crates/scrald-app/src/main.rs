@@ -10,6 +10,8 @@ mod newdoc;
 mod protocol;
 mod session;
 mod state;
+#[cfg(target_os = "macos")]
+mod terminate;
 mod themes;
 mod vaults;
 mod watcher;
@@ -190,9 +192,13 @@ fn main() -> anyhow::Result<()> {
             commands::print_window,
             commands::report_timing,
             commands::report_webview,
+            commands::close_cancelled,
         ])
         .setup(move |app| {
             app.manage(open_state_store(app.handle()));
+            // Dock Quit, logout, and shutdown ask about unsaved changes (#197).
+            #[cfg(target_os = "macos")]
+            terminate::install(app.handle());
             // Windows start hidden (tauri.conf.json) so they can be moved to
             // their remembered place before anyone sees them.
             if let Some(webview_window) = app.get_webview_window("main") {
@@ -237,9 +243,15 @@ fn main() -> anyhow::Result<()> {
 /// Finder arrive here instead of on the command line (DESIGN.md §11.1).
 fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
     #[cfg(target_os = "macos")]
-    if let tauri::RunEvent::Opened { urls } = event {
-        tracing::info!(?urls, "files opened by the system");
-        window::open_files(app, window::file_paths(&urls));
+    match event {
+        tauri::RunEvent::Opened { urls } => {
+            tracing::info!(?urls, "files opened by the system");
+            window::open_files(app, window::file_paths(&urls));
+        }
+        // The last window has closed. If the system asked to quit (Dock,
+        // logout, shutdown), tell it to go ahead.
+        tauri::RunEvent::ExitRequested { .. } => terminate::finish(),
+        _ => {}
     }
     // Nothing to handle elsewhere; this keeps the parameters "used".
     #[cfg(not(target_os = "macos"))]
