@@ -8,6 +8,7 @@
   import type {
     FrontChoice,
     FrontSettings,
+    ImplicitFigures,
     NewDocumentOptions,
     PropertiesPlacement,
     ThemeSummary,
@@ -26,6 +27,8 @@
     autosave: boolean;
     /** Whether documents show their cover and a missing title (#189). */
     front: FrontSettings;
+    /** Which documents get captions from alt text (#140). */
+    implicitFigures: ImplicitFigures;
     ondefaulttheme: (id: string | null) => void;
     ontypography: (defaults: TypographyDefaults) => void;
     oncontentsdepth: (depth: number) => void;
@@ -33,6 +36,7 @@
     onpropertiesplacement: (placement: PropertiesPlacement) => void;
     onautosave: (enabled: boolean) => void;
     onfront: (settings: FrontSettings) => void;
+    onimplicitfigures: (choice: ImplicitFigures) => void;
     /** Remembered folders and the "Remember this folder" default; null while loading. */
     newDocument: NewDocumentOptions | null;
     onremembernewfolders: (remember: boolean) => void;
@@ -53,6 +57,7 @@
     propertiesPlacement,
     autosave,
     front,
+    implicitFigures,
     ondefaulttheme,
     ontypography,
     oncontentsdepth,
@@ -60,6 +65,7 @@
     onpropertiesplacement,
     onautosave,
     onfront,
+    onimplicitfigures,
     newDocument,
     onremembernewfolders,
     onforgetfolder,
@@ -213,6 +219,21 @@
         <p class="hint">
           A cover named in the front matter shows above the text. Without one, a front matter title the text doesn't
           start with shows as a heading. Neither changes the file.
+        </p>
+        <label class="row">
+          <span class="label">Captions</span>
+          <select
+            value={implicitFigures}
+            onchange={(e) => onimplicitfigures(e.currentTarget.value as ImplicitFigures)}
+          >
+            <option value="pandoc">From alt text in Pandoc documents</option>
+            <option value="always">From alt text in every document</option>
+            <option value="never">Only for images marked .figure</option>
+          </select>
+        </label>
+        <p class="hint">
+          An image on its own line can show its alt text as a caption below it, as Pandoc does. Elsewhere alt text is
+          usually a description for screen readers, so Pandoc documents are the default.
         </p>
       </section>
 

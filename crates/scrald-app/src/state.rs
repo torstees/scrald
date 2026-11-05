@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Context;
 use rusqlite::{Connection, OptionalExtension, params};
 use scrald_core::theme::TextSizing;
-use scrald_core::{DocumentPreview, Flavor};
+use scrald_core::{DocumentPreview, Flavor, ImplicitFigures};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -86,6 +86,8 @@ const AUTOSAVE: &str = "editing.autosave";
 /// Settings key: the deepest heading level the contents sidebar lists, 1–6
 /// (DESIGN.md §10).
 const CONTENTS_DEPTH: &str = "contents.depth";
+/// Which documents get captions from alt text (#140).
+const IMPLICIT_FIGURES: &str = "reader.implicit_figures";
 
 /// Settings key: whether documents show their cover and a missing title
 /// (#189).
@@ -181,6 +183,10 @@ pub struct DocumentMemory {
     pub zoom: Option<f64>,
     /// Flavor chosen for this document, if any (detected flavors aren't stored).
     pub flavor: Option<Flavor>,
+    /// The global "captions from alt text" setting, read with the rest so
+    /// every parse of the document uses it (#140). The page doesn't need it.
+    #[serde(skip)]
+    pub implicit_figures: ImplicitFigures,
 }
 
 /// A window's position and size in physical pixels, plus whether it was
@@ -304,13 +310,38 @@ impl StateStore {
                 last_opened = excluded.last_opened",
             params![key, size, hash, now_millis()],
         )?;
-        read_memory(&conn, &key)
+        let memory = read_memory(&conn, &key)?;
+        // Rust note: `drop` ends the borrow of the connection's lock here,
+        // since reading the setting below takes the same lock.
+        drop(conn);
+        self.with_settings(memory)
     }
 
     /// What's remembered about `path`, without recording an open (for
     /// re-parsing a document that is already open, say after an edit).
     pub fn memory(&self, path: &Path) -> anyhow::Result<DocumentMemory> {
-        read_memory(&self.conn(), &document_key(path))
+        let memory = read_memory(&self.conn(), &document_key(path))?;
+        self.with_settings(memory)
+    }
+
+    /// Adds the global settings that every parse of a document needs.
+    fn with_settings(&self, memory: DocumentMemory) -> anyhow::Result<DocumentMemory> {
+        Ok(DocumentMemory {
+            implicit_figures: self.implicit_figures()?,
+            ..memory
+        })
+    }
+
+    /// Which documents turn an image alone in a paragraph into a captioned
+    /// figure; Pandoc documents only unless the user changed it.
+    pub fn implicit_figures(&self) -> anyhow::Result<ImplicitFigures> {
+        Ok(self
+            .get_setting::<ImplicitFigures>(IMPLICIT_FIGURES)?
+            .unwrap_or_default())
+    }
+
+    pub fn set_implicit_figures(&self, choice: ImplicitFigures) -> anyhow::Result<()> {
+        self.set_setting(IMPLICIT_FIGURES, &choice)
     }
 
     pub fn save_reading_position(&self, path: &Path, anchor: ScrollAnchor) -> anyhow::Result<()> {
@@ -773,6 +804,8 @@ fn read_memory(conn: &Connection, key: &str) -> anyhow::Result<DocumentMemory> {
                         .get::<_, Option<String>>(6)?
                         .as_deref()
                         .and_then(Flavor::from_name),
+                    // A global setting, filled in by `with_settings`.
+                    implicit_figures: ImplicitFigures::default(),
                 })
             },
         )
@@ -1171,6 +1204,27 @@ mod tests {
         assert_eq!(store.contents_depth().unwrap(), 2);
         store.set_contents_depth(0).unwrap();
         assert_eq!(store.contents_depth().unwrap(), 1);
+    }
+
+    #[test]
+    fn implicit_figures_setting_reaches_every_documents_memory() {
+        let store = StateStore::in_memory().unwrap();
+        let path = Path::new("/no/such/figures.md");
+        assert_eq!(store.implicit_figures().unwrap(), ImplicitFigures::Pandoc);
+        assert_eq!(
+            store.record_open(path).unwrap().implicit_figures,
+            ImplicitFigures::Pandoc
+        );
+        store.set_implicit_figures(ImplicitFigures::Always).unwrap();
+        // Both ways a parse reads a document's memory see the new value.
+        assert_eq!(
+            store.record_open(path).unwrap().implicit_figures,
+            ImplicitFigures::Always
+        );
+        assert_eq!(
+            store.memory(path).unwrap().implicit_figures,
+            ImplicitFigures::Always
+        );
     }
 
     #[test]

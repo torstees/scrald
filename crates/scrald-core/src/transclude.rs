@@ -46,6 +46,8 @@ pub struct EmbedContext<'c> {
     pub doc_path: &'c Path,
     pub vault: &'c Arc<VaultIndex>,
     pub allow_remote_images: bool,
+    /// The document's setting, so an embedded note's figures match it.
+    pub implicit_figures: crate::document::ImplicitFigures,
     /// The document and the notes it's embedded in, innermost last.
     pub chain: &'c [PathBuf],
 }
@@ -104,6 +106,7 @@ pub fn transclude(
         vault: Some(Arc::clone(ctx.vault)),
         embedded_in: chain,
         embed_budget: Some(budget - 1),
+        implicit_figures: ctx.implicit_figures,
     };
     let note = match parse_document_with(path.clone(), &bytes, &options) {
         Ok(note) => note,
