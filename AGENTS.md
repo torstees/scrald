@@ -70,6 +70,8 @@ Run these from the repository root. The `justfile` wraps the common ones (run `j
 | Release build + log to file | `just run-release file.md` | builds, then runs the release exe with `SCRALD_LOG_FILE=target/scrald.log` |
 | Release build + installer | `just bundle` | `npm run tauri build`. Windows: writes `target/release/bundle/nsis/Scrald_<version>_x64-setup.exe` (NSIS is downloaded once into `target/.tauri/`). macOS: writes `target/release/bundle/macos/Scrald.app` and `target/release/bundle/dmg/Scrald_<version>_aarch64.dmg`, unsigned; the targets come from `crates/scrald-app/tauri.macos.conf.json`, which Tauri merges over `tauri.conf.json` on macOS only. Linux: writes `target/release/bundle/deb/Scrald_<version>_<arch>.deb` and `target/release/bundle/appimage/Scrald_<version>_<arch>.AppImage`, from `tauri.linux.conf.json` (desktop template and MIME file in `crates/scrald-app/linux/`) |
 
+CI also builds every platform's installers (`.github/workflows/bundles.yml`): an x86_64 `.deb` and AppImage, an Apple-silicon `.dmg`, and the Windows installer, kept for 14 days as artifacts of the run (Actions > Bundles). It runs after each merge to `main`, on PRs that change the packaging files, and by hand (Run workflow). Download one with `gh run download -R torstees/scrald <run id>`.
+
 When adding a common task, add a recipe to the `justfile` and a row here. Keep recipes to plain `cargo`/`npm` commands (one per line, no `&&`), so they run under both PowerShell (`windows-shell`) and sh.
 
 Before `cargo clippy` or `cargo build` on a fresh checkout, build the frontend once (`npm run build --workspace ui`, or any `tauri dev`/`build` run): Tauri's `generate_context!` needs `ui/dist` to exist.
