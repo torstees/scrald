@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use comrak::nodes::{Attributes, ListType, Node, NodeHtmlBlock, NodeValue};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::DocumentError;
 use crate::assets::{self, AssetContext, ImageAsset, ImageCollector};
@@ -82,6 +82,34 @@ pub struct Footnote {
     pub block_id: Option<u32>,
 }
 
+/// Which documents turn an image alone in a paragraph, with alt text, into a
+/// captioned figure (DESIGN.md §6.3, #140). An image marked `.figure`
+/// (Pandoc attributes) is a figure whatever this says.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImplicitFigures {
+    /// Pandoc documents only, as Pandoc does: in GitHub's and Obsidian's
+    /// Markdown, alt text is usually a description for screen readers, not
+    /// a caption to show.
+    #[default]
+    Pandoc,
+    /// Every flavor.
+    Always,
+    /// None; only images marked `.figure`.
+    Never,
+}
+
+impl ImplicitFigures {
+    /// Whether a document of this flavor gets implicit figures.
+    pub fn applies_to(self, flavor: Flavor) -> bool {
+        match self {
+            ImplicitFigures::Pandoc => flavor == Flavor::Pandoc,
+            ImplicitFigures::Always => true,
+            ImplicitFigures::Never => false,
+        }
+    }
+}
+
 /// Choices that change how a document is parsed and rendered.
 #[derive(Debug, Clone, Default)]
 pub struct ParseOptions {
@@ -100,6 +128,8 @@ pub struct ParseOptions {
     /// How many notes this parse may still show in place; `None` means
     /// `transclude::MAX_PER_DOCUMENT`.
     pub embed_budget: Option<usize>,
+    /// Which documents get captions from alt text (the user's setting).
+    pub implicit_figures: ImplicitFigures,
 }
 
 /// One top-level Markdown block, rendered on its own.
@@ -313,6 +343,7 @@ pub fn parse_document_cached(
     let options = flavor::comrak_options(flavor);
     let obsidian = flavor == Flavor::Obsidian;
     let pandoc = flavor == Flavor::Pandoc;
+    let implicit_figures = parse_options.implicit_figures.applies_to(flavor);
     // Obsidian comments are blanked to spaces of the same byte length, so the
     // parser never sees them but every offset stays the same.
     // Pandoc `:::` div fences are blanked the same way, and the divs kept
@@ -479,6 +510,7 @@ pub fn parse_document_cached(
                 doc_path: &path,
                 vault,
                 allow_remote_images: parse_options.allow_remote_images,
+                implicit_figures: parse_options.implicit_figures,
                 chain: &chain,
             };
             embedded = crate::transclude::transclude(
@@ -507,9 +539,13 @@ pub fn parse_document_cached(
                 };
                 obsidian::transform_links(&arena, node, &link_ctx, &mut images);
             }
-            let figures = if pandoc {
+            if pandoc {
                 pandoc::transform_inlines(&arena, node);
-                pandoc::plan_figures(node)
+            }
+            // `.figure` needs Pandoc's attributes, so other flavors only
+            // look for figures when the setting gives them implicit ones.
+            let figures = if pandoc || implicit_figures {
+                pandoc::plan_figures(node, implicit_figures)
             } else {
                 Vec::new()
             };
@@ -1495,6 +1531,41 @@ Text
         assert_eq!(summary.chars().count(), PREVIEW_SUMMARY_CHARS);
         assert!(summary.ends_with("word\u{2026}"), "{summary}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn captions_from_alt_text_follow_the_setting() {
+        // #140: an image alone in a paragraph with alt text, and one marked
+        // `.figure` (Pandoc attributes), under each setting and flavor.
+        let parse = |flavor: &str, implicit_figures: ImplicitFigures| {
+            let text = format!(
+                "---\nscrald-flavor: {flavor}\n---\n\n![A fjord](fjord.png)\n\n![](map.png){{.figure}}\n"
+            );
+            let options = ParseOptions {
+                implicit_figures,
+                ..ParseOptions::default()
+            };
+            let doc =
+                parse_document_with(PathBuf::from("doc.md"), text.as_bytes(), &options).unwrap();
+            let figures: Vec<bool> = doc
+                .blocks
+                .iter()
+                .map(|b| b.html.contains("<figure"))
+                .collect();
+            (figures, doc.blocks[0].html.clone())
+        };
+        // The default is Pandoc's behavior: Pandoc only.
+        let (pandoc, html) = parse("pandoc", ImplicitFigures::default());
+        assert_eq!(pandoc, [true, true]);
+        assert!(html.contains("<figcaption>A fjord</figcaption>"), "{html}");
+        assert_eq!(parse("gfm", ImplicitFigures::default()).0, [false, false]);
+        // Always: GFM and Obsidian too (they have no `.figure` attribute).
+        let (gfm, html) = parse("gfm", ImplicitFigures::Always);
+        assert_eq!(gfm, [true, false]);
+        assert!(html.contains("<figcaption>A fjord</figcaption>"), "{html}");
+        assert_eq!(parse("obsidian", ImplicitFigures::Always).0, [true, false]);
+        // Never: only `.figure` makes a figure.
+        assert_eq!(parse("pandoc", ImplicitFigures::Never).0, [false, true]);
     }
 
     #[test]

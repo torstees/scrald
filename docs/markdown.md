@@ -120,7 +120,7 @@ Attributes on an image place it:
 | `.full-bleed` | As wide as the window, past the text's edges |
 | `.inline` | In the line of text, like a small icon |
 
-`width` and `height` take pixels or a percentage. An image alone in a paragraph, with alt text, becomes a figure with the alt text as its caption.
+`width` and `height` take pixels or a percentage. An image alone in a paragraph, with alt text, becomes a figure with the alt text as its caption. Settings › **Captions** can do the same in every document, or turn it off so that only images marked `.figure` become figures.
 
 A table takes `.center` or `.full-bleed` from its caption: `Table: Ships {.center}`.
 

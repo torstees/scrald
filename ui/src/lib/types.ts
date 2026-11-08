@@ -449,6 +449,9 @@ export type PropertiesPlacement = "top" | "left" | "right";
 /** Whether to show the cover or a missing title (#189); mirrors `FrontChoice` in state.rs. */
 export type FrontChoice = "theme" | "show" | "hide";
 
+/** Which documents get captions from alt text (#140); mirrors `ImplicitFigures` in scrald-core. */
+export type ImplicitFigures = "pandoc" | "always" | "never";
+
 /** Mirrors `FrontSettings` (crates/scrald-app/src/state.rs). */
 export interface FrontSettings {
   cover: FrontChoice;

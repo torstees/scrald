@@ -63,6 +63,8 @@
     contentsDepth as contentsDepthSetting,
     frontSettings,
     setFrontSettings,
+    implicitFigures as implicitFiguresSetting,
+    setImplicitFigures,
     typographyDefaults,
     setContentsDepth,
     onSettingsChanged,
@@ -82,6 +84,7 @@
   import type {
     DocumentModel,
     FrontSettings,
+    ImplicitFigures,
     RecentDocument,
     Flavor,
     OpenedDocument,
@@ -180,6 +183,8 @@
   // theme's choice, unless the user's settings override it.
   let themeFront = $state({ frontCover: true, frontTitle: true });
   let frontChoices = $state<FrontSettings>({ cover: "theme", title: "theme" });
+  // Which documents get captions from alt text (#140), for the settings dialog.
+  let implicitFigures = $state<ImplicitFigures>("pandoc");
   const front = $derived(doc ? frontContent(doc, themeFront, frontChoices) : null);
   let switcherOpen = $state(false);
   let themeList = $state<ThemeSummary[]>([]);
@@ -817,6 +822,11 @@
         propertiesPlacement = await propertiesPlacementSetting();
       } else if (name === "reader.front") {
         frontChoices = await frontSettings();
+      } else if (name === "reader.implicit_figures") {
+        implicitFigures = await implicitFiguresSetting();
+        // Figures are made when parsing, so the document is parsed again.
+        // Raw mode re-parses when it closes anyway.
+        if (doc && !rawMode) await reparse();
       } else if (name === "theme.default") {
         defaultThemeId = await defaultThemeSetting();
         await followDefaultTheme();
@@ -872,6 +882,9 @@
       .catch(() => {});
     void frontSettings()
       .then((choices) => (frontChoices = choices))
+      .catch(() => {});
+    void implicitFiguresSetting()
+      .then((choice) => (implicitFigures = choice))
       .catch(() => {});
     const unlistenSettings = onSettingsChanged((name) => void applySetting(name));
     // Drag and drop (DESIGN.md §11): Tauri hands over the dropped files'
@@ -1941,6 +1954,7 @@
       {propertiesPlacement}
       {autosave}
       front={frontChoices}
+      {implicitFigures}
       ondefaulttheme={(id) => changeSetting("the default theme", () => setDefaultTheme(id))}
       ontypography={(defaults) => changeSetting("the text size", () => typography.applyDefaults(defaults, true))}
       oncontentsdepth={(depth) => changeSetting("the contents depth", () => setContentsDepth(depth))}
@@ -1948,6 +1962,7 @@
       onpropertiesplacement={(placement) => void placeProperties(placement)}
       onautosave={changeAutosave}
       onfront={(choices) => changeSetting("the cover and title setting", () => setFrontSettings(choices))}
+      onimplicitfigures={(choice) => changeSetting("the captions setting", () => setImplicitFigures(choice))}
       newDocument={newDocumentSettings}
       onremembernewfolders={(remember) => void changeNewDocumentFolders(() => setRememberNewFolders(remember))}
       onforgetfolder={(path) => void changeNewDocumentFolders(() => forgetNewDocumentFolder(path))}

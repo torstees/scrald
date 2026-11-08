@@ -311,11 +311,11 @@ pub fn percentage(value: &str) -> Option<u32> {
 }
 
 /// Finds images that become figures: alone in a paragraph with alt text
-/// (Pandoc's implicit figures), or marked `.figure`. Layout classes and the
+/// (Pandoc's implicit figures, when `implicit` is true), or marked `.figure`. Layout classes and the
 /// id move from the image to the figure, so `.right` floats the whole
 /// figure; `width`/`height` stay on the image. Run before image resolution
 /// (which replaces the alt text), then call `finish_figures` after it.
-pub fn plan_figures(node: Node<'_>) -> Vec<FigurePlan<'_>> {
+pub fn plan_figures(node: Node<'_>, implicit: bool) -> Vec<FigurePlan<'_>> {
     let mut plans = Vec::new();
     let paragraphs: Vec<Node<'_>> = node
         .descendants()
@@ -336,7 +336,7 @@ pub fn plan_figures(node: Node<'_>) -> Vec<FigurePlan<'_>> {
         let caption = crate::document::plain_text(image);
         let mut attrs = attributes_of(image).unwrap_or_default();
         let marked = attrs.classes.iter().any(|c| c == "figure");
-        if caption.trim().is_empty() && !marked {
+        if !marked && (!implicit || caption.trim().is_empty()) {
             continue;
         }
         attrs.classes.retain(|c| c != "figure");
