@@ -187,7 +187,7 @@ body {
   margin-bottom: 0;
 }
 
-/* A grid table's footer rows, set off from the body like the header. */
+/* A grid table's footer rows, set off from the body by a heavier line. */
 .sk-block tfoot td {
   border-top-width: 2px;
 }
