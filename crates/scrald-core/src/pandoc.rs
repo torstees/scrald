@@ -388,6 +388,79 @@ pub fn finish_figures(plans: Vec<FigurePlan<'_>>, options: &comrak::Options) {
     }
 }
 
+// --- Line blocks -----------------------------------------------------------------
+
+/// Finds Pandoc line blocks (#120): paragraphs whose lines each start with
+/// `| `, for verse and addresses, where line breaks and leading spaces
+/// matter. Each `| ` is removed, the line breaks are kept, and the spaces
+/// after the bar become no-break spaces so the indent shows. A line that
+/// doesn't start with `|` continues the line before it, as in Pandoc.
+/// Returns the paragraphs; `finish_line_blocks` turns them into
+/// `<div class="line-block">` once images are resolved.
+pub fn plan_line_blocks(node: Node<'_>) -> Vec<Node<'_>> {
+    let paragraphs: Vec<Node<'_>> = node
+        .descendants()
+        .filter(|n| matches!(n.data().value, NodeValue::Paragraph))
+        .filter(|p| {
+            p.first_child()
+                .and_then(text_of)
+                .is_some_and(|t| starts_line(&t))
+        })
+        .collect();
+    for &paragraph in &paragraphs {
+        let children: Vec<Node<'_>> = paragraph.children().collect();
+        // Rust note: looking one node ahead by index; `get(i + 1)` is
+        // `None` past the end, where `children[i + 1]` would panic.
+        for (i, &child) in children.iter().enumerate() {
+            let line_start = i == 0
+                || matches!(
+                    children[i - 1].data().value,
+                    NodeValue::SoftBreak | NodeValue::LineBreak
+                );
+            if line_start
+                && let Some(text) = text_of(child)
+                && starts_line(&text)
+            {
+                let rest = text[1..].strip_prefix(' ').unwrap_or(&text[1..]);
+                let indent = rest.len() - rest.trim_start_matches(' ').len();
+                let shown = format!("{}{}", "\u{a0}".repeat(indent), &rest[indent..]);
+                set_text(child, &shown);
+            }
+            // A break before a new `|` line becomes a line break; before a
+            // continuation line it stays a space.
+            let next_starts_line = children
+                .get(i + 1)
+                .and_then(|&n| text_of(n))
+                .is_some_and(|t| starts_line(&t));
+            if matches!(child.data().value, NodeValue::SoftBreak) && next_starts_line {
+                child.data_mut().value = NodeValue::LineBreak;
+            }
+        }
+    }
+    paragraphs
+}
+
+/// `| text` or a lone `|`, the start of a line in a line block.
+fn starts_line(text: &str) -> bool {
+    text == "|" || text.starts_with("| ")
+}
+
+/// Turns the paragraphs `plan_line_blocks` found into line blocks. A
+/// paragraph another pass already rewrote (a lone image that became a
+/// figure) is left as it is.
+pub fn finish_line_blocks(paragraphs: Vec<Node<'_>>, options: &comrak::Options) {
+    for paragraph in paragraphs {
+        if matches!(paragraph.data().value, NodeValue::Paragraph) {
+            render::wrap_children_as_html(
+                paragraph,
+                "<div class=\"line-block\">",
+                "</div>\n",
+                options,
+            );
+        }
+    }
+}
+
 // --- Fenced divs ----------------------------------------------------------------
 
 /// A `:::` fenced div found by `extract_divs`. Offsets are bytes into the

@@ -180,6 +180,23 @@ body {
   padding: 0.3em 0.6em;
 }
 
+/* Pandoc grid table cells hold blocks (paragraphs, lists); space them like
+   the text, but not against the cell's own edges. */
+.sk-block th > :last-child,
+.sk-block td > :last-child {
+  margin-bottom: 0;
+}
+
+/* A grid table's footer rows, set off from the body like the header. */
+.sk-block tfoot td {
+  border-top-width: 2px;
+}
+
+/* Pandoc line blocks: core keeps the line breaks and indents. */
+.sk-block .line-block {
+  margin: 0 0 var(--sk-paragraph-spacing);
+}
+
 .sk-block img {
   max-width: 100%;
   height: auto;

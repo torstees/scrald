@@ -136,6 +136,8 @@ pub(crate) fn allowlist() -> ammonia::Builder<'static> {
         // Task list checkboxes. They render disabled; reading never edits.
         .add_tags(["input"])
         .add_tag_attributes("input", ["type", "checked", "disabled"])
+        // Pandoc grid tables' footer rows (grid.rs).
+        .add_tags(["tfoot"])
         // Footnote references and back-links point at these ids.
         .add_tag_attributes("li", ["id"])
         // Math (`$x$`, `$$x$$`, ```math) is marked for KaTeX to find later.

@@ -12,6 +12,7 @@ pub mod edit;
 pub mod flavor;
 pub mod frontmatter;
 pub mod generate;
+pub mod grid;
 pub mod hash;
 pub mod highlight;
 pub mod links;

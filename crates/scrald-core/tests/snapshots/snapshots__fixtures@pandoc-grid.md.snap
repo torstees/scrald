@@ -1,0 +1,149 @@
+---
+source: crates/scrald-core/tests/snapshots.rs
+expression: describe(&doc)
+input_file: crates/scrald-core/tests/fixtures/pandoc-grid.md
+---
+bom: false  line_ending: Lf  words: 106  features: FeatureFlags { has_math: false, has_mermaid: false, has_code: false, has_abc: false }
+flavor: Pandoc (Detected)
+toc: Grid tables and line blocks #grid-tables-and-line-blocks (block 0)
+section 0: heading=Some(0) level=1 blocks=0..12
+
+--- block 0 Heading { level: 1 } @0..29 section=0
+<h1 id="user-content-grid-tables-and-line-blocks">Grid tables and line blocks</h1>
+
+--- block 1 Paragraph @31..69 section=0
+<p>A grid table, with a caption after it:</p>
+
+--- block 2 Table @71..668 section=0
+<div class="sk-table center"><table id="user-content-fruit"><caption>Fruit and their merits</caption>
+<thead>
+<tr>
+<th>
+<p>Fruit</p>
+</th>
+<th align="right">
+<p>Price</p>
+</th>
+<th align="center">
+<p>Advantages</p>
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<p>Bananas</p>
+</td>
+<td align="right">
+<p>$1.34</p>
+</td>
+<td align="center">
+<ul>
+<li>built-in wrapper</li>
+<li>bright color</li>
+</ul>
+</td>
+</tr>
+<tr>
+<td>
+<p>Oranges</p>
+</td>
+<td align="right">
+<p>$2.10</p>
+</td>
+<td align="center">
+<p>Cures scurvy.</p>
+<p><em>Tasty</em>, too.</p>
+</td>
+</tr>
+</tbody>
+</table></div>
+
+--- block 3 Paragraph @670..710 section=0
+<p>Spans and an empty cell, with no header:</p>
+
+--- block 4 Table @712..886 section=0
+<div class="sk-table"><table>
+<tbody>
+<tr>
+<td colspan="2">
+<p>Two columns</p>
+</td>
+<td rowspan="2">
+<p>Tall</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>a</p>
+</td>
+<td></td>
+</tr>
+<tr>
+<td colspan="3">
+<p>Across all three</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+--- block 5 Paragraph @888..910 section=0
+<p>A header and a footer:</p>
+
+--- block 6 Table @912..1037 section=0
+<div class="sk-table"><table>
+<thead>
+<tr>
+<th>
+<p>Ship</p>
+</th>
+<th>
+<p>Crew</p>
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<p>Raven</p>
+</td>
+<td>
+<p>40</p>
+</td>
+</tr>
+</tbody>
+<tfoot>
+<tr>
+<td>
+<p>Total</p>
+</td>
+<td>
+<p>40</p>
+</td>
+</tr>
+</tfoot>
+</table>
+</div>
+
+--- block 7 Paragraph @1039..1079 section=0
+<p>Not a table, since its lines don’t meet:</p>
+
+--- block 8 Paragraph @1081..1111 section=0
+<p>+—+—+
+| a  | b |
++—+—+</p>
+
+--- block 9 Paragraph @1113..1126 section=0
+<p>A line block:</p>
+
+--- block 10 Paragraph @1128..1306 section=0
+<div class="line-block">The limerick packs laughs anatomical<br>
+Into space that is quite economical.<br>
+&nbsp;&nbsp;&nbsp;But the good ones I’ve seen<br>
+&nbsp;&nbsp;&nbsp;So seldom are clean<br>
+And the clean ones so seldom are comical</div>
+
+--- block 11 Paragraph @1308..1343 section=0
+<div class="line-block">200 Main St.<br>
+Berkeley, CA 94718</div>
