@@ -246,6 +246,7 @@ async fn parse_in_background(
 ) -> anyhow::Result<DocumentModel> {
     let allow_remote_images = memory.remote_images;
     let flavor = memory.flavor;
+    let implicit_figures = memory.implicit_figures;
     let vaults = vaults.clone();
     let mut cache = sessions.take_render_cache(window);
     // Rust note: `move` makes the closure take ownership of `path`, `bytes`,
@@ -257,6 +258,7 @@ async fn parse_in_background(
             allow_remote_images,
             flavor,
             vault: vaults.for_document(&path),
+            implicit_figures,
             ..ParseOptions::default()
         };
         let doc = scrald_core::parse_document_cached(path, &bytes, &options, &mut cache);
@@ -1043,6 +1045,26 @@ pub fn set_contents_depth(
 ) -> Result<(), CommandError> {
     store.set_contents_depth(depth)?;
     settings_changed(&app, "contents.depth")
+}
+
+/// Which documents get captions from alt text (#140): `pandoc` (the
+/// default), `always`, or `never`.
+#[tauri::command]
+pub fn implicit_figures(
+    store: tauri::State<'_, StateStore>,
+) -> Result<scrald_core::ImplicitFigures, CommandError> {
+    Ok(store.implicit_figures()?)
+}
+
+/// Changes it for every window; each re-parses its document in place.
+#[tauri::command]
+pub fn set_implicit_figures(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, StateStore>,
+    choice: scrald_core::ImplicitFigures,
+) -> Result<(), CommandError> {
+    store.set_implicit_figures(choice)?;
+    settings_changed(&app, "reader.implicit_figures")
 }
 
 /// Whether documents show their cover and a missing title: the theme's
