@@ -91,7 +91,7 @@ When a document changes on disk while it's open, and you haven't changed it in S
 
 ## Settings
 
-`Ctrl+,` or ⚙ opens the settings:
+`Ctrl+,` (`Cmd+,` on a Mac) or ⚙ in the status bar opens the settings, and so does **Scrald** › **Settings…** at the top left of a Mac's screen:
 
 - **Appearance:** the default theme, or following the system's light or dark mode.
 - **Reading:** text size and zoom for documents without their own, **Fill window**, the contents depth, where the properties go, whether the cover and a missing title are shown (as the theme says, always, or never), and **Captions**: which documents show an image's alt text as a caption below it (see [Markdown flavors](markdown.md)).

@@ -401,6 +401,11 @@ export function onShowAbout(handler: () => void): Promise<UnlistenFn> {
   return listen("show-about", () => handler());
 }
 
+/** Calls `handler` when the macOS app menu's Settings… asks this window to open the settings. */
+export function onShowSettings(handler: () => void): Promise<UnlistenFn> {
+  return listen("show-settings", () => handler());
+}
+
 /** Calls `handler` with the path whenever this window's document changes on disk. */
 export function onDocumentChanged(handler: (path: string) => void): Promise<UnlistenFn> {
   return listen<string>("document-changed", (event) => handler(event.payload));

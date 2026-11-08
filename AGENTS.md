@@ -39,7 +39,7 @@ Logic belongs in `scrald-core` whenever it can be tested without a window. `scra
 
 ## Environment
 
-- Development moved to **macOS on Apple silicon** in November 2026, after starting on **native Windows 11** (a normal NTFS directory, not WSL); both stay supported. The shell is zsh on the Mac, PowerShell or Git Bash on Windows. Write commands that work in all of them where practical, and never assume Linux-only tools.
+- Development moved to **macOS on Apple silicon** in November 2026, after starting on **native Windows 11** (a normal NTFS directory, not WSL); both stay supported. The shell is bash or zsh on the Mac, PowerShell or Git Bash on Windows. Write commands that work in all of them where practical, and never assume Linux-only tools.
 - Toolchain: Rust stable via rustup and Node.js LTS everywhere. macOS: the Xcode Command Line Tools (`xcode-select --install`); WKWebView is part of macOS. Windows: the MSVC target and Visual Studio Build Tools (C++ workload); WebView2 is part of Windows 11.
 - Install frontend packages with `just install` (`npm ci`), which installs exactly what `package-lock.json` lists and leaves it alone. Different npm versions write the lock file slightly differently, so `npm install` on another machine can change it without any package changing. Use `npm install <package>` only when adding or updating a dependency, and commit the lock file with it.
 - The maintainer's editor is Zed. Don't add VS Code-specific config files.

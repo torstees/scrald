@@ -5,6 +5,7 @@
     onDocumentChanged,
     onEmbedChanged,
     onShowAbout,
+    onShowSettings,
     openDocument,
     openExternal,
     reportTiming,
@@ -911,6 +912,7 @@
     });
     // About Scrald in the macOS app menu (#199).
     const unlistenAbout = onShowAbout(showAboutFromMenu);
+    const unlistenSettingsMenu = onShowSettings(showSettingsFromMenu);
     // Theme hot reload (DESIGN.md §7.1): re-apply when a user theme changes.
     const unlistenThemes = onThemesChanged(() => {
       if (theme && !switcherOpen && !themeEditing) void showTheme(theme.id);
@@ -936,6 +938,7 @@
       void unlistenThemes.then((stop) => stop());
       void unlistenEmbeds.then((stop) => stop());
       void unlistenAbout.then((stop) => stop());
+      void unlistenSettingsMenu.then((stop) => stop());
       void unlistenAutosave.then((stop) => stop());
       void unlistenSettings.then((stop) => stop());
       wideQuery.removeEventListener("change", onWideChange);
@@ -1548,6 +1551,18 @@
     if (unsavedPrompt || switcherOpen || newDocument || printPanel) return;
     shortcutsOpen = settingsOpen = false;
     aboutOpen = true;
+  }
+
+  /**
+   * Settings… in the macOS app menu (the page's own `Cmd+,` handler below
+   * still works too). Like that key it waits behind the unsaved-changes
+   * question, the theme switcher, New document, and print; unlike it, it
+   * only opens (a menu item doesn't close what's already open).
+   */
+  function showSettingsFromMenu(): void {
+    if (unsavedPrompt || switcherOpen || newDocument || printPanel || settingsOpen) return;
+    shortcutsOpen = aboutOpen = false;
+    void openSettings();
   }
 
   function onKeydown(event: KeyboardEvent): void {
