@@ -15,7 +15,7 @@ Scrald uses the first of these:
 1. The flavor you chose for the document in the status bar's flavor menu.
 2. `scrald-flavor` in the document's front matter.
 3. `flavor` in a `.scrald.toml` in the document's folder or above (see [Themes](themes.md)).
-4. A guess from the document itself: wikilinks or `==highlights==` suggest Obsidian, and `:::` divs or `{.class}` attributes suggest Pandoc. A document inside an Obsidian vault is Obsidian. With no signs either way, GFM.
+4. A guess from the document itself: wikilinks or `==highlights==` suggest Obsidian, and `:::` divs, `{.class}` attributes, or grid tables suggest Pandoc. A document inside an Obsidian vault is Obsidian. With no signs either way, GFM.
 
 In the flavor menu, **Auto** shows the flavor in use and where it came from, such as "Auto: Obsidian (detected)" or "Auto: Pandoc (front matter)". Choosing a flavor there keeps it for the document, and choosing **Auto** again forgets it.
 
@@ -43,6 +43,8 @@ In the flavor menu, **Auto** shows the flavor in use and where it came from, suc
 | Spans `[text]{.smallcaps}` | | | ✓ |
 | Figures with captions | | | ✓ |
 | Table captions `Table: ...` | | | ✓ |
+| Grid tables | | | ✓ |
+| Line blocks `\| verse` | | | ✓ |
 | Definition lists | | | ✓ |
 | Subscript `~x~` and superscript `^x^` | | | ✓ |
 | Smart quotes and dashes | | | ✓ |
@@ -123,6 +125,36 @@ Attributes on an image place it:
 `width` and `height` take pixels or a percentage. An image alone in a paragraph, with alt text, becomes a figure with the alt text as its caption. Settings › **Captions** can do the same in every document, or turn it off so that only images marked `.figure` become figures.
 
 A table takes `.center` or `.full-bleed` from its caption: `Table: Ships {.center}`.
+
+## Grid tables and line blocks (Pandoc)
+
+A grid table is drawn with `+`, `-`, and `|`. Unlike a table of `|` pipes, its cells can hold several paragraphs, lists, or code:
+
+```markdown
++-----------+--------------------+
+| Fruit     | Advantages         |
++===========+===================:+
+| Bananas   | - built-in wrapper |
+|           | - bright color     |
++-----------+--------------------+
+```
+
+- A line of `=` ends the header rows. A second one starts the footer rows.
+- Colons in the header's line align a column, as in a pipe table: `:==` left, `==:` right, `:=:` centered. Without a header, the colons go in the top line.
+- A cell can span columns or rows by leaving out the `|` or `-` between them.
+- A `Table: ...` line after the table is its caption.
+
+The lines have to meet exactly. If they don't, the table is shown as text, so check the corners when one doesn't appear. Column widths from the drawing aren't kept; columns are sized to fit their contents.
+
+A line block keeps its line breaks and indents, for verse and addresses. Each line starts with `| `, and a line that starts with a space continues the one before:
+
+```markdown
+| The limerick packs laughs anatomical
+| Into space that is quite economical.
+|    But the good ones I've seen
+|    So seldom are clean
+| And the clean ones so seldom are comical
+```
 
 ## HTML
 

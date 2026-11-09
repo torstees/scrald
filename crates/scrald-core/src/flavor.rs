@@ -214,6 +214,10 @@ fn scan(text: &str) -> Signals {
         if line.contains("{.") || line.contains("{#") {
             s.pandoc += 1;
         }
+        // A grid table's top line (each table counts once).
+        if crate::grid::is_top_border(raw) {
+            s.pandoc += 2;
+        }
         if index == 0 && line.starts_with("% ") {
             s.pandoc += 2;
         }
@@ -358,6 +362,8 @@ mod tests {
         assert_eq!(detect(text, false).0, Flavor::Pandoc);
         let with_keys = "---\nbibliography: refs.bib\ncsl: chicago.csl\n---\n# Paper\n";
         assert_eq!(detect(with_keys, false).0, Flavor::Pandoc);
+        let grid = "# Prices\n\n+-----+-----+\n| a   | b   |\n+=====+=====+\n| 1   | 2   |\n+-----+-----+\n";
+        assert_eq!(detect(grid, false).0, Flavor::Pandoc);
     }
 
     #[test]

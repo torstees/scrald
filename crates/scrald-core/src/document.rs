@@ -348,7 +348,11 @@ pub fn parse_document_cached(
     // parser never sees them but every offset stays the same.
     // Pandoc `:::` div fences are blanked the same way, and the divs kept
     // aside (with file offsets) to wrap the blocks inside them.
+    // Grid tables (#120) are blanked too, and their cells added back as
+    // nodes after parsing (`grid.rs`).
     let mut divs = Vec::new();
+    let mut grid_tables = Vec::new();
+    let mut grids: Vec<(usize, usize)> = Vec::new();
     let parse_text = if obsidian {
         obsidian::blank_comments(body)
     } else if pandoc {
@@ -361,12 +365,16 @@ pub fn parse_document_cached(
             span.end += base;
             span
         }));
+        let (blanked, tables) = crate::grid::extract_grid_tables(&blanked);
+        grids.extend(tables.iter().map(|t| (t.start + base, t.end + base)));
+        grid_tables = tables;
         blanked
     } else {
         body.to_string()
     };
     let arena = comrak::Arena::new();
     let root = comrak::parse_document(&arena, &parse_text, &options);
+    crate::grid::insert_nodes(&arena, root, &grid_tables, &options);
     let index = LineIndex::new(body, bom_len + body_start);
 
     let assets_dir = front_matter.as_ref().and_then(|fm| fm.assets.as_deref());
@@ -434,7 +442,7 @@ pub fn parse_document_cached(
         (start.line, start.column)
     });
 
-    for group in group_blocks(&nodes, pandoc, &divs, &index) {
+    for group in group_blocks(&nodes, pandoc, &divs, &grids, &index) {
         let id = blocks.len() as u32;
         // Rust note: slice patterns: `[only]` matches a one-element slice and
         // binds its element; `[table, caption]` binds both of a pair; `_`
@@ -444,6 +452,9 @@ pub fn parse_document_cached(
         let outer_div = divs
             .iter()
             .find(|d| d.start <= first_start && first_start <= d.end);
+        let grid = grids
+            .iter()
+            .find(|&&(start, end)| start <= first_start && first_start <= end);
         let (kind, source) = match group {
             // A fenced div (and everything in it) is one block, fences included.
             _ if outer_div.is_some() => {
@@ -453,6 +464,15 @@ pub fn parse_document_cached(
                     BlockKind::Other,
                     SourceRange::new(div_range.0.min(first_start), div_range.1.max(last_end)),
                 )
+            }
+            // A grid table's tags and cells, and the caption after it.
+            _ if let Some(&(start, end)) = grid => {
+                let last = group[group.len() - 1];
+                if pandoc::is_table_caption(last) && block_range(last, &index).start > end {
+                    table_attrs = Some(pandoc::take_table_caption(last));
+                }
+                let last_end = block_range(last, &index).end;
+                (BlockKind::Table, SourceRange::new(start, end.max(last_end)))
             }
             [only] => (block_kind(only), block_range(only, &index)),
             [table, caption] if pandoc && pandoc::is_table_caption(caption) => {
@@ -542,6 +562,11 @@ pub fn parse_document_cached(
             if pandoc {
                 pandoc::transform_inlines(&arena, node);
             }
+            let line_blocks = if pandoc {
+                pandoc::plan_line_blocks(node)
+            } else {
+                Vec::new()
+            };
             // `.figure` needs Pandoc's attributes, so other flavors only
             // look for figures when the setting gives them implicit ones.
             let figures = if pandoc || implicit_figures {
@@ -551,6 +576,7 @@ pub fn parse_document_cached(
             };
             images.rewrite(node, &asset_ctx);
             pandoc::finish_figures(figures, &options);
+            pandoc::finish_line_blocks(line_blocks, &options);
             highlight_code_blocks(node, &mut renderer);
             if obsidian {
                 obsidian::transform_callouts(node, &options);
@@ -956,26 +982,38 @@ fn group_blocks<'n, 'a>(
     nodes: &'n [Node<'a>],
     pandoc: bool,
     divs: &[pandoc::DivSpan],
+    grids: &[(usize, usize)],
     index: &LineIndex,
 ) -> Vec<&'n [Node<'a>]> {
     let html_groups = group_html_runs(nodes);
     if !pandoc {
         return html_groups;
     }
-    let html_groups = join_div_contents(nodes, html_groups, divs, index);
+    // Divs come first, so a grid table inside a div joins the div's block.
+    let spans: Vec<(usize, usize)> = divs
+        .iter()
+        .map(|d| (d.start, d.end))
+        .chain(grids.iter().copied())
+        .collect();
+    let html_groups = join_spans(nodes, html_groups, &spans, index);
+    let in_grid = |node: Node<'_>| {
+        let start = block_range(node, index).start;
+        grids.iter().any(|&(s, e)| s <= start && start <= e)
+    };
     // The groups tile `nodes` in order, so `start` tracks where each begins.
     let mut groups = Vec::new();
     let mut start = 0;
     let mut i = 0;
     while i < html_groups.len() {
         let len = html_groups[i].len();
-        let joins = len == 1
-            && matches!(nodes[start].data().value, NodeValue::Table(_))
+        let table = (len == 1 && matches!(nodes[start].data().value, NodeValue::Table(_)))
+            || in_grid(nodes[start]);
+        let joins = table
             && html_groups.get(i + 1).is_some_and(|next| next.len() == 1)
-            && pandoc::is_table_caption(nodes[start + 1]);
+            && pandoc::is_table_caption(nodes[start + len]);
         if joins {
-            groups.push(&nodes[start..start + 2]);
-            start += 2;
+            groups.push(&nodes[start..start + len + 1]);
+            start += len + 1;
             i += 2;
         } else {
             groups.push(html_groups[i]);
@@ -999,18 +1037,18 @@ fn footnote_html(
         .replace(" </p>", "</p>")
 }
 
-/// Joins consecutive groups that start inside the same outermost fenced div
-/// into one group, so the whole div becomes one block.
-fn join_div_contents<'n, 'a>(
+/// Joins consecutive groups that start inside the same span (the outermost
+/// fenced div, or a grid table) into one group, so it becomes one block.
+fn join_spans<'n, 'a>(
     nodes: &'n [Node<'a>],
     groups: Vec<&'n [Node<'a>]>,
-    divs: &[pandoc::DivSpan],
+    spans: &[(usize, usize)],
     index: &LineIndex,
 ) -> Vec<&'n [Node<'a>]> {
-    // The outermost div (if any) each group starts in.
+    // The first span (if any) each group starts in.
     let outer = |group: &[Node<'_>]| {
         let start = block_range(group[0], index).start;
-        divs.iter().position(|d| d.start <= start && start <= d.end)
+        spans.iter().position(|&(s, e)| s <= start && start <= e)
     };
     let mut joined: Vec<&'n [Node<'a>]> = Vec::new();
     let mut start = 0;
@@ -1566,6 +1604,55 @@ Text
         assert_eq!(parse("obsidian", ImplicitFigures::Always).0, [true, false]);
         // Never: only `.figure` makes a figure.
         assert_eq!(parse("pandoc", ImplicitFigures::Never).0, [false, true]);
+    }
+
+    #[test]
+    fn grid_tables_are_one_block_and_work_inside_divs() {
+        let text = "---\r\nscrald-flavor: pandoc\r\n---\r\n::: note\r\n+-------+---+\r\n| Søren | x |\r\n+-------+---+\r\n:::\r\n\r\n+---------+-----+\r\n| one two | `c` |\r\n+---------+-----+\r\n";
+        let doc = parse(text);
+        assert_eq!(doc.blocks.len(), 2, "{:#?}", doc.blocks);
+        // In a div, the table is part of the div's block.
+        let div = &doc.blocks[0];
+        assert!(
+            div.html.contains("<div class=\"sk-div note\">"),
+            "{}",
+            div.html
+        );
+        assert!(
+            div.html.contains("<td>\n<p>Søren</p>\n</td>"),
+            "{}",
+            div.html
+        );
+        let table = &doc.blocks[1];
+        assert_eq!(table.kind, BlockKind::Table);
+        assert!(table.html.starts_with("<div class=\"sk-table\"><table>"));
+        assert_eq!(
+            &text[table.source.as_range()],
+            "+---------+-----+\r\n| one two | `c` |\r\n+---------+-----+"
+        );
+        // Words in cells count, inline code included.
+        assert_eq!(table.words, 3);
+        assert_eq!(doc.word_count, 5);
+    }
+
+    #[test]
+    fn line_blocks_keep_breaks_and_indents() {
+        let text = "| first\n|   indented\n  continued\n|\n| *last*\n";
+        let doc = parse_document_with(
+            PathBuf::from("test.md"),
+            text.as_bytes(),
+            &ParseOptions {
+                flavor: Some(Flavor::Pandoc),
+                ..ParseOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            doc.blocks[0].html,
+            "<div class=\"line-block\">first<br>\n&nbsp;&nbsp;indented\ncontinued<br>\n<br>\n<em>last</em></div>\n"
+        );
+        // Other flavors leave the bars alone.
+        assert!(parse(text).blocks[0].html.starts_with("<p>| first"));
     }
 
     #[test]

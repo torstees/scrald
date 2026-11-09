@@ -20,7 +20,7 @@ This document describes the architecture and the decisions behind it. GitHub iss
 ### Non-goals for v1
 
 - Running Obsidian plugins or arbitrary JavaScript embedded in documents.
-- Full Pandoc compatibility (citations, raw LaTeX, grid tables, and so on).
+- Full Pandoc compatibility (citations, raw LaTeX, and so on).
 - Vault-wide features such as a graph view, backlinks, or full-vault search.
 - Sync, collaboration, or any cloud features.
 - A WYSIWYG editor. Editing is source-based, scoped to a block or the whole raw file.
@@ -231,7 +231,7 @@ pub enum Flavor { Gfm, Obsidian, Pandoc }
 
 Because detection is instant, the detected result does not need to be stored. Only explicit user overrides are remembered. The UI shows the active flavor in the status bar with a dropdown to change it.
 
-As implemented (`crates/scrald-core/src/flavor.rs`): detection is a line scan that skips fenced code. Obsidian signals: wikilinks, `%%`, `==highlight==`, Obsidian-only callout types (GitHub's five alert types say nothing), foldable callouts; being inside a vault adds a weight of 10, more than stray syntax. Pandoc signals: `:::` lines, `^[`, `{.class}`/`{#id}`, a `% Title` first line, and `bibliography`/`csl`-style front matter keys. Ties go to Obsidian; no signals means GFM. A 500K-word document scans in a few milliseconds. The status bar dropdown offers "Auto: <flavor> (<why>)" plus the three flavors; choosing one stores it for the document and re-parses in place, and "Auto" clears it. A `flavor` key in `.scrald.toml` applies to a folder.
+As implemented (`crates/scrald-core/src/flavor.rs`): detection is a line scan that skips fenced code. Obsidian signals: wikilinks, `%%`, `==highlight==`, Obsidian-only callout types (GitHub's five alert types say nothing), foldable callouts; being inside a vault adds a weight of 10, more than stray syntax. Pandoc signals: `:::` lines, `^[`, `{.class}`/`{#id}`, a grid table's top line, a `% Title` first line, and `bibliography`/`csl`-style front matter keys. Ties go to Obsidian; no signals means GFM. A 500K-word document scans in a few milliseconds. The status bar dropdown offers "Auto: <flavor> (<why>)" plus the three flavors; choosing one stores it for the document and re-parses in place, and "Auto" clears it. A `flavor` key in `.scrald.toml` applies to a folder.
 
 Profiles as comrak options: all three share tables, task lists, footnotes, strikethrough, and math. GFM and Obsidian add autolinks and `> [!NOTE]` alerts; Obsidian adds `[[wikilinks]]` (target before the pipe) and `==highlight==`; Pandoc adds `~subscript~` (overriding single-tilde strikethrough; `~~x~~` still strikes through), `^superscript^`, inline footnotes, definition lists, and smart punctuation. Known difference: comrak treats single `~x~` as strikethrough in GFM and Obsidian; GitHub does too, Obsidian doesn't. Pandoc's inline footnotes produce definitions with no source text of their own, so they aren't blocks; the model carries them separately (`inline_footnotes`) for popovers and endnotes.
 
@@ -257,6 +257,8 @@ Profiles as comrak options: all three share tables, task lists, footnotes, strik
 | Fenced divs `::: {.class}` | | | ✓ | Transform pass |
 | Bracketed spans `[text]{.class}` | | | ✓ | Transform pass |
 | Attributes on images, headings, code `{#id .class key=val}` | | | ✓ | Transform pass; enables image layout (section 6) |
+| Grid tables | | | ✓ | Pre-pass (`grid.rs`); cells hold any blocks, with row and column spans |
+| Line blocks `\| line` | | | ✓ | Transform pass |
 | Definition lists | | | ✓ | comrak built-in |
 | Sub/superscript `~x~`, `^x^` | | | ✓ | Pandoc profile only for `~x~` |
 | Smart punctuation | opt | opt | ✓ | Setting |
@@ -296,6 +298,11 @@ As implemented for the Pandoc profile (`scrald-core/src/pandoc.rs`):
 - **Bracketed spans** (`[text]{.smallcaps}`) are found in text nodes: the `]{…}` and its matching `[` can sit in different text nodes with formatting between them.
 - **Figures:** an image alone in a paragraph with alt text (Pandoc's implicit figures) or marked `.figure` becomes `<figure>` with the alt text as `<figcaption>`. Layout classes and the id move to the figure; a percentage width becomes the figure's width (`style="width: N%"`, the one style the sanitizer allows, §13), since on the image it would be a percentage of the shrink-wrapped figure.
 - **Table captions:** a `Table: Caption {#id .class}` (or `: Caption`) paragraph right after a table is joined with it into one block; the caption goes into `<caption>`, the id onto `<table>`, and the classes onto the scrolling `.sk-table` box.
+- **Grid tables** (#120; `scrald-core/src/grid.rs`). comrak has no grid tables, so a pre-pass after the fenced-div one finds them: a `+---+` line at the left margin (outside fenced code) and the `+`/`|` lines after it.
+  - **Reading the drawing.** Each cell is found from its top-left `+`, following its borders round (a `+` on the way can be a neighbour's corner, so the scan goes past one where the border doesn't turn); row and column spans fall out of where cell edges lie. The cells must tile the whole drawing, or the lines are left as text. Columns are counted in characters, so cells can hold any text.
+  - **Parts and alignment.** The first `=` line across the table ends the header; a second starts the footer. Colons in the header's line (or the top line, without one) align columns. Column widths aren't kept: the sanitizer allows no styles there.
+  - **Into the document.** The table's lines are blanked to spaces, like div fences. After parsing, each cell's text is parsed on its own, and its nodes are added to the document between raw HTML nodes holding the table's tags, all with the table's source position. So they sort into place and are joined into one `Table` block (with a `Table:` caption after it, like a pipe table's), whose range is the drawing, and the normal passes (images, spans, highlighting, word counts) reach the cells. A footnote defined in a cell is dropped, since it would leave the table.
+- **Line blocks** (#120): a paragraph whose first line starts with `| ` (or is a lone `|`). Each line's `| ` is removed, the break before a new `|` line becomes `<br>`, a line not starting with `|` continues the one before, and the spaces after the bar become no-break spaces so indents show. The paragraph becomes `<div class="line-block">` after images are resolved. comrak still sees a paragraph, so its range and editing are unchanged.
 - **Footnotes** (all flavors): the model carries every footnote, inline ones included, in a `footnotes` list (name, number, sanitized HTML without comrak's back-link, defining block). The reader leaves definition blocks empty where they're written (so they still anchor and tile) and shows the notes as hover/focus popovers and in an endnotes section after the last block.
 
 ---
