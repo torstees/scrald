@@ -3,11 +3,12 @@
   // sections; each mounted section uses `content-visibility: auto` so the
   // browser skips layout and paint for off-screen sections. Sections are
   // mounted outward from the initial position, the rest in idle time.
-  import { onDestroy, tick, untrack } from "svelte";
+  import { mount, onDestroy, tick, unmount, untrack } from "svelte";
   import type { Block, DocumentModel, PropertiesPlacement, SearchReply, TocEntry } from "../lib/types";
   import { currentEntryAt } from "../toc/tree";
   import BlockEditor from "../editor/BlockEditor.svelte";
-  import type { BlockEditing } from "../editor/blocks";
+  import type { BlockEditing, EditTarget } from "../editor/blocks";
+  import { partAt, partElements } from "../editor/parts";
   import { assetUrl } from "../lib/commands";
   import { contentId } from "../lib/ids";
   import { renderRich, richContent } from "../render/renderers";
@@ -167,7 +168,9 @@
   }
 
   // The block being edited, by id, and the source the editor started from.
-  let editing = $state<{ id: number; source: string } | null>(null);
+  // What's open in the block editor: a whole block, or one of its parts
+  // (a list item or a quote's child, #118), at index `part`.
+  let editing = $state<{ id: number; source: string; target: EditTarget; part?: number } | null>(null);
 
   async function onDoubleClick(event: MouseEvent): Promise<void> {
     if (!blockEditing || editing) return;
@@ -176,23 +179,53 @@
     if (target?.closest(".sk-properties, .sk-front, .sk-endnotes, input, button, a")) return;
     const el = target?.closest<HTMLElement>(".sk-section > .sk-block[data-block]");
     const block = el ? doc.blocks[Number(el.dataset.block)] : undefined;
-    if (!block || block.kind.type === "footnoteDefinition") return;
+    if (!el || !block || block.kind.type === "footnoteDefinition") return;
     // The double-click selected a word; the editor replaces the text anyway.
     window.getSelection()?.removeAllRanges();
+    // One list item or quote child, unless Alt (Option) asks for the whole block.
+    const parts = block.parts ?? [];
+    const part = event.altKey ? null : partAt(partElements(el), parts.length, target);
+    const range = part === null ? undefined : parts[part];
+    const edit: EditTarget = range ? { range, within: block.source } : { range: block.source };
     try {
-      const source = await blockEditing.load(block);
-      editing = { id: block.id, source };
+      const source = await blockEditing.load(edit.range);
+      editing = { id: block.id, source, target: edit, part: range ? (part ?? undefined) : undefined };
     } catch {
       // The document changed underneath; leave it in reading view.
     }
   }
 
-  async function finishEdit(block: Block, text: string): Promise<void> {
-    const original = editing?.source ?? "";
+  async function finishEdit(text: string): Promise<void> {
+    const current = editing;
     editing = null;
-    if (text === original) return;
-    await blockEditing?.commit(block, original, text);
+    if (!current || text === current.source) return;
+    await blockEditing?.commit(current.target, current.source, text);
   }
+
+  // A part's editor goes into the block's own HTML in place of the part, so
+  // the rest of the list or quote stays in view around it.
+  $effect(() => {
+    const current = editing;
+    if (current?.part === undefined || !column) return;
+    const blockEl = column.querySelector<HTMLElement>(`.sk-section > .sk-block[data-block="${current.id}"]`);
+    const partEl = blockEl ? partElements(blockEl)[current.part] : undefined;
+    if (!blockEl || !partEl) return;
+    const host = document.createElement("div");
+    host.className = "sk-part-editor";
+    partEl.before(host);
+    partEl.classList.add("sk-part-hidden");
+    blockEl.classList.add("sk-editing-part");
+    const editor = mount(BlockEditor, {
+      target: host,
+      props: { source: current.source, oncommit: (text: string) => void finishEdit(text) },
+    });
+    return () => {
+      void unmount(editor);
+      host.remove();
+      partEl.classList.remove("sk-part-hidden");
+      blockEl.classList.remove("sk-editing-part");
+    };
+  });
 
   async function startMount(d: DocumentModel, anchor: ScrollAnchor): Promise<void> {
     const gen = ++generation;
@@ -800,9 +833,9 @@
           style:contain-intrinsic-size={`auto ${heights[i] ?? 0}px`}
         >
           {#each sectionBlocks(doc, section) as block (keys[block.id])}
-            {#if editing?.id === block.id}
+            {#if editing?.id === block.id && editing.part === undefined}
               <div class="sk-block sk-editing" data-block={block.id}>
-                <BlockEditor source={editing.source} oncommit={(text) => finishEdit(block, text)} />
+                <BlockEditor source={editing.source} oncommit={(text) => finishEdit(text)} />
               </div>
             {:else if block.kind.type === "footnoteDefinition"}
               <!-- Shown in the endnotes instead; the empty block keeps its place for

@@ -46,6 +46,8 @@ export interface Block {
   section: number;
   /** Words in the block; they add up to `DocumentModel.wordCount`. */
   words: number;
+  /** A list's items or a block quote's children, editable one at a time (#118). */
+  parts?: SourceRange[];
 }
 
 /** Mirrors `Section`. */

@@ -69,7 +69,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Editing",
     shortcuts: [
-      { keys: ["Double-click"], action: "Edit a block" },
+      { keys: ["Double-click"], action: "Edit a block, or one item of a list or quote" },
+      { keys: ["Alt+Double-click"], action: "Edit a whole list or quote" },
       { keys: ["Ctrl+Enter", "Esc"], action: "Finish editing the block" },
       { keys: ["Ctrl+E"], action: "Switch to raw mode and back" },
       { keys: ["Ctrl+Z"], action: "Undo" },

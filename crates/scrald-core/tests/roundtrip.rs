@@ -126,6 +126,30 @@ fn check_no_op_edits(name: &str, bytes: &[u8], doc: &DocumentModel) {
             "{name}: no-op edit of block {} changed the file",
             block.id
         );
+        // Each list item or quote child on its own too (#118).
+        for (i, &part) in block.parts.iter().enumerate() {
+            let original = std::str::from_utf8(&bytes[part.as_range()]).expect("part is UTF-8");
+            let edited = scrald_core::edit::splice_part(
+                &decoded.text,
+                block.source,
+                part,
+                bom_len,
+                original,
+                original,
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "{name}: block {} {:?} part {i} {:?}: {e}",
+                    block.id, block.source, part
+                )
+            });
+            let rebuilt = scrald_core::save::encode(&edited, decoded.has_bom);
+            assert_eq!(
+                rebuilt, bytes,
+                "{name}: no-op edit of block {} part {i} changed the file",
+                block.id
+            );
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 //! Raw file bytes → text, plus the one place where line/column positions are
 //! converted to byte offsets (AGENTS.md: "convert in exactly one place").
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::DocumentError;
 
@@ -10,7 +10,7 @@ const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
 
 /// A half-open byte range `[start, end)` into the ORIGINAL file bytes
 /// (including any BOM and front matter).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceRange {
     pub start: usize,
     pub end: usize,

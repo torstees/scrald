@@ -43,7 +43,8 @@ On a Mac, press `Cmd` where these pages say `Ctrl`, and `Option` for `Alt`. Thre
 
 | Keys | Action |
 |---|---|
-| `Double-click` | Edit a block |
+| `Double-click` | Edit a block, or one item of a list or quote |
+| `Alt+Double-click` | Edit a whole list or quote |
 | `Ctrl+Enter` or `Esc` | Finish editing the block |
 | `Ctrl+E` | Switch to raw mode and back |
 | `Ctrl+Z` | Undo |

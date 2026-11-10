@@ -197,6 +197,16 @@ body {
   margin: 0 0 var(--sk-paragraph-spacing);
 }
 
+/* Editing one list item or quote child (#118): the editor takes the part's
+   place, and the part is hidden until the edit is done. */
+.sk-block .sk-part-hidden {
+  display: none !important;
+}
+
+.sk-block .sk-part-editor {
+  margin: 0.25em 0;
+}
+
 .sk-block img {
   max-width: 100%;
   height: auto;

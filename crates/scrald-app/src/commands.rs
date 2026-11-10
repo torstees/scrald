@@ -523,7 +523,9 @@ pub fn block_source(
 /// Replaces a block's source (in memory; the file changes on save) and
 /// returns the re-parsed document. `original` is the source the editor
 /// started from: if the document changed meanwhile, nothing is changed.
-// Most arguments are app state that Tauri injects; the frontend passes four.
+/// With `within` (the block's range), `start..end` is one of its parts, a
+/// list item or a quote's child (#118).
+// Most arguments are app state that Tauri injects; the frontend passes five.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn edit_block(
@@ -537,11 +539,17 @@ pub async fn edit_block(
     end: usize,
     original: String,
     text: String,
+    within: Option<scrald_core::SourceRange>,
 ) -> Result<OpenedDocument, CommandError> {
     let bom_len = sessions.bom_len(window.label());
     let range = scrald_core::SourceRange::new(start, end);
-    let (path, bytes) = sessions.edit(window.label(), |current| {
-        scrald_core::edit::splice_block(current, range, bom_len, &original, &text)
+    // Rust note: `match` on an `Option` binds the block's range in the
+    // `Some` arm; the closure captures `within` and the others by reference.
+    let (path, bytes) = sessions.edit(window.label(), |current| match within {
+        Some(block) => {
+            scrald_core::edit::splice_part(current, block, range, bom_len, &original, &text)
+        }
+        None => scrald_core::edit::splice_block(current, range, bom_len, &original, &text),
     })?;
     let memory = store.memory(&path).unwrap_or_default();
     let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
