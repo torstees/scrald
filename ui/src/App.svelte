@@ -6,6 +6,9 @@
     onEmbedChanged,
     onShowAbout,
     onShowSettings,
+    onTidyText,
+    convertDocument,
+    tidyText,
     openDocument,
     openExternal,
     reportTiming,
@@ -84,6 +87,7 @@
   import { hasMod, IS_MAC, keyLabel } from "./lib/platform";
   import type {
     DocumentModel,
+    LineEnding,
     FrontSettings,
     ImplicitFigures,
     RecentDocument,
@@ -118,6 +122,7 @@
   import { frontContent } from "./reader/front";
   import ConflictBanner from "./editor/ConflictBanner.svelte";
   import RecoveryBanner from "./editor/RecoveryBanner.svelte";
+  import TidyBanner from "./editor/TidyBanner.svelte";
   import RecoveredList from "./editor/RecoveredList.svelte";
   import StartScreen from "./start/StartScreen.svelte";
   import { isMarkdownPath } from "./start/recent";
@@ -384,6 +389,8 @@
     rawMode = false;
     raw = null;
     comparing = false;
+    // Leaving the merge view keeps the tidied text, as Done does.
+    tidying = null;
     if (recoveryComparing) {
       // Leaving the merge view keeps the text on the right, as Done does.
       recoveryComparing = false;
@@ -625,7 +632,7 @@
   async function autosaveNow(): Promise<void> {
     // A conflict or a comparison of recovered changes waits for the user's
     // decision; a "save changes?" prompt is already handling the changes.
-    if (!autosave || !doc || conflict || recoveryComparing || unsavedPrompt) return;
+    if (!autosave || !doc || conflict || recoveryComparing || tidying || unsavedPrompt) return;
     if (rawMode) await syncRaw();
     await pendingEdits;
     if (dirty) await save("Autosaved");
@@ -762,6 +769,126 @@
     } finally {
       recoveryBusy = false;
     }
+  }
+
+  // Line endings and BOM (#220): converted on demand, as one undoable edit.
+  async function convertText(lineEnding: LineEnding | null, removeBom: boolean): Promise<void> {
+    if (!doc) return;
+    if (comparing || tidying) {
+      showNotice("Finish the comparison first");
+      return;
+    }
+    if (rawMode) await syncRaw();
+    await queueEdit(async () => {
+      try {
+        const opened = await convertDocument(lineEnding, removeBom);
+        await applyEdit(opened);
+        if (rawMode && raw) {
+          // The editor's line separator is fixed when it's built, so build
+          // it again with the new text.
+          const current = await documentText();
+          raw = { ...raw, ...current, startByte: rawEditor?.topByte() ?? 0, resetKey: 0, mount: raw.mount + 1 };
+        }
+        noteEdit();
+        const what = removeBom ? "Removed the BOM" : `Converted line endings to ${lineEnding === "crlf" ? "CRLF" : "LF"}`;
+        showNotice(keyLabel(`${what}. Ctrl+S saves it${rawMode ? "" : "; Ctrl+Z undoes it"}.`));
+      } catch (e) {
+        showNotice(`Could not convert the text: ${String(e)}`);
+      }
+    });
+  }
+
+  // Tidying hard-wrapped text (#219): the tidied text is applied as one
+  // edit and shown in raw mode's merge view beside the text before, so the
+  // user can put back what they don't want, keep it, or undo it.
+  let tidying = $state<{ joined: number; split: number; before: string; fromReader: boolean } | null>(null);
+  let tidyBusy = $state(false);
+
+  async function startTidy(): Promise<void> {
+    if (!doc || tidyBusy) return;
+    if (comparing || tidying) {
+      showNotice("Finish the comparison first");
+      return;
+    }
+    tidyBusy = true;
+    try {
+      if (rawMode) await syncRaw();
+      await pendingEdits;
+      const selection = rawMode ? (rawEditor?.selectionBytes() ?? null) : null;
+      const bom = doc.hasBom ? 3 : 0;
+      const startByte =
+        rawMode && rawEditor ? rawEditor.topByte() : Math.max(0, (reader?.captureAnchor() ?? TOP_ANCHOR).offset - bom);
+      const preview = await tidyText(selection ?? undefined);
+      if (preview.tidied === preview.text) {
+        showNotice(selection ? "Nothing to tidy in the selection" : "Nothing to tidy: no paragraph is hard-wrapped");
+        return;
+      }
+      await queueEdit(async () => {
+        const result = await setDocumentText(preview.version, preview.tidied);
+        dirty = result.dirty;
+        tidying = { joined: preview.joined, split: preview.split, before: preview.text, fromReader: !rawMode };
+        search.close();
+        raw = {
+          text: preview.tidied,
+          version: result.version,
+          startByte,
+          resetKey: 0,
+          compareWith: preview.text,
+          mount: (raw?.mount ?? 0) + 1,
+        };
+        rawMode = true;
+      });
+    } catch (e) {
+      showNotice(`Could not tidy the text: ${String(e)}`);
+    } finally {
+      tidyBusy = false;
+    }
+  }
+
+  /** Ends the tidy comparison, back where it started (reading or raw mode). */
+  async function finishTidy(notice: string): Promise<void> {
+    const fromReader = tidying?.fromReader ?? false;
+    tidying = null;
+    if (fromReader) await exitRawMode();
+    else await stopComparing();
+    showNotice(notice);
+  }
+
+  /** "Done": the tidied text (with any changes put back) stays, unsaved. */
+  async function keepTidy(): Promise<void> {
+    tidyBusy = true;
+    try {
+      await syncRaw();
+      noteEdit();
+      await finishTidy(keyLabel("Tidied. Ctrl+S saves it."));
+    } finally {
+      tidyBusy = false;
+    }
+  }
+
+  /** "Undo tidy": the text before tidying, as an undoable edit. */
+  async function undoTidy(): Promise<void> {
+    tidyBusy = true;
+    try {
+      await syncRaw();
+      await queueEdit(async () => {
+        if (!raw || !tidying) return;
+        const result = await setDocumentText(raw.version, tidying.before);
+        raw.version = result.version;
+        dirty = result.dirty;
+      });
+      await finishTidy("Put the text back as it was");
+    } catch (e) {
+      showNotice(`Could not undo the tidy: ${String(e)}`);
+    } finally {
+      tidyBusy = false;
+    }
+  }
+
+  /** Tidy Hard-Wrapped Text in the macOS Edit menu, unless a dialog is open. */
+  function tidyFromMenu(): void {
+    if (unsavedPrompt || switcherOpen || newDocument || printPanel || settingsOpen || shortcutsOpen || aboutOpen) return;
+    void startTidy();
   }
 
   /** From the list shown without a document: open it, then restore. */
@@ -913,6 +1040,7 @@
     // About Scrald in the macOS app menu (#199).
     const unlistenAbout = onShowAbout(showAboutFromMenu);
     const unlistenSettingsMenu = onShowSettings(showSettingsFromMenu);
+    const unlistenTidyMenu = onTidyText(tidyFromMenu);
     // Theme hot reload (DESIGN.md §7.1): re-apply when a user theme changes.
     const unlistenThemes = onThemesChanged(() => {
       if (theme && !switcherOpen && !themeEditing) void showTheme(theme.id);
@@ -939,6 +1067,7 @@
       void unlistenEmbeds.then((stop) => stop());
       void unlistenAbout.then((stop) => stop());
       void unlistenSettingsMenu.then((stop) => stop());
+      void unlistenTidyMenu.then((stop) => stop());
       void unlistenAutosave.then((stop) => stop());
       void unlistenSettings.then((stop) => stop());
       wideQuery.removeEventListener("change", onWideChange);
@@ -1105,6 +1234,7 @@
       recovered = opened.recovered;
       conflict = null;
       recoveryComparing = false;
+      tidying = null;
       if (another && rawMode) {
         rawMode = false;
         raw = null;
@@ -1625,6 +1755,13 @@
         .then(() => (dirty ? save() : undefined));
       return;
     }
+    // Alt+Q (Option+Q), as the Rewrap extension and Emacs's fill use. By
+    // code, since Option+Q types a character on a Mac.
+    if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && doc && event.code === "KeyQ") {
+      event.preventDefault();
+      void startTidy();
+      return;
+    }
     if (hasMod(event) && doc && (event.key === "e" || event.key === "E")) {
       event.preventDefault();
       void (rawMode ? exitRawMode() : enterRawMode());
@@ -1790,6 +1927,9 @@
           onusefile={useFileOverRecovery}
         />
       {/if}
+      {#if tidying}
+        <TidyBanner joined={tidying.joined} split={tidying.split} busy={tidyBusy} ondone={keepTidy} onundo={undoTidy} />
+      {/if}
       {#if rawMode && raw}
         {#key raw.mount}
           <RawEditor
@@ -1801,6 +1941,7 @@
             fontSize={typography.fontSize}
             onchange={onRawChange}
             compareWith={raw.compareWith}
+            revertLabel={tidying ? "Put back the text before tidying" : undefined}
           />
         {/key}
       {:else}
@@ -1860,6 +2001,13 @@
       flavor={doc.flavor}
       flavorSource={doc.flavorSource}
       onflavor={chooseFlavor}
+      lineEnding={doc.lineEnding}
+      mixedLineEndings={doc.mixedLineEndings}
+      hasBom={doc.hasBom}
+      tidySelection={rawMode}
+      onconvert={(to) => void convertText(to, false)}
+      onremovebom={() => void convertText(null, true)}
+      ontidy={() => void startTidy()}
       typography={typography.summary}
       ontypographyclick={() => (typographyOpen = !typographyOpen)}
       {autosave}

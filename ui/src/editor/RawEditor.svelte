@@ -3,8 +3,9 @@
   // in CodeMirror 6, with Markdown highlighting in the theme's colors, search
   // and replace (Ctrl+F), and soft wrap at the theme's measure. Loaded only
   // when raw mode is first opened. With `compareWith`, it's a side-by-side
-  // merge view instead (§9.3): the disk version, read-only, on the left, and
-  // the document's text, editable as usual, on the right.
+  // merge view instead (§9.3): another version (on disk, or before tidying),
+  // read-only, on the left, and the document's text, editable as usual, on
+  // the right.
   import { onDestroy, onMount } from "svelte";
   import type { EditorView } from "@codemirror/view";
   import type { LineEnding } from "../lib/types";
@@ -24,11 +25,22 @@
      * `currentText()`, so the whole text isn't built on every keystroke.
      */
     onchange: () => void;
-    /** The changed disk version to compare with, or null for plain raw mode. */
+    /** The version to compare with, or null for plain raw mode. */
     compareWith?: string | null;
+    /** The label of the arrows that copy a change from the left side. */
+    revertLabel?: string;
   }
 
-  let { text, lineEnding, startByte, resetKey, fontSize, onchange, compareWith = null }: Props = $props();
+  let {
+    text,
+    lineEnding,
+    startByte,
+    resetKey,
+    fontSize,
+    onchange,
+    compareWith = null,
+    revertLabel = "Use the disk version of this change",
+  }: Props = $props();
 
   let host: HTMLDivElement | undefined = $state();
   // The editable editor: the only one, or the right side of the merge view.
@@ -79,6 +91,17 @@
     const index = positionFor(view.state.sliceDoc(), byte);
     view.dispatch({ effects: EditorView.scrollIntoView(index, { y: "start" }), selection: { anchor: index } });
     view.focus();
+  }
+
+  /** The selection as byte offsets in the text, or null when nothing is selected. */
+  export function selectionBytes(): { start: number; end: number } | null {
+    if (!view) return null;
+    const selection = view.state.selection.main;
+    if (selection.empty) return null;
+    return {
+      start: byteLength(view.state.sliceDoc(0, selection.from)),
+      end: byteLength(view.state.sliceDoc(0, selection.to)),
+    };
   }
 
   export function focus(): void {
@@ -238,7 +261,7 @@
                 EditorState.readOnly.of(true),
                 EditorView.editable.of(false),
                 // The arrows' label, which comes from this side's phrases.
-                EditorState.phrases.of({ "Revert this chunk": "Use the disk version of this change" }),
+                EditorState.phrases.of({ "Revert this chunk": revertLabel }),
               ],
             },
             b: { doc: text, extensions: [...common, editable] },

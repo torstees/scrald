@@ -16,6 +16,8 @@ import type {
   SaveOutcome,
   RawSync,
   RawText,
+  TidyPreview,
+  LineEnding,
   RecentDocument,
   ResolvedTheme,
   RecoveredChanges,
@@ -98,6 +100,22 @@ export async function editBlock(
   within?: SourceRange,
 ): Promise<OpenedDocument> {
   return complete(await invoke<OpenedDocument>("edit_block", { start, end, original, text, within: within ?? null }));
+}
+
+/**
+ * Converts the document's line endings, or with `removeBom` drops its BOM
+ * (#220): one undoable edit, unsaved until Ctrl+S.
+ */
+export async function convertDocument(lineEnding: LineEnding | null, removeBom: boolean): Promise<OpenedDocument> {
+  return complete(await invoke<OpenedDocument>("convert_document", { lineEnding, removeBom }));
+}
+
+/**
+ * The text with hard-wrapped paragraphs tidied (#219), to show before it's
+ * applied; with `range` (byte offsets in the text), only line breaks there.
+ */
+export function tidyText(range?: { start: number; end: number }): Promise<TidyPreview> {
+  return invoke<TidyPreview>("tidy_text", { start: range?.start ?? null, end: range?.end ?? null });
 }
 
 /** Undoes (or with `redo`, redoes) one edit; null if there's nothing to do. */
@@ -409,6 +427,11 @@ export function onEmbedChanged(handler: (path: string) => void): Promise<Unliste
 /** Calls `handler` when the macOS app menu's About Scrald asks this window to show the About dialog (#199). */
 export function onShowAbout(handler: () => void): Promise<UnlistenFn> {
   return listen("show-about", () => handler());
+}
+
+/** Calls `handler` when the macOS Edit menu's Tidy Hard-Wrapped Text asks this window to tidy (#219). */
+export function onTidyText(handler: () => void): Promise<UnlistenFn> {
+  return listen("tidy-text", () => handler());
 }
 
 /** Calls `handler` when the macOS app menu's Settings… asks this window to open the settings. */

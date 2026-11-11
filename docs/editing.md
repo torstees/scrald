@@ -18,6 +18,24 @@ To edit a whole list or quote at once, hold `Alt` (`Option` on a Mac) while doub
 
 Raw mode has line numbers, Markdown coloring in the theme's colors, and its own find and replace on `Ctrl+F`. Clicking a heading in the contents jumps to it in the source.
 
+## Line endings
+
+Scrald keeps a file's line endings (Windows `CRLF` or Unix `LF`) and its byte order mark (BOM) exactly as they are. The status bar shows which the document uses: `LF`, `CRLF`, or `Mixed` when it has both, with `· BOM` after it when the file starts with one.
+
+Click it to **Convert to LF** or **Convert to CRLF**, or to **Remove BOM**. Each is an ordinary change: `Ctrl+Z` undoes it, and the file changes only when you save.
+
+## Tidying hard-wrapped text
+
+Text pasted from a PDF, an email, or a plain-text book often has a line break at the end of every line, and no blank line between paragraphs, so the paragraphs run together. **Tidy hard-wrapped text** (`Alt+Q`, `Option+Q` on a Mac, also in the line-ending menu in the status bar and, on a Mac, in the Edit menu) fixes that:
+
+- Lines broken in the middle of a paragraph are joined.
+- A blank line goes where a paragraph seems to end: a short line that ends a sentence, followed by one that starts like a new sentence.
+- A word broken with a hyphen at the end of a line (`exam-` / `ple`) is joined without it, unless the document writes it with a hyphen elsewhere (`well-known`).
+
+Only ordinary paragraphs are tidied. Headings, lists, quotes, tables, code, and front matter stay as they are, and so do line breaks you made on purpose (two spaces or `\` at the end of a line). In raw mode, only the selected text is tidied, if you've selected some.
+
+These are guesses, so Scrald shows the result in raw mode beside the text as it was. The arrows between the two sides put back a change you don't want. **Done** keeps the tidied text as unsaved changes, and **Undo tidy** puts the text back as it was.
+
 ## Properties
 
 Click a property's value to change it. Lists such as tags are chips: × removes one, and the box after them adds more, separated by commas. Theme and flavor are chosen from a list, and **assets** has a **Choose folder…** button. **+ Add property** adds the common properties a document doesn't have yet.

@@ -27,6 +27,8 @@ pub struct DocumentModel {
     pub path: PathBuf,
     pub has_bom: bool,
     pub line_ending: LineEnding,
+    /// Whether some lines end in CRLF and others in LF (#220).
+    pub mixed_line_endings: bool,
     pub front_matter: Option<FrontMatter>,
     pub blocks: Vec<Block>,
     pub sections: Vec<Section>,
@@ -809,6 +811,7 @@ pub fn parse_document_cached(
         path,
         has_bom: decoded.has_bom,
         line_ending: decoded.line_ending,
+        mixed_line_endings: source::has_mixed_line_endings(&decoded.text),
         front_matter,
         blocks,
         sections,

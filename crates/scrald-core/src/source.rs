@@ -38,7 +38,7 @@ impl SourceRange {
 }
 
 /// The dominant line ending of a file, preserved when saving.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LineEnding {
     Lf,
@@ -99,6 +99,31 @@ pub fn detect_line_ending(text: &str) -> LineEnding {
         LineEnding::Crlf
     } else {
         LineEnding::Lf
+    }
+}
+
+/// Whether the text has both line endings: some lines end in CRLF and
+/// others in a bare LF.
+pub fn has_mixed_line_endings(text: &str) -> bool {
+    let crlf = text.matches("\r\n").count();
+    crlf > 0 && text.matches('\n').count() > crlf
+}
+
+/// The text with every line ending made `to` (#220). A lone `\r` (old Mac
+/// line endings) isn't a line ending here and is left as it is.
+pub fn convert_line_endings(text: &str, to: LineEnding) -> String {
+    let lf = text.replace("\r\n", "\n");
+    match to {
+        LineEnding::Lf => lf,
+        LineEnding::Crlf => lf.replace('\n', "\r\n"),
+    }
+}
+
+/// The characters a line ending is written with.
+pub fn line_break(ending: LineEnding) -> &'static str {
+    match ending {
+        LineEnding::Lf => "\n",
+        LineEnding::Crlf => "\r\n",
     }
 }
 
@@ -178,6 +203,31 @@ mod tests {
     fn decode_rejects_invalid_utf8_with_file_offset() {
         let err = decode(b"\xEF\xBB\xBFok\xFF").unwrap_err();
         assert_eq!(err, DocumentError::NotUtf8 { offset: 5 });
+    }
+
+    #[test]
+    fn mixed_line_endings_are_noticed() {
+        assert!(!has_mixed_line_endings("a\nb\n"));
+        assert!(!has_mixed_line_endings("a\r\nb\r\n"));
+        assert!(!has_mixed_line_endings("no newline"));
+        assert!(has_mixed_line_endings("a\r\nb\nc"));
+        // A lone CR isn't a line ending.
+        assert!(!has_mixed_line_endings("a\rb\r\n"));
+    }
+
+    #[test]
+    fn line_endings_convert_both_ways() {
+        let mixed = "é\r\nb\nc\rd\r\n";
+        assert_eq!(convert_line_endings(mixed, LineEnding::Lf), "é\nb\nc\rd\n");
+        assert_eq!(
+            convert_line_endings(mixed, LineEnding::Crlf),
+            "é\r\nb\r\nc\rd\r\n"
+        );
+        // Already converted: unchanged.
+        let lf = "a\nb";
+        assert_eq!(convert_line_endings(lf, LineEnding::Lf), lf);
+        let crlf = "a\r\nb\r\n";
+        assert_eq!(convert_line_endings(crlf, LineEnding::Crlf), crlf);
     }
 
     #[test]

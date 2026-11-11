@@ -47,6 +47,7 @@ On a Mac, press `Cmd` where these pages say `Ctrl`, and `Option` for `Alt`. Thre
 | `Alt+Double-click` | Edit a whole list or quote |
 | `Ctrl+Enter` or `Esc` | Finish editing the block |
 | `Ctrl+E` | Switch to raw mode and back |
+| `Alt+Q` | Tidy hard-wrapped text (in raw mode, the selection) |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Y` or `Ctrl+Shift+Z` | Redo |
 

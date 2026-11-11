@@ -143,6 +143,8 @@ fn main() -> anyhow::Result<()> {
             commands::document_text,
             commands::set_document_text,
             commands::edit_block,
+            commands::convert_document,
+            commands::tidy_text,
             commands::step_history,
             commands::check_disk,
             commands::disk_text,
