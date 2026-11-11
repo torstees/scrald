@@ -1,8 +1,10 @@
 <script lang="ts">
   import { IS_MAC, keyLabel } from "../lib/platform";
-  import type { Flavor, FlavorSource } from "../lib/types";
+  import type { Flavor, FlavorSource, LineEnding } from "../lib/types";
   import { FLAVOR_NAMES } from "./flavor";
   import FlavorMenu from "./FlavorMenu.svelte";
+  import TextMenu from "./TextMenu.svelte";
+  import { lineEndingLabel } from "./text";
   import { formatProgress, formatTimeLeft } from "./progress";
   import { formatReadingTime, formatWordCount } from "./reading";
 
@@ -36,6 +38,15 @@
     flavorSource: FlavorSource;
     /** A flavor the user picked, or null for automatic. */
     onflavor: (flavor: Flavor | null) => void;
+    /** The document's line endings and BOM (#220), shown with a menu of conversions and tidying (#219). */
+    lineEnding: LineEnding;
+    mixedLineEndings: boolean;
+    hasBom: boolean;
+    /** Whether tidying would apply to raw mode's selection. */
+    tidySelection: boolean;
+    onconvert: (to: LineEnding) => void;
+    onremovebom: () => void;
+    ontidy: () => void;
     /** Text sizing and zoom summary; clicking it opens the typography panel. */
     typography: string;
     ontypographyclick: () => void;
@@ -72,6 +83,13 @@
     flavor,
     flavorSource,
     onflavor,
+    lineEnding,
+    mixedLineEndings,
+    hasBom,
+    tidySelection,
+    onconvert,
+    onremovebom,
+    ontidy,
     autosave,
     onsettings,
     progress,
@@ -80,6 +98,7 @@
   }: Props = $props();
 
   let flavorMenuOpen = $state(false);
+  let textMenuOpen = $state(false);
   // "Pandoc" when chosen for this document, "Pandoc (auto)" otherwise.
   const flavorLabel = $derived(`${FLAVOR_NAMES[flavor]}${flavorSource === "document" ? "" : " (auto)"}`);
 </script>
@@ -132,6 +151,26 @@
   <button class="theme" data-popover-toggle="typography" onclick={ontypographyclick} title={keyLabel("Text size and zoom (Ctrl+wheel, Ctrl+=, Ctrl+−, Ctrl+0)")}
     >{typography}</button
   >
+  <button
+    class="theme"
+    data-popover-toggle="text"
+    title="Line endings and text tools"
+    aria-haspopup="menu"
+    aria-expanded={textMenuOpen}
+    onclick={() => (textMenuOpen = !textMenuOpen)}>{lineEndingLabel(lineEnding, mixedLineEndings, hasBom)}</button
+  >
+  {#if textMenuOpen}
+    <TextMenu
+      {lineEnding}
+      mixed={mixedLineEndings}
+      {hasBom}
+      raw={tidySelection}
+      {onconvert}
+      {onremovebom}
+      {ontidy}
+      onclose={() => (textMenuOpen = false)}
+    />
+  {/if}
   <button
     class="theme"
     data-popover-toggle="flavor"

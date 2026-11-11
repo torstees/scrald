@@ -674,6 +674,22 @@ As implemented (`ui/src/editor/RawEditor.svelte`):
 - **Saves check the disk first.** If the file differs from what was last read or saved, and isn't the version the user chose to overwrite, the save writes nothing and the banner appears. This also covers a save in the 300 ms before the watcher reports a change, and "Save" in the close prompt (the window stays open).
 - The file watcher reloads the document when it changes externally and there are no unsaved local edits, preserving scroll position. It watches the document's **directory** (non-recursively) rather than the file, because editors that save by writing a temp file and renaming it would otherwise end the watch, and debounces events by 300 ms. If there are unsaved edits, Scrald shows the conflict banner instead.
 
+### 9.4 Line endings and hard-wrapped text
+
+Scrald keeps a file's line endings and BOM unless the user asks (§9.3). As implemented (#219, #220):
+
+- **The status bar** shows `LF`, `CRLF`, or `Mixed` (core's `mixed_line_endings`: some lines CRLF, some LF), with `· BOM` when the file has one. Its menu converts the line endings (the other one, or either for a mixed file), removes the BOM, and tidies hard-wrapped text.
+- **Converting** (`source::convert_line_endings`; a lone `\r` isn't a line ending and stays) and removing the BOM are one edit each, in memory until saved. Edit history entries record the BOM before and after as well as the text diff, so undo puts a BOM back; loading the disk version records its BOM the same way. Raw mode rebuilds its editor afterwards, since its line separator is fixed when it's built.
+- **Tidying** (`scrald-core/src/tidy.rs`) works on the **top-level paragraphs** of a fresh parse of the text, so front matter, code, tables, headings, lists, quotes, HTML, and Pandoc divs are left alone by construction. Paragraphs that are line blocks (`|`), or contain `$$` or `%%`, are skipped. Within a paragraph, each line break:
+  - stays, after a Markdown hard break (two spaces or `\`);
+  - becomes a **blank line** when the line ends a sentence (`.?!:…`, optionally followed by a closing quote, bracket, or emphasis, and not after `Mr.`, `Dr.`, `e.g.`, ...), is shorter than 85% of the paragraph's longest line, and the next line starts like a sentence (a capital, a digit, an opening quote or bracket, a dash) and wouldn't start something else after a blank line (an ordered list item, a link definition, HTML, ...);
+  - joins a word broken with a hyphen (`exam-` / `ple`) without it, unless the text has the hyphenated word elsewhere (`well-known`);
+  - otherwise becomes a space.
+
+  New breaks use the document's line ending. Tidying the result again changes nothing (a test runs it over every fixture).
+- **Where it runs.** `Alt+Q`, the status-bar menu, and on macOS Edit › Tidy Hard-Wrapped Text (`Option+Q`). In raw mode it tidies only the line breaks in the selection, if there is one.
+- **Preview.** The tidied text is applied as one edit, then shown in raw mode's merge view, with the text before on the left (read-only) and arrows that put back a change. **Done** keeps the right side (and returns to reading if it started there); **Undo tidy** puts the text before back, as another edit. Autosave waits while the comparison is open.
+
 ---
 
 ## 10. Navigation and reading features

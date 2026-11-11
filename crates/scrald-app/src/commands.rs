@@ -558,6 +558,81 @@ pub async fn edit_block(
     Ok(send_model(&sessions, window.label(), opened, false))
 }
 
+/// Converts the document's line endings to `lineEnding`, or with
+/// `removeBom` drops its BOM (#220): one undoable edit, in memory until
+/// saved. Returns the re-parsed document.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn convert_document(
+    window: tauri::WebviewWindow,
+    registry: tauri::State<'_, AssetRegistry>,
+    store: tauri::State<'_, StateStore>,
+    themes: tauri::State<'_, ThemeService>,
+    sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
+    line_ending: Option<scrald_core::LineEnding>,
+    remove_bom: bool,
+) -> Result<OpenedDocument, CommandError> {
+    let (path, bytes) = sessions.convert(window.label(), line_ending, remove_bom)?;
+    let memory = store.memory(&path).unwrap_or_default();
+    let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
+    let dirty = sessions.is_dirty(window.label());
+    let opened = finish_open(&window, &registry, &store, &themes, doc, memory, dirty)?;
+    Ok(send_model(&sessions, window.label(), opened, false))
+}
+
+/// The document's text with its hard-wrapped paragraphs tidied (#219), to
+/// show beside the text before it's applied. Nothing changes here: the
+/// frontend applies `tidied` with `set_document_text` and `version`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TidyPreview {
+    /// The text as it is now (without BOM).
+    pub text: String,
+    pub tidied: String,
+    pub version: u64,
+    /// Line breaks joined, and made into paragraph breaks.
+    pub joined: usize,
+    pub split: usize,
+}
+
+/// Tidies the whole document, or with `start` and `end` (byte offsets in
+/// the text, without BOM: raw mode's selection) only the line breaks there.
+#[tauri::command]
+pub async fn tidy_text(
+    window: tauri::WebviewWindow,
+    store: tauri::State<'_, StateStore>,
+    sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
+    start: Option<usize>,
+    end: Option<usize>,
+) -> Result<TidyPreview, CommandError> {
+    let (text, version) = sessions
+        .text(window.label())
+        .context("no document is open in this window")?;
+    let (path, _) = sessions
+        .current(window.label())
+        .context("no document is open in this window")?;
+    // Parsed from `text` itself, so the paragraphs' ranges fit it.
+    let bytes = scrald_core::save::encode(&text, sessions.bom_len(window.label()) > 0);
+    let memory = store.memory(&path).unwrap_or_default();
+    // Parsed for its paragraphs; the window's own model may be older (raw
+    // mode doesn't re-parse while typing).
+    let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
+    // Rust note: `zip` pairs two `Option`s: `Some((a, b))` only if both are set.
+    let within = start
+        .zip(end)
+        .map(|(start, end)| scrald_core::SourceRange::new(start, end));
+    let tidied = scrald_core::tidy::tidy_document(&doc, &text, within);
+    Ok(TidyPreview {
+        text,
+        tidied: tidied.text,
+        version,
+        joined: tidied.joined,
+        split: tidied.split,
+    })
+}
+
 /// Undoes the last edit (block, properties) in the window's document, or
 /// with `redo` redoes the last undone one. `null` if there's nothing to do.
 #[tauri::command]

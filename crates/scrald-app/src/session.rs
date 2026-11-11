@@ -17,7 +17,7 @@ use scrald_core::delta::{self, ShownBlocks};
 use scrald_core::edit::TextDiff;
 use scrald_core::recovery::{self, RecoveryEntry, RecoveryHeader};
 use scrald_core::search::SearchIndex;
-use scrald_core::{Block, RenderCache};
+use scrald_core::{Block, LineEnding, RenderCache};
 use serde::Serialize;
 
 /// One window's document.
@@ -34,8 +34,8 @@ struct Session {
     disk_hash: u64,
     /// Changes that can be undone, most recent last, and changes undone
     /// that can be redone. Each is a small diff, not a copy of the text.
-    undo: Vec<TextDiff>,
-    redo: Vec<TextDiff>,
+    undo: Vec<Change>,
+    redo: Vec<Change>,
     /// Goes up with every change to `text`, so raw mode can tell whether the
     /// text it holds is still the current one.
     version: u64,
@@ -59,6 +59,15 @@ struct Session {
     /// The text of the model last sent, for searching it (DESIGN.md §10).
     /// `None` while a search has it.
     search: Option<SearchIndex>,
+}
+
+/// One step in the edit history: a change to the text, and to whether the
+/// file starts with a BOM (#220's "Remove BOM"; usually unchanged).
+#[derive(Debug)]
+struct Change {
+    diff: TextDiff,
+    bom_before: bool,
+    bom_after: bool,
 }
 
 /// A model about to be sent to a window (see `Sessions::send_blocks`).
@@ -90,6 +99,27 @@ pub const RECOVERY_INTERVAL: Duration = Duration::from_secs(3);
 impl Session {
     fn bytes(&self) -> Vec<u8> {
         scrald_core::save::encode(&self.text, self.has_bom)
+    }
+
+    /// Makes the text `text` and the BOM `has_bom`, recorded for undo.
+    /// Nothing happens (and nothing is recorded) if neither changes.
+    fn change(&mut self, text: String, has_bom: bool) {
+        if text == self.text && has_bom == self.has_bom {
+            return;
+        }
+        self.undo.push(Change {
+            diff: TextDiff::between(&self.text, &text),
+            bom_before: self.has_bom,
+            bom_after: has_bom,
+        });
+        if self.undo.len() > UNDO_LIMIT {
+            self.undo.remove(0);
+        }
+        self.redo.clear();
+        self.text = text;
+        self.has_bom = has_bom;
+        self.version += 1;
+        self.update_dirty();
     }
 
     /// Unsaved means different from the file as last read or saved, so
@@ -281,16 +311,8 @@ impl Sessions {
             .get_mut(window)
             .context("no document is open in this window")?;
         let edited = edit(&session.text)?;
-        if edited != session.text {
-            session.undo.push(TextDiff::between(&session.text, &edited));
-            if session.undo.len() > UNDO_LIMIT {
-                session.undo.remove(0);
-            }
-            session.redo.clear();
-            session.text = edited;
-            session.version += 1;
-            session.update_dirty();
-        }
+        let has_bom = session.has_bom;
+        session.change(edited, has_bom);
         Ok((session.path.clone(), session.bytes()))
     }
 
@@ -304,12 +326,12 @@ impl Sessions {
             Step::Undo => session.undo.pop(),
             Step::Redo => session.redo.pop(),
         };
-        let Some(diff) = popped else {
+        let Some(change) = popped else {
             return Ok(None);
         };
-        let stepped = match step {
-            Step::Undo => diff.revert(&session.text),
-            Step::Redo => diff.apply(&session.text),
+        let (stepped, has_bom) = match step {
+            Step::Undo => (change.diff.revert(&session.text), change.bom_before),
+            Step::Redo => (change.diff.apply(&session.text), change.bom_after),
         };
         // Diffs always fit: every change to the text goes through `edit`.
         let Some(text) = stepped else {
@@ -319,13 +341,36 @@ impl Sessions {
             anyhow::bail!("the edit history no longer matches the document");
         };
         session.text = text;
+        session.has_bom = has_bom;
         session.version += 1;
         match step {
-            Step::Undo => session.redo.push(diff),
-            Step::Redo => session.undo.push(diff),
+            Step::Undo => session.redo.push(change),
+            Step::Redo => session.undo.push(change),
         }
         session.update_dirty();
         Ok(Some((session.path.clone(), session.bytes())))
+    }
+
+    /// Converts the text's line endings (#220), or with `remove_bom` drops
+    /// the BOM, as one change recorded for undo. Returns the path and new
+    /// bytes, to parse.
+    pub fn convert(
+        &self,
+        window: &str,
+        line_ending: Option<LineEnding>,
+        remove_bom: bool,
+    ) -> anyhow::Result<(PathBuf, Vec<u8>)> {
+        let mut sessions = self.lock();
+        let session = sessions
+            .get_mut(window)
+            .context("no document is open in this window")?;
+        let text = match line_ending {
+            Some(ending) => scrald_core::source::convert_line_endings(&session.text, ending),
+            None => session.text.clone(),
+        };
+        let has_bom = session.has_bom && !remove_bom;
+        session.change(text, has_bom);
+        Ok((session.path.clone(), session.bytes()))
     }
 
     /// The text in a block's range (original-file offsets, BOM counted).
@@ -579,12 +624,13 @@ impl Sessions {
             .and_then(|s| s.disk_snapshot.take())
             .context("there is no changed disk version to load")?;
         let decoded = scrald_core::source::decode(&snapshot.bytes)?;
-        self.edit(window, |_| Ok::<String, std::io::Error>(decoded.text))?;
         let mut sessions = self.lock();
         let session = sessions
             .get_mut(window)
             .context("no document is open in this window")?;
-        session.has_bom = decoded.has_bom;
+        // The disk version's BOM is part of the change, so undo restores
+        // the user's text with the BOM it had.
+        session.change(decoded.text, decoded.has_bom);
         session.disk_hash = snapshot.hash;
         session.overwrite_hash = None;
         session.update_dirty();
@@ -916,6 +962,31 @@ Two.
         // A new edit clears what could be redone.
         sessions.edit("w", upper).unwrap();
         assert!(sessions.step("w", Step::Redo).unwrap().is_none());
+    }
+
+    #[test]
+    fn converting_line_endings_and_removing_the_bom_are_undoable() {
+        let path = temp_file("convert.md", b"\xEF\xBB\xBFone\r\ntwo\n");
+        let sessions = Sessions::default();
+        sessions.open("w", &path).unwrap();
+        let (_, bytes) = sessions.convert("w", Some(LineEnding::Lf), false).unwrap();
+        assert_eq!(bytes, b"\xEF\xBB\xBFone\ntwo\n");
+        let (_, bytes) = sessions.convert("w", None, true).unwrap();
+        assert_eq!(bytes, b"one\ntwo\n");
+        assert_eq!(sessions.bom_len("w"), 0);
+        assert!(sessions.is_dirty("w"));
+        // Nothing to remove a second time, so nothing is recorded.
+        sessions.convert("w", None, true).unwrap();
+
+        let (_, bytes) = sessions.step("w", Step::Undo).unwrap().unwrap();
+        assert_eq!(bytes, b"\xEF\xBB\xBFone\ntwo\n");
+        let (_, bytes) = sessions.step("w", Step::Undo).unwrap().unwrap();
+        assert_eq!(bytes, b"\xEF\xBB\xBFone\r\ntwo\n");
+        assert!(!sessions.is_dirty("w"));
+        let (_, bytes) = sessions.step("w", Step::Redo).unwrap().unwrap();
+        assert_eq!(bytes, b"\xEF\xBB\xBFone\ntwo\n");
+        let (_, bytes) = sessions.step("w", Step::Redo).unwrap().unwrap();
+        assert_eq!(bytes, b"one\ntwo\n");
     }
 
     #[test]

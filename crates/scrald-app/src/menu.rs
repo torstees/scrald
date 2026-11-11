@@ -9,6 +9,9 @@
 //! - **Quit Scrald**: the default Quit ends the app at once, without the
 //!   close request each window needs to ask about unsaved changes (DESIGN.md
 //!   §9.3), so Scrald's closes every window the way its close button does.
+//!
+//! And one at the end of the Edit menu: **Tidy Hard-Wrapped Text**
+//! (`Option+Q`, #219), which the window in front runs as its Alt+Q.
 
 use tauri::menu::{Menu, MenuEvent, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, EventTarget, Manager, Wry};
@@ -17,10 +20,13 @@ use tauri::{AppHandle, Emitter, EventTarget, Manager, Wry};
 const ABOUT_ID: &str = "scrald-about";
 const SETTINGS_ID: &str = "scrald-settings";
 const QUIT_ID: &str = "scrald-quit";
+const TIDY_ID: &str = "scrald-tidy";
 
 /// The events that ask a window's page to show the About or settings dialog.
 const SHOW_ABOUT: &str = "show-about";
 const SHOW_SETTINGS: &str = "show-settings";
+/// The event that asks a window to tidy hard-wrapped text.
+const TIDY_TEXT: &str = "tidy-text";
 
 /// Tauri's default menu, with the app menu's About and Quit replaced by
 /// Scrald's.
@@ -39,7 +45,28 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     add_settings(app, &app_menu)?;
     let quit = MenuItem::with_id(app, QUIT_ID, "Quit Scrald", true, Some("Cmd+Q"))?;
     replace_predefined(&app_menu, "Quit", &quit)?;
+    add_tidy(app, &menu)?;
     Ok(menu)
+}
+
+/// Adds **Tidy Hard-Wrapped Text** at the end of the Edit menu.
+fn add_tidy(app: &AppHandle, menu: &Menu<Wry>) -> tauri::Result<()> {
+    // Rust note: `find_map` returns the first item the closure maps to
+    // `Some`, here the submenu titled "Edit".
+    let edit = menu.items()?.into_iter().find_map(|item| match item {
+        MenuItemKind::Submenu(submenu) if submenu.text().is_ok_and(|t| t == "Edit") => {
+            Some(submenu)
+        }
+        _ => None,
+    });
+    let Some(edit) = edit else {
+        tracing::warn!("no Edit menu; Tidy Hard-Wrapped Text left out");
+        return Ok(());
+    };
+    let tidy = MenuItem::with_id(app, TIDY_ID, "Tidy Hard-Wrapped Text", true, Some("Alt+Q"))?;
+    edit.append(&PredefinedMenuItem::separator(app)?)?;
+    edit.append(&tidy)?;
+    Ok(())
 }
 
 /// Adds **Settings…** after About and the separator below it, in a group of
@@ -89,12 +116,14 @@ pub fn on_menu_event(app: &AppHandle, event: MenuEvent) {
         show_in_front(app, SHOW_ABOUT);
     } else if event.id() == SETTINGS_ID {
         show_in_front(app, SHOW_SETTINGS);
+    } else if event.id() == TIDY_ID {
+        show_in_front(app, TIDY_TEXT);
     } else if event.id() == QUIT_ID {
         quit(app);
     }
 }
 
-/// Asks the window in front to show a dialog (`event`). The menu bar belongs
+/// Asks the window in front to show a dialog or run a command (`event`). The menu bar belongs
 /// to the frontmost app, so a Scrald window is normally focused; if none
 /// reports focus, any window will do. There's always one, since Scrald ends
 /// with its last window.

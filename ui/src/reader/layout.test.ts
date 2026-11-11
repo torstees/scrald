@@ -22,6 +22,7 @@ function doc(blocks: Block[], sections: Section[]): DocumentModel {
     path: "x.md",
     hasBom: false,
     lineEnding: "lf",
+    mixedLineEndings: false,
     frontMatter: null,
     blocks,
     sections,

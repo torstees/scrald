@@ -186,3 +186,21 @@ fn generated_document_tiles_with_crlf_and_bom() {
     check_blocks_reparse("generated-crlf", &bytes, &doc);
     check_no_op_edits("generated-crlf", &bytes, &doc);
 }
+
+/// Tidying hard-wrapped text (#219) works on every fixture, and tidying the
+/// result again changes nothing: every paragraph it touched is one line, or
+/// kept the line breaks it had to.
+#[test]
+fn tidying_is_stable() {
+    for path in fixture_paths() {
+        let name = path.display().to_string();
+        let bytes = std::fs::read(&path).expect("fixture");
+        let doc = parse_document(path.clone(), &bytes).expect("parse");
+        let text = scrald_core::source::decode(&bytes).expect("utf-8").text;
+        let once = scrald_core::tidy::tidy_document(&doc, &text, None).text;
+        let encoded = scrald_core::save::encode(&once, doc.has_bom);
+        let again_doc = parse_document(path.clone(), &encoded).expect("parse tidied");
+        let twice = scrald_core::tidy::tidy_document(&again_doc, &once, None);
+        assert_eq!(twice.text, once, "{name}: tidying twice changed it again");
+    }
+}

@@ -161,6 +161,8 @@ export interface DocumentModel {
   path: string;
   hasBom: boolean;
   lineEnding: LineEnding;
+  /** Whether some lines end in CRLF and others in LF (#220). */
+  mixedLineEndings: boolean;
   frontMatter: FrontMatter | null;
   blocks: Block[];
   sections: Section[];
@@ -428,6 +430,16 @@ export type PropertyChange =
 export interface RawText {
   text: string;
   version: number;
+}
+
+/** Mirrors `TidyPreview`: the text and the text with hard wraps tidied (#219). */
+export interface TidyPreview {
+  text: string;
+  tidied: string;
+  version: number;
+  /** Line breaks joined, and made into paragraph breaks. */
+  joined: number;
+  split: number;
 }
 
 /** Mirrors `RawSync`: after replacing the text from raw mode. */
