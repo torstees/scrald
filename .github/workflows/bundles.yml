@@ -42,9 +42,21 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
+        # Ubuntu's mirrors are sometimes unreachable from the runners. Without a
+        # limit, apt waits on each one for a long time; without Error-Mode, a failed
+        # update quietly falls back to the image's old package lists, and the
+        # install then fails with 404s on packages replaced since.
+        timeout-minutes: 15
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev file
+          for attempt in 1 2 3; do
+            if sudo apt-get update -o APT::Update::Error-Mode=any -o Acquire::Retries=3; then break; fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::Ubuntu's package mirrors couldn't be reached. Re-run the job later."
+              exit 1
+            fi
+            sleep 30
+          done
+          sudo apt-get install -y -o Acquire::Retries=3 libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev file
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
