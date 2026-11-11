@@ -151,6 +151,11 @@ pub struct Block {
     /// Words in this block, counted as for `DocumentModel::word_count`
     /// (which is their sum). The reader's progress indicator uses them.
     pub words: u32,
+    /// For a list or block quote, the range of each item (or each of the
+    /// quote's children), in order, so one can be edited on its own (#118).
+    /// Empty for other blocks, and for those with fewer than two parts.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<SourceRange>,
 }
 
 /// What kind of block this is. Serialized as `{ "type": "heading", "level": 2 }`.
@@ -520,6 +525,11 @@ pub fn parse_document_cached(
                 .filter_map(|&node| inner_heading(node, pandoc, &index))
                 .collect()
         };
+        // Read before the passes below: a callout replaces its quote.
+        let mut parts = match group {
+            [only] => editable_parts(only, &index, &text[..], bom_len),
+            _ => Vec::new(),
+        };
         // A note embedded on a line of its own is shown in place (#117).
         let mut embedded = None;
         if let (Some(vault), [only]) = (&vault, group)
@@ -606,6 +616,16 @@ pub fn parse_document_cached(
                 offset: heading.offset,
                 number: None,
             });
+        }
+
+        // An Obsidian callout is HTML now, edited as a whole.
+        if let [only] = group
+            && !matches!(
+                only.data().value,
+                NodeValue::List(_) | NodeValue::BlockQuote
+            )
+        {
+            parts.clear();
         }
 
         let mut html = if outer_div.is_some() {
@@ -730,6 +750,7 @@ pub fn parse_document_cached(
             hash: hash_text(source_text),
             section,
             words: words as u32,
+            parts,
         });
         word_count += words;
     }
@@ -1132,6 +1153,45 @@ fn code_language(info: &str) -> Option<String> {
 /// Top-level blocks always begin a line, so the range starts at column 1:
 /// that keeps the indentation of indented code blocks (and the up-to-three
 /// spaces any block may have) inside the block, where edits need it.
+/// The parts of a list (its items) or block quote (its children) that can
+/// be edited on their own (#118), each from column 1 of its first line, like
+/// a block. The reader matches them to the block's HTML by position (the
+/// list's `<li>`s, the quote's child elements), so a quote with raw HTML in
+/// it, which can draw any number of elements, has none.
+///
+/// comrak sometimes ends an item after its line break (seen with CRLF), so
+/// each part is trimmed back to its last character: `text` is the document
+/// without its BOM, which ranges count (`bom_len`).
+fn editable_parts(
+    node: Node<'_>,
+    index: &LineIndex,
+    text: &str,
+    bom_len: usize,
+) -> Vec<SourceRange> {
+    if !matches!(
+        node.data().value,
+        NodeValue::List(_) | NodeValue::BlockQuote
+    ) {
+        return Vec::new();
+    }
+    if node
+        .children()
+        .any(|child| matches!(child.data().value, NodeValue::HtmlBlock(_)))
+    {
+        return Vec::new();
+    }
+    let parts: Vec<SourceRange> = node
+        .children()
+        .map(|child| {
+            let range = block_range(child, index);
+            let slice = &text[range.start - bom_len..range.end - bom_len];
+            let trimmed = slice.trim_end_matches(['\r', '\n']).len();
+            SourceRange::new(range.start, range.start + trimmed)
+        })
+        .collect();
+    if parts.len() < 2 { Vec::new() } else { parts }
+}
+
 fn block_range(node: Node<'_>, index: &LineIndex) -> SourceRange {
     let pos = node.data().sourcepos;
     let start = index.start_offset(pos.start.line, 1);
@@ -1633,6 +1693,63 @@ Text
         // Words in cells count, inline code included.
         assert_eq!(table.words, 3);
         assert_eq!(doc.word_count, 5);
+    }
+
+    #[test]
+    fn lists_and_quotes_have_editable_parts() {
+        // Each part's text, so the assertions read like the document.
+        let parts_of = |text: &str| -> Vec<String> {
+            let block = &parse(text).blocks[0];
+            // `edit::splice_part` knows the last part by its end.
+            if let Some(last) = block.parts.last() {
+                assert_eq!(last.end, block.source.end);
+            }
+            block
+                .parts
+                .iter()
+                .map(|r| text[r.as_range()].to_string())
+                .collect()
+        };
+        // Tight, with a nested list and a continuation line.
+        assert_eq!(
+            parts_of("- a\n  more\n- b\n  - b1\n  - b2\n- c\n\nNext\n"),
+            ["- a\n  more", "- b\n  - b1\n  - b2", "- c"]
+        );
+        // Loose and ordered, indented by a space, with CRLF and multi-byte text.
+        assert_eq!(
+            parts_of(" 1. Ægir\r\n\r\n 2. Rán\r\n\r\npara\r\n"),
+            [" 1. Ægir", " 2. Rán"]
+        );
+        // Tight with CRLF, where comrak ends the last item after its break.
+        assert_eq!(parts_of("- a\r\n- två\r\n\r\nx\r\n"), ["- a", "- två"]);
+        // A quote's children, from column 1, markers included.
+        assert_eq!(
+            parts_of("> one\n> two\n>\n> - x\n> - y\n"),
+            ["> one\n> two", "> - x\n> - y"]
+        );
+        // One item, a quote with raw HTML, a paragraph: no parts.
+        assert!(parts_of("- only\n").is_empty());
+        assert!(parts_of("> <div>x</div>\n>\n> text\n").is_empty());
+        assert!(parts_of("plain\n").is_empty());
+    }
+
+    #[test]
+    fn callouts_are_edited_whole() {
+        // `faq` isn't a GitHub alert type, so in GFM it's a plain quote.
+        let text = "> [!faq] Title\n> one\n>\n> two\n";
+        let parts_in = |flavor| {
+            let options = ParseOptions {
+                flavor: Some(flavor),
+                ..ParseOptions::default()
+            };
+            parse_document_with(PathBuf::from("test.md"), text.as_bytes(), &options)
+                .unwrap()
+                .blocks[0]
+                .parts
+                .len()
+        };
+        assert_eq!(parts_in(Flavor::Obsidian), 0);
+        assert_eq!(parts_in(Flavor::Gfm), 2);
     }
 
     #[test]

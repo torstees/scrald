@@ -20,6 +20,7 @@ import type {
   ResolvedTheme,
   RecoveredChanges,
   SearchReply,
+  SourceRange,
   TerminalThemeFile,
   ThemeChange,
   ThemeDetails,
@@ -85,9 +86,18 @@ export function blockSource(start: number, end: number): Promise<string> {
   return invoke<string>("block_source", { start, end });
 }
 
-/** Replaces a block's source in memory; refused if the document changed since `original` was read. */
-export async function editBlock(start: number, end: number, original: string, text: string): Promise<OpenedDocument> {
-  return complete(await invoke<OpenedDocument>("edit_block", { start, end, original, text }));
+/**
+ * Replaces a block's source in memory; refused if the document changed since `original` was read.
+ * With `within` (the block's range), `start..end` is one of the block's parts.
+ */
+export async function editBlock(
+  start: number,
+  end: number,
+  original: string,
+  text: string,
+  within?: SourceRange,
+): Promise<OpenedDocument> {
+  return complete(await invoke<OpenedDocument>("edit_block", { start, end, original, text, within: within ?? null }));
 }
 
 /** Undoes (or with `redo`, redoes) one edit; null if there's nothing to do. */

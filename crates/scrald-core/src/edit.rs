@@ -86,6 +86,91 @@ pub fn splice_block(
     ))
 }
 
+/// Replaces one part of a block (a list item, or a block quote's child; see
+/// `Block::parts`) with `replacement`, like `splice_block` on the part's
+/// range. `block` is the whole block's range, which must contain the part.
+///
+/// Emptying a part removes its lines and the separator line beside it (a
+/// blank line, or a quote's lone `>`), so the parts around it stay as far
+/// apart as before: the one after it, or for the last part the one before
+/// it. Taking the one after the last part would join the next block to the
+/// list.
+pub fn splice_part(
+    text: &str,
+    block: SourceRange,
+    part: SourceRange,
+    bom_len: usize,
+    original: &str,
+    replacement: &str,
+) -> Result<String, EditError> {
+    if part.start < block.start || part.end > block.end || part.start > part.end {
+        return Err(EditError::OutOfRange);
+    }
+    if !replacement.trim().is_empty() {
+        return splice_block(text, part, bom_len, original, replacement);
+    }
+    let start = part
+        .start
+        .checked_sub(bom_len)
+        .ok_or(EditError::OutOfRange)?;
+    let end = part.end.checked_sub(bom_len).ok_or(EditError::OutOfRange)?;
+    if text.get(start..end).ok_or(EditError::OutOfRange)? != original {
+        return Err(EditError::Stale);
+    }
+    let mut cut_start = start;
+    let mut cut_end = end + line_break_len(&text[end..]);
+    let last = part.end == block.end;
+    if !last {
+        if let Some(len) = separator_after(&text[cut_end..]) {
+            cut_end += len;
+        }
+    } else if part.start > block.start {
+        cut_start -= separator_before(&text[..start]);
+    }
+    Ok(format!("{}{}", &text[..cut_start], &text[cut_end..]))
+}
+
+/// The length of the line break `rest` starts with (0, 1, or 2 bytes).
+fn line_break_len(rest: &str) -> usize {
+    if rest.starts_with("\r\n") {
+        2
+    } else if rest.starts_with('\n') {
+        1
+    } else {
+        0
+    }
+}
+
+/// A line holding nothing but spaces and quote markers.
+fn is_separator(line: &str) -> bool {
+    line.chars()
+        .all(|c| c == '>' || c == ' ' || c == '\t' || c == '\r')
+}
+
+/// The length of `rest`'s first line, with its line break, if it's a
+/// separator line.
+fn separator_after(rest: &str) -> Option<usize> {
+    // Rust note: `split_once` returns `Option<(&str, &str)>`, the text
+    // before and after the first '\n'; `?` returns `None` if there's none.
+    let (line, _) = rest.split_once('\n')?;
+    is_separator(line).then_some(line.len() + 1)
+}
+
+/// How many bytes to remove from the end of `before` (the text up to a
+/// part, ending with the line break of the line before it): the line before
+/// the part, with its break, if it's a separator line; else 0.
+fn separator_before(before: &str) -> usize {
+    let Some(body) = before.strip_suffix('\n') else {
+        return 0;
+    };
+    let line_start = body.rfind('\n').map_or(0, |i| i + 1);
+    if line_start > 0 && is_separator(&body[line_start..]) {
+        before.len() - line_start
+    } else {
+        0
+    }
+}
+
 /// The change between two versions of a text: at byte `at`, `removed` was
 /// replaced by `inserted`. The smallest such change (common prefix and
 /// suffix left out), cut on character boundaries.
@@ -213,6 +298,56 @@ mod tests {
             splice_block(text, r, 0, "Two.", "  \n").unwrap(),
             "One.\n\nThree.\n"
         );
+    }
+
+    /// Empties `part` of the block `block` in `text`.
+    fn remove_part(text: &str, block: &str, part: &str) -> String {
+        let b = range_of(text, block, 0);
+        let start = b.start + block.find(part).unwrap();
+        let p = SourceRange::new(start, start + part.len());
+        splice_part(text, b, p, 0, part, "").unwrap()
+    }
+
+    #[test]
+    fn a_part_is_replaced_and_nothing_else() {
+        let text = "- one\n- two\n- three\n";
+        let block = range_of(text, "- one\n- two\n- three", 0);
+        let part = range_of(text, "- two", 0);
+        assert_eq!(
+            splice_part(text, block, part, 0, "- two", "- 2\n  more\n").unwrap(),
+            "- one\n- 2\n  more\n- three\n"
+        );
+        // Outside the block, or stale.
+        let outside = SourceRange::new(0, text.len() + 1);
+        assert_eq!(
+            splice_part(text, block, outside, 0, "", "x"),
+            Err(EditError::OutOfRange)
+        );
+        assert_eq!(
+            splice_part(text, block, part, 0, "- 2", ""),
+            Err(EditError::Stale)
+        );
+    }
+
+    #[test]
+    fn emptying_a_part_keeps_the_spacing() {
+        let tight = "- a\n- b\n- c\n\nNext\n";
+        let list = "- a\n- b\n- c";
+        assert_eq!(remove_part(tight, list, "- a"), "- b\n- c\n\nNext\n");
+        assert_eq!(remove_part(tight, list, "- b"), "- a\n- c\n\nNext\n");
+        // The last item keeps the blank line before the next block.
+        assert_eq!(remove_part(tight, list, "- c"), "- a\n- b\n\nNext\n");
+
+        let loose = "- a\n\n- b\n\n- c\n\nNext\n";
+        let list = "- a\n\n- b\n\n- c";
+        assert_eq!(remove_part(loose, list, "- a"), "- b\n\n- c\n\nNext\n");
+        assert_eq!(remove_part(loose, list, "- b"), "- a\n\n- c\n\nNext\n");
+        assert_eq!(remove_part(loose, list, "- c"), "- a\n\n- b\n\nNext\n");
+
+        let quote = "> one\r\n>\r\n> two\r\n\r\nNext\r\n";
+        let block = "> one\r\n>\r\n> two";
+        assert_eq!(remove_part(quote, block, "> one"), "> two\r\n\r\nNext\r\n");
+        assert_eq!(remove_part(quote, block, "> two"), "> one\r\n\r\nNext\r\n");
     }
 
     #[test]

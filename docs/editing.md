@@ -8,7 +8,9 @@ Scrald is a reader first, but small changes don't need another program.
 
 Double-click a paragraph, heading, list, table, or other block to edit its Markdown in place. `Ctrl+Enter`, `Esc`, or clicking elsewhere finishes, and the block is shown rendered again.
 
-A block is a whole top-level piece of the document: editing one item of a list edits the whole list, and editing inside a quote edits the whole quote.
+In a list, double-clicking an item edits just that item, with the lists inside it. In a quote, it edits just the paragraph, list, or other part you clicked, with its `>` markers. The rest of the list or quote stays in view around the editor. Emptying an item removes it, along with the blank line beside it.
+
+To edit a whole list or quote at once, hold `Alt` (`Option` on a Mac) while double-clicking. Callouts, and quotes with HTML in them, are always edited whole.
 
 ## Raw mode
 

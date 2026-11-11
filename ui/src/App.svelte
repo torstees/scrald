@@ -411,12 +411,12 @@
   }
 
   const blockEditing: BlockEditing = {
-    load: (block) => blockSource(block.source.start, block.source.end),
-    commit: (block, original, text) =>
+    load: (range) => blockSource(range.start, range.end),
+    commit: (target, original, text) =>
       queueEdit(async () => {
         try {
           const started = performance.now();
-          await applyEdit(await editBlock(block.source.start, block.source.end, original, text));
+          await applyEdit(await editBlock(target.range.start, target.range.end, original, text, target.within));
           noteEdit();
           // DESIGN.md §4 budget: re-render after a single-block edit < 100 ms.
           void afterPaint().then(() => reportTiming("block_edit", performance.now() - started));
