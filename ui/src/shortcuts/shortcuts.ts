@@ -55,6 +55,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["Ctrl+=", "Ctrl+wheel up"], action: "Zoom in" },
       { keys: ["Ctrl+-", "Ctrl+wheel down"], action: "Zoom out" },
       { keys: ["Ctrl+0"], action: "Reset zoom" },
+      { keys: ["Ctrl+Shift+H"], action: "Hide or show checked task items" },
     ],
   },
   {

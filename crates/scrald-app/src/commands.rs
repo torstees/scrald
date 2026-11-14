@@ -558,6 +558,36 @@ pub async fn edit_block(
     Ok(send_model(&sessions, window.label(), opened, false))
 }
 
+/// Checks or unchecks one task-list item (#218): `offset` is the file
+/// offset of the character between its brackets (`TaskMark::offset`), and
+/// `mark` is the letter to check it with (`DocumentModel::check_mark`).
+/// An ordinary undoable edit, in memory until saved; nothing changes if the
+/// task isn't the opposite of `checked` any more. Returns the re-parsed
+/// document.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn set_task(
+    window: tauri::WebviewWindow,
+    registry: tauri::State<'_, AssetRegistry>,
+    store: tauri::State<'_, StateStore>,
+    themes: tauri::State<'_, ThemeService>,
+    sessions: tauri::State<'_, Sessions>,
+    vaults: tauri::State<'_, VaultCache>,
+    offset: usize,
+    checked: bool,
+    mark: char,
+) -> Result<OpenedDocument, CommandError> {
+    let bom_len = sessions.bom_len(window.label());
+    let (path, bytes) = sessions.edit(window.label(), |current| {
+        scrald_core::edit::set_task(current, offset, bom_len, checked, mark)
+    })?;
+    let memory = store.memory(&path).unwrap_or_default();
+    let doc = parse_in_background(&sessions, window.label(), path, bytes, &memory, &vaults).await?;
+    let dirty = sessions.is_dirty(window.label());
+    let opened = finish_open(&window, &registry, &store, &themes, doc, memory, dirty)?;
+    Ok(send_model(&sessions, window.label(), opened, false))
+}
+
 /// Converts the document's line endings to `lineEnding`, or with
 /// `removeBom` drops its BOM (#220): one undoable edit, in memory until
 /// saved. Returns the re-parsed document.
@@ -1317,6 +1347,16 @@ pub fn set_remote_images(
     allowed: bool,
 ) -> Result<(), CommandError> {
     Ok(store.set_remote_images(&path, allowed)?)
+}
+
+/// Remembers whether a document hides its checked task items (#218).
+#[tauri::command]
+pub fn set_hide_checked(
+    store: tauri::State<'_, StateStore>,
+    path: PathBuf,
+    hidden: bool,
+) -> Result<(), CommandError> {
+    Ok(store.set_hide_checked(&path, hidden)?)
 }
 
 /// Recently opened documents for the start screen: pinned first, then
