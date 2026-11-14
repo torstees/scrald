@@ -66,6 +66,12 @@ Only the document's text changes size: the contents, properties sidebar, and sta
 - Footnotes and code are searched. Math, diagrams, music, and the properties aren't.
 - `Esc` closes the bar.
 
+## Task lists
+
+When a document has task items, the status bar shows how many are checked, such as "3 / 12 done". Its menu, or `Ctrl+Shift+H`, hides the checked items, so only what's left to do shows. Items inside a checked item hide with it. Scrald remembers the choice for each document.
+
+Hiding only changes what you see: the file stays as it is, and printing shows what the screen does. Hidden items still count in the word count and reading progress. When a search match is in a hidden item, going to it shows that item. To check items off, see [Editing and saving](editing.md).
+
 ## Footnotes
 
 Hover over a footnote number, or tab to it, to see the note in a popover. Clicking the number jumps to the notes at the end of the document, and ↩ after a note jumps back.

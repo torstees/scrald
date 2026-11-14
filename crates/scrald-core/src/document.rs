@@ -66,6 +66,9 @@ pub struct DocumentModel {
     /// against `transclude::MAX_PER_DOCUMENT`.
     #[serde(skip)]
     pub transclusions: usize,
+    /// The letter a newly checked task gets (#218): `X` when most of the
+    /// document's checked tasks use it, otherwise `x`.
+    pub check_mark: char,
 }
 
 /// A footnote, rendered for display.
@@ -158,6 +161,22 @@ pub struct Block {
     /// Empty for other blocks, and for those with fewer than two parts.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<SourceRange>,
+    /// The block's task-list items (`- [ ]`, `- [x]`), in the order their
+    /// checkboxes appear in `html`, so the reader can match the nth checkbox
+    /// to the nth task and toggle it (#218). Empty when there are none, or
+    /// when the HTML isn't the block's own (a note shown in place).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tasks: Vec<TaskMark>,
+}
+
+/// One task-list item's checkbox (#218).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskMark {
+    /// Byte offset, in the original file, of the character between the
+    /// brackets: a space, `x`, or `X`.
+    pub offset: usize,
+    pub checked: bool,
 }
 
 /// What kind of block this is. Serialized as `{ "type": "heading", "level": 2 }`.
@@ -532,6 +551,14 @@ pub fn parse_document_cached(
             [only] => editable_parts(only, &index, &text[..], bom_len),
             _ => Vec::new(),
         };
+        // A table's cells can't hold tasks (comrak's `tasklist_in_table` is
+        // off), except a Pandoc grid table's, whose cells are parsed on their
+        // own, so comrak's positions in them aren't the file's.
+        let mut tasks = if kind == BlockKind::Table {
+            Vec::new()
+        } else {
+            task_marks(group, &index, &text[..], bom_len)
+        };
         // A note embedded on a line of its own is shown in place (#117).
         let mut embedded = None;
         if let (Some(vault), [only]) = (&vault, group)
@@ -638,6 +665,8 @@ pub fn parse_document_cached(
         };
         if let Some(shown) = embedded {
             html = shown.html;
+            // The note's checkboxes aren't this document's.
+            tasks.clear();
             features.merge(shown.features);
             embed_budget = embed_budget.saturating_sub(shown.count);
             transclusions += shown.count;
@@ -753,6 +782,7 @@ pub fn parse_document_cached(
             section,
             words: words as u32,
             parts,
+            tasks,
         });
         word_count += words;
     }
@@ -807,6 +837,8 @@ pub fn parse_document_cached(
         first_block_text,
     );
 
+    let check_mark = check_mark(&blocks, &text[..], bom_len);
+
     Ok(DocumentModel {
         path,
         has_bom: decoded.has_bom,
@@ -828,6 +860,7 @@ pub fn parse_document_cached(
         missing_title,
         embeds,
         transclusions,
+        check_mark,
     })
 }
 
@@ -1195,6 +1228,48 @@ fn editable_parts(
     if parts.len() < 2 { Vec::new() } else { parts }
 }
 
+/// The task-list items in a block's nodes, in document order, which is the
+/// order comrak writes their checkboxes in. Each mark's offset comes from
+/// comrak's position for the symbol, and is checked against the text: it
+/// must sit between `[` and `]`, checked or not as comrak says. If any
+/// doesn't, the block gets no tasks, and its checkboxes stay read-only.
+fn task_marks(group: &[Node<'_>], index: &LineIndex, text: &str, bom_len: usize) -> Vec<TaskMark> {
+    let mut marks = Vec::new();
+    for &node in group {
+        // Rust note: `descendants()` walks the node and everything under it
+        // in document order (a pre-order traversal), lazily, like a generator.
+        for descendant in node.descendants() {
+            if let NodeValue::TaskItem(task) = &descendant.data().value {
+                let pos = task.symbol_sourcepos.start;
+                marks.push(TaskMark {
+                    offset: index.start_offset(pos.line, pos.column),
+                    checked: task.symbol.is_some(),
+                });
+            }
+        }
+    }
+    let all_found = marks.iter().all(|mark| {
+        mark.offset
+            .checked_sub(bom_len)
+            .and_then(|at| crate::edit::task_symbol(text, at))
+            .is_some_and(|symbol| (symbol != ' ') == mark.checked)
+    });
+    if all_found { marks } else { Vec::new() }
+}
+
+/// The letter for a newly checked task: `X` if most checked tasks in the
+/// document use it, otherwise `x` (#218).
+fn check_mark(blocks: &[Block], text: &str, bom_len: usize) -> char {
+    let (mut lower, mut upper) = (0, 0);
+    for mark in blocks.iter().flat_map(|b| &b.tasks).filter(|m| m.checked) {
+        match crate::edit::task_symbol(text, mark.offset - bom_len) {
+            Some('X') => upper += 1,
+            _ => lower += 1,
+        }
+    }
+    if upper > lower { 'X' } else { 'x' }
+}
+
 fn block_range(node: Node<'_>, index: &LineIndex) -> SourceRange {
     let pos = node.data().sourcepos;
     let start = index.start_offset(pos.start.line, 1);
@@ -1296,6 +1371,51 @@ mod tests {
             html.contains("A &lt;textarea&gt; too, and &lt;style&gt; and &lt;xmp&gt;."),
             "{html}"
         );
+    }
+
+    #[test]
+    fn task_items_carry_their_marks() {
+        let bytes =
+            "\u{feff}# T\r\n\r\n- [ ] é\r\n  - [x] nested\r\n- [X] c\r\n\r\nNot - [ ] a task\r\n";
+        let doc = parse_document(PathBuf::from("t.md"), bytes.as_bytes()).unwrap();
+        let list = &doc.blocks[1];
+        let marks: Vec<(String, bool)> = list
+            .tasks
+            .iter()
+            .map(|m| (bytes[m.offset - 1..m.offset + 2].to_string(), m.checked))
+            .collect();
+        assert_eq!(
+            marks,
+            [
+                ("[ ]".into(), false),
+                ("[x]".into(), true),
+                ("[X]".into(), true)
+            ]
+        );
+        assert!(doc.blocks[2].tasks.is_empty());
+        // One `x`, one `X`: a tie goes to `x`.
+        assert_eq!(doc.check_mark, 'x');
+        let upper = parse("- [X] a\n- [X] b\n- [x] c\n- [ ] d\n");
+        assert_eq!(upper.check_mark, 'X');
+    }
+
+    #[test]
+    fn tasks_whose_marks_are_not_in_the_text_are_left_out() {
+        // A grid table's cells are parsed on their own (Pandoc), so comrak's
+        // positions for a task in one aren't the file's.
+        let text = "+----------+\n| - [ ] a  |\n| - [x] b  |\n+----------+\n";
+        let doc = parse_document_with(
+            PathBuf::from("g.md"),
+            text.as_bytes(),
+            &ParseOptions {
+                flavor: Some(Flavor::Pandoc),
+                ..ParseOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(doc.blocks.len(), 1);
+        assert!(doc.blocks[0].html.contains("checkbox"));
+        assert!(doc.blocks[0].tasks.is_empty());
     }
 
     #[test]

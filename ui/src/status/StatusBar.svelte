@@ -4,6 +4,8 @@
   import { FLAVOR_NAMES } from "./flavor";
   import FlavorMenu from "./FlavorMenu.svelte";
   import TextMenu from "./TextMenu.svelte";
+  import TaskMenu from "./TaskMenu.svelte";
+  import { formatTasks } from "../reader/tasks";
   import { lineEndingLabel } from "./text";
   import { formatProgress, formatTimeLeft } from "./progress";
   import { formatReadingTime, formatWordCount } from "./reading";
@@ -47,6 +49,10 @@
     onconvert: (to: LineEnding) => void;
     onremovebom: () => void;
     ontidy: () => void;
+    /** Checked and total task items (#218); shown only when there are some. */
+    tasks: { done: number; total: number };
+    hideChecked: boolean;
+    onhidechecked: () => void;
     /** Text sizing and zoom summary; clicking it opens the typography panel. */
     typography: string;
     ontypographyclick: () => void;
@@ -90,6 +96,9 @@
     onconvert,
     onremovebom,
     ontidy,
+    tasks,
+    hideChecked,
+    onhidechecked,
     autosave,
     onsettings,
     progress,
@@ -99,6 +108,7 @@
 
   let flavorMenuOpen = $state(false);
   let textMenuOpen = $state(false);
+  let taskMenuOpen = $state(false);
   // "Pandoc" when chosen for this document, "Pandoc (auto)" otherwise.
   const flavorLabel = $derived(`${FLAVOR_NAMES[flavor]}${flavorSource === "document" ? "" : " (auto)"}`);
 </script>
@@ -136,6 +146,26 @@
         <button class="load" onclick={() => onremoteimages(true)} title="Load remote images for this document">Load</button>
       {/if}
     </span>
+  {/if}
+  {#if tasks.total > 0}
+    <button
+      class="theme"
+      class:on={hideChecked}
+      data-popover-toggle="tasks"
+      title={hideChecked ? "Checked task items are hidden" : "Task items"}
+      aria-haspopup="menu"
+      aria-expanded={taskMenuOpen}
+      onclick={() => (taskMenuOpen = !taskMenuOpen)}>{formatTasks(tasks.done, tasks.total)}</button
+    >
+    {#if taskMenuOpen}
+      <TaskMenu
+        done={tasks.done}
+        total={tasks.total}
+        {hideChecked}
+        ontoggle={onhidechecked}
+        onclose={() => (taskMenuOpen = false)}
+      />
+    {/if}
   {/if}
   {#if autosave}
     <button

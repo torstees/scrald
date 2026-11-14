@@ -111,6 +111,15 @@ export async function convertDocument(lineEnding: LineEnding | null, removeBom: 
 }
 
 /**
+ * Checks or unchecks the task item whose marker is at file offset `offset`
+ * (#218), with `mark` (the model's `checkMark`) when checking. An ordinary
+ * undoable edit; refused if the task changed meanwhile.
+ */
+export async function setTask(offset: number, checked: boolean, mark: string): Promise<OpenedDocument> {
+  return complete(await invoke<OpenedDocument>("set_task", { offset, checked, mark }));
+}
+
+/**
  * The text with hard-wrapped paragraphs tidied (#219), to show before it's
  * applied; with `range` (byte offsets in the text), only line breaks there.
  */
@@ -214,6 +223,11 @@ export function saveReadingPosition(path: string, anchor: ScrollAnchor): void {
 /** Remembers whether remote images may load for a document. */
 export function setRemoteImages(path: string, allowed: boolean): Promise<void> {
   return invoke("set_remote_images", { path, allowed });
+}
+
+/** Remembers whether a document hides its checked task items (#218). */
+export function setHideChecked(path: string, hidden: boolean): Promise<void> {
+  return invoke("set_hide_checked", { path, hidden });
 }
 
 /** Every theme, including broken user themes (with `error` set). */

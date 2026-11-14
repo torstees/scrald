@@ -692,6 +692,15 @@ Scrald keeps a file's line endings and BOM unless the user asks (§9.3). As impl
 
 ---
 
+### 9.5 Task lists
+
+As implemented (#218):
+
+- **Clicking a checkbox** checks or unchecks its item. Each block lists its task items (`Block.tasks`: the file offset of the character between the brackets, and whether it's checked), in the order comrak writes their checkboxes. The reader matches the nth checkbox in a block's HTML to the nth task and enables only those. If the counts differ, as with raw HTML checkboxes or a note shown in place, the boxes stay read-only.
+- **Checking where comrak says.** Core takes each offset from comrak's position for the symbol and keeps a block's tasks only if every one is found between `[` and `]` in the text. A table block has none: a Pandoc grid table's cells are parsed on their own, so comrak's positions there aren't the file's.
+- **The edit** (`edit::set_task`) changes that one byte, after checking it's still the opposite state, so a stale click is refused. Checking writes `x`, or `X` when most of the document's checked items use it (`DocumentModel.check_mark`). It's an ordinary undoable edit, and keyboard focus returns to the new checkbox.
+- **Hiding checked items** (`Ctrl+Shift+H`, or the status bar's "3 / 12 done" menu) is display only: a CSS rule hides each `li` whose own checkbox is checked, with its nested items. The choice is per document (`hide_checked` in the state database, migration 6). Hidden items still count in the word count, progress, and search. A search match inside one shows it, and an item just checked stays in view for 0.9 seconds so the click visibly lands. Printing follows the screen.
+
 ## 10. Navigation and reading features
 
 - **Table of contents:** a sidebar built from headings, with collapsible levels, the current section highlighted while scrolling, and click-to-jump. Toggle with `Ctrl+\` or the ☰ button in the status bar. For novels, a depth limit keeps the list manageable. As implemented: the Depth menu in the sidebar and "Contents depth" in the settings are one global setting (`contents.depth`, 1–6, 6 for all), shared by every window. A depth above a document's top heading level lists that level, so a document whose top headings are H2 never shows an empty list. With the properties panel placed at the left, the sidebar has "Contents | Properties" tabs (§8.2).
