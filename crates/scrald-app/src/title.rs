@@ -87,6 +87,8 @@ impl WindowTitles {
 
 /// The home folder to write as `~`: on macOS and Linux, where that's
 /// usual. Windows paths are shown in full.
+// Rust note: `impl Manager<R>` accepts any Tauri type that can reach the app
+// (a `Window`, a `WebviewWindow`, ...), like a template parameter in C++.
 pub fn home_for_display<R: tauri::Runtime>(
     manager: &impl Manager<R>,
 ) -> Option<std::path::PathBuf> {
@@ -98,8 +100,6 @@ pub fn home_for_display<R: tauri::Runtime>(
 }
 
 /// Sets a window's title: the system's, the one kept here, and the page's.
-// Rust note: `impl Manager<R>` accepts any Tauri type that can reach the app
-// (a `Window`, a `WebviewWindow`, ...), like a template parameter in C++.
 pub fn set_title<R: tauri::Runtime>(
     window: &tauri::Window<R>,
     title: WindowTitle,
