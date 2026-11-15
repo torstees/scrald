@@ -2033,6 +2033,8 @@
     <StatusBar
       wordCount={doc.wordCount}
       section={sectionTitle}
+      filePath={IS_MAC ? null : doc.path}
+      onpathcopied={() => showNotice("Path copied.")}
       {notice}
       {canGoBack}
       {canGoForward}

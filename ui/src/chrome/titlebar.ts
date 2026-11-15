@@ -22,3 +22,23 @@ export function fitPath(path: string, fits: (text: string) => boolean): string {
   }
   return parts.length > 1 ? `…${sep}${parts[parts.length - 1]}` : path;
 }
+
+/** The title before the path: "• Title" with unsaved changes. */
+export function titleName(title: { title: string; dirty: boolean }): string {
+  return `${title.dirty ? "\u2022 " : ""}${title.title}`;
+}
+
+/**
+ * The text for a system title bar that can't shorten the path itself
+ * (Windows, Linux): "• Title — path", with the path shortened by `fitPath`
+ * so the whole text `fits`. Without a path, just the title.
+ */
+export function fittedTitle(
+  title: { title: string; dirty: boolean; path: string | null },
+  fits: (text: string) => boolean,
+): string {
+  const name = titleName(title);
+  if (!title.path) return name;
+  const prefix = `${name} \u2014 `;
+  return prefix + fitPath(title.path, (path) => fits(prefix + path));
+}

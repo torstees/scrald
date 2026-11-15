@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitPath, separatorOf } from "./titlebar";
+import { fitPath, fittedTitle, separatorOf } from "./titlebar";
 
 /** Fits text of at most `n` characters. */
 const upTo = (n: number) => (text: string) => text.length <= n;
@@ -26,5 +26,22 @@ describe("fitPath", () => {
 
   it("leaves a bare name alone", () => {
     expect(fitPath("tasks.md", upTo(3))).toBe("tasks.md");
+  });
+});
+
+describe("fittedTitle", () => {
+  const title = { title: "Groceries", dirty: true, path: "C:\\Users\\ann\\notes\\groceries.md" };
+
+  it("keeps the whole title when it fits", () => {
+    expect(fittedTitle(title, upTo(100))).toBe("• Groceries — C:\\Users\\ann\\notes\\groceries.md");
+  });
+
+  it("shortens the path from the start to fit the whole text", () => {
+    // "• Groceries — " is 14 characters.
+    expect(fittedTitle(title, upTo(14 + 20))).toBe("• Groceries — …\\notes\\groceries.md");
+  });
+
+  it("is just the title without a path", () => {
+    expect(fittedTitle({ title: "Scrald", dirty: false, path: null }, upTo(3))).toBe("Scrald");
   });
 });

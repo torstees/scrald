@@ -14,6 +14,13 @@
     wordCount: number;
     /** Title of the section at the top of the viewport. */
     section: string | null;
+    /**
+     * The document's full path, shown as its file name (hover for the path,
+     * click to copy), or null for none: macOS shows it in the title bar.
+     */
+    filePath?: string | null;
+    /** Called after the path is copied. */
+    onpathcopied?: () => void;
     /** A short-lived message (link problems and the like), shown instead of the section. */
     notice: string | null;
     canGoBack: boolean;
@@ -70,6 +77,8 @@
   let {
     wordCount,
     section,
+    filePath = null,
+    onpathcopied,
     notice,
     canGoBack,
     canGoForward,
@@ -109,6 +118,19 @@
   let flavorMenuOpen = $state(false);
   let textMenuOpen = $state(false);
   let taskMenuOpen = $state(false);
+  /** The file name at the end of a path, with either separator. */
+  const fileName = $derived(filePath?.split(/[\\/]/).pop() ?? "");
+
+  async function copyPath(): Promise<void> {
+    if (!filePath) return;
+    try {
+      await navigator.clipboard.writeText(filePath);
+      onpathcopied?.();
+    } catch {
+      // The clipboard refused; the tooltip still shows the path.
+    }
+  }
+
   // "Pandoc" when chosen for this document, "Pandoc (auto)" otherwise.
   const flavorLabel = $derived(`${FLAVOR_NAMES[flavor]}${flavorSource === "document" ? "" : " (auto)"}`);
 </script>
@@ -127,6 +149,9 @@
       <button onclick={onback} disabled={!canGoBack} title={IS_MAC ? "Back (Cmd+[)" : "Back (Alt+Left)"} aria-label="Back">‹</button>
       <button onclick={onforward} disabled={!canGoForward} title={IS_MAC ? "Forward (Cmd+])" : "Forward (Alt+Right)"} aria-label="Forward">›</button>
     </span>
+  {/if}
+  {#if filePath}
+    <button class="file" onclick={copyPath} title={`${filePath}\nClick to copy the path`}>{fileName}</button>
   {/if}
   {#if notice}
     <span class="section notice" role="status" title={notice}>{notice}</span>
@@ -233,6 +258,23 @@
 </footer>
 
 <style>
+  .file {
+    flex: none;
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font: inherit;
+    color: var(--sk-color-muted);
+    background: none;
+    border: none;
+    padding: 0 0.4rem;
+    cursor: default;
+  }
+
+  .file:hover {
+    color: var(--sk-color-foreground);
+  }
+
   .sk-status {
     position: relative;
     display: flex;
