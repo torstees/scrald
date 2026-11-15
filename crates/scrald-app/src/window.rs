@@ -126,7 +126,8 @@ pub fn show_placed(
     launch: &LaunchInfo,
     open: &[(i32, i32)],
 ) -> anyhow::Result<()> {
-    window.set_title(&launch.window_title())?;
+    let home = crate::title::home_for_display(window);
+    crate::title::set_title(window, launch.window_title(home.as_deref()))?;
     let path = launch.path.as_deref().filter(|_| launch.exists);
     // The store is managed after the first window is placed, so it may be missing here.
     let remembered = match window.try_state::<StateStore>() {

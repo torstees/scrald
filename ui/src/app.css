@@ -3,6 +3,30 @@
  * (themes/apply.ts injects the real ones). Components use only these --sk-*
  * variables, never literal colors or fonts.
  */
+/*
+ * The title Scrald draws in the macOS title bar (chrome/TitleBar.svelte)
+ * takes this much room at the top; elsewhere the system draws the title.
+ */
+:root {
+  --sk-titlebar-height: 0px;
+}
+
+:root.sk-titled {
+  --sk-titlebar-height: 28px;
+}
+
+/* The app starts below the drawn title (a margin on the app would collapse
+   through the body and make the page taller than the window). */
+body {
+  padding-top: var(--sk-titlebar-height);
+}
+
+@media print {
+  :root.sk-titled {
+    --sk-titlebar-height: 0px;
+  }
+}
+
 :root {
   /* Lets scrollbars and form controls follow the theme's light/dark appearance. */
   color-scheme: light;
@@ -46,6 +70,7 @@ html,
 body {
   margin: 0;
   height: 100%;
+  box-sizing: border-box;
   background: var(--sk-color-background);
   color: var(--sk-color-foreground);
   font-family: var(--sk-font-body);

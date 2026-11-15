@@ -162,6 +162,16 @@ export interface Footnote {
   blockId: number | null;
 }
 
+/** Mirrors `WindowTitle` (crates/scrald-app/src/title.rs). */
+export interface WindowTitle {
+  /** The document's title, or "Scrald" for the start screen. */
+  title: string;
+  dirty: boolean;
+  /** The path as shown (home as `~` on macOS and Linux); null on the start screen. */
+  path: string | null;
+  fullPath: string | null;
+}
+
 /** Mirrors `LineEnding` (serde `rename_all = "lowercase"`). */
 export type LineEnding = "lf" | "crlf";
 

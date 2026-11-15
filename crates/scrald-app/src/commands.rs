@@ -330,7 +330,7 @@ fn set_window_title(
     doc: &DocumentModel,
     dirty: bool,
 ) -> tauri::Result<()> {
-    set_title_text(window, &document_title(doc), dirty)
+    set_title_text(window, &document_title(doc), &doc.path, dirty)
 }
 
 /// The front matter's title, or one made from the file name.
@@ -341,9 +341,16 @@ fn document_title(doc: &DocumentModel) -> String {
         .unwrap_or_else(|| scrald_core::title_from_path(&doc.path))
 }
 
-fn set_title_text(window: &tauri::WebviewWindow, title: &str, dirty: bool) -> tauri::Result<()> {
-    let marker = if dirty { "\u{2022} " } else { "" };
-    window.set_title(&format!("{marker}{title} \u{2014} Scrald"))
+/// Titles the window "• Title — ~/path/to/file.md" (`title.rs`).
+fn set_title_text(
+    window: &tauri::WebviewWindow,
+    title: &str,
+    path: &Path,
+    dirty: bool,
+) -> tauri::Result<()> {
+    let home = crate::title::home_for_display(window);
+    let title = crate::title::WindowTitle::document(title, path, dirty, home.as_deref());
+    crate::title::set_title(&window.as_ref().window(), title)
 }
 
 /// The window title for document text, read from its front matter alone
@@ -396,12 +403,12 @@ pub fn set_document_text(
     version: u64,
     text: String,
 ) -> Result<RawSync, CommandError> {
-    let title = sessions
+    let titled = sessions
         .current(window.label())
-        .map(|(path, _)| title_from_text(&path, &text));
+        .map(|(path, _)| (title_from_text(&path, &text), path));
     let (version, dirty) = sessions.replace_text(window.label(), version, text)?;
-    if let Some(title) = title {
-        set_title_text(&window, &title, dirty)?;
+    if let Some((title, path)) = titled {
+        set_title_text(&window, &title, &path, dirty)?;
     }
     Ok(RawSync { version, dirty })
 }
@@ -709,7 +716,7 @@ pub async fn save_document(
     {
         // Only the marker changes; the title comes from the front matter.
         let preview = DocumentPreview::from_text(&path, &text, vaults.for_document(&path));
-        set_title_text(&window, &preview.title, false)?;
+        set_title_text(&window, &preview.title, &path, false)?;
         if let Err(error) = store.set_document_preview(&path, &preview) {
             tracing::warn!(
                 error = format!("{error:#}"),
@@ -1798,12 +1805,13 @@ impl LaunchInfo {
     }
 
     /// The window title: the document's, or "Scrald" for the start screen
-    /// (also shown when the file doesn't exist).
-    pub fn window_title(&self) -> String {
-        if self.exists {
-            format!("{} \u{2014} Scrald", self.title)
-        } else {
-            "Scrald".to_string()
+    /// (also shown when the file doesn't exist). `home` is written `~`.
+    pub fn window_title(&self, home: Option<&Path>) -> crate::title::WindowTitle {
+        match &self.path {
+            Some(path) if self.exists => {
+                crate::title::WindowTitle::document(&self.title, path, false, home)
+            }
+            _ => crate::title::WindowTitle::start(),
         }
     }
 }
@@ -1931,7 +1939,8 @@ mod tests {
         let info = LaunchInfo::from_arg(Some(manifest));
         assert!(info.exists);
         assert_eq!(info.title, "Cargo");
-        assert_eq!(info.window_title(), "Cargo \u{2014} Scrald");
+        let shown = format!("Cargo \u{2014} {}", info.path.as_ref().unwrap().display());
+        assert_eq!(info.window_title(None).text(), shown);
     }
 
     #[test]
@@ -1950,7 +1959,7 @@ mod tests {
     #[test]
     fn missing_file_titles_the_window_scrald() {
         let info = LaunchInfo::from_arg(Some(PathBuf::from("does-not-exist.md")));
-        assert_eq!(info.window_title(), "Scrald");
+        assert_eq!(info.window_title(None).text(), "Scrald");
     }
 
     #[test]

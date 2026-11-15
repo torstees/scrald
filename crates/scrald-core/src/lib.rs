@@ -74,11 +74,43 @@ pub fn title_from_path(path: &Path) -> String {
     }
 }
 
+/// A path as the window title shows it: with the home folder written `~`
+/// when `home` is given and the path is inside it (`~/notes/a.md`).
+pub fn display_path(path: &Path, home: Option<&Path>) -> String {
+    // Rust note: `strip_prefix` on a `Path` compares whole components, so
+    // `/Users/ann` is not a prefix of `/Users/anna/a.md`.
+    match home.and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Some(rest) => Path::new("~").join(rest).display().to_string(),
+        None => path.display().to_string(),
+    }
+}
+
 // Rust note: `#[cfg(test)]` compiles this module only for `cargo test`, so
 // tests live next to the code they test without ending up in release builds.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_path_shortens_the_home_folder() {
+        // Built with `join`, so the separators are right on every platform.
+        let home = Path::new("/Users").join("ann");
+        let inside = home.join("notes").join("a.md");
+        let shown = Path::new("~").join("notes").join("a.md");
+        assert_eq!(
+            display_path(&inside, Some(&home)),
+            shown.display().to_string()
+        );
+        assert_eq!(display_path(&home, Some(&home)), "~");
+        // A folder that only starts with the same letters isn't inside it.
+        let other = Path::new("/Users").join("anna").join("a.md");
+        assert_eq!(
+            display_path(&other, Some(&home)),
+            other.display().to_string()
+        );
+        assert_eq!(display_path(&inside, None), inside.display().to_string());
+    }
 
     #[test]
     fn strips_directory_and_extension() {
