@@ -137,6 +137,7 @@
   import SidebarTabs from "./sidebar/SidebarTabs.svelte";
   import { chooseTab, isShown, layout, toggle, type Panel, type SidebarState } from "./sidebar/layout";
   import StatusBar from "./status/StatusBar.svelte";
+  import TitleBar from "./chrome/TitleBar.svelte";
   import { TypographyController } from "./typography/controller.svelte";
   import TypographyPanel from "./typography/TypographyPanel.svelte";
   import SearchBar from "./search/SearchBar.svelte";
@@ -648,6 +649,10 @@
     const current = await documentText();
     raw = { ...current, startByte: rawEditor?.topByte() ?? 0, resetKey: 0, compareWith: null, mount: raw.mount + 1 };
   }
+
+  // On macOS the page draws the window title (chrome/TitleBar.svelte), and
+  // the app starts below it.
+  if (IS_MAC) document.documentElement.classList.add("sk-titled");
 
   // Autosave (DESIGN.md §9.3): off by default; when on, the document saves
   // itself once editing pauses. Only the user's own edits start the wait;
@@ -1906,6 +1911,9 @@
   <SidebarTabs tab={shown.left ?? "contents"} ontab={(tab) => setSidebars(chooseTab(tab))} />
 {/snippet}
 
+{#if IS_MAC}
+  <TitleBar oncopied={() => showNotice("Path copied.")} />
+{/if}
 <div class="sk-app" class:with-left={shown.left !== null && doc !== null} class:with-right={showRight && doc !== null}>
   {#if doc}
     {#if shown.left === "contents"}
@@ -2200,7 +2208,8 @@
     display: grid;
     grid-template-columns: 1fr;
     grid-template-rows: 1fr auto;
-    height: 100vh;
+    /* Below the title Scrald draws on macOS (body's padding, app.css). */
+    height: calc(100vh - var(--sk-titlebar-height));
   }
 
   .sk-app.with-left {

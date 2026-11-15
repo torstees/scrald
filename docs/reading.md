@@ -6,6 +6,7 @@
 
 The document fills the middle of the window. Around it:
 
+- **The title bar** shows the document's title and where its file is, such as "Groceries — ~/notes/groceries.md", with a • in front while there are unsaved changes. On a Mac, when the window is too narrow, the path drops its first folders ("…/notes/groceries.md") so the file name stays; hover over the path to see all of it, and click it to copy it. On Windows and Linux the system shortens the title from the end.
 - **Contents** at the left: every heading, with the current one highlighted as you scroll. Click one to jump there.
 - **Properties**: the document's front matter (title, tags, summary, and so on). See [Front matter](front-matter.md).
 - **The status bar** at the bottom:

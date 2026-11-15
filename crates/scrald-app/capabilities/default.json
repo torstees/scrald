@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permissions for every window (\"main\" and the \"window-N\" ones opened later). Keep this minimal; add permissions only as features need them.",
   "windows": ["main", "window-*"],
-  "permissions": ["core:default", "core:window:allow-destroy"]
+  "permissions": ["core:default", "core:window:allow-destroy", "core:window:allow-start-dragging"]
 }

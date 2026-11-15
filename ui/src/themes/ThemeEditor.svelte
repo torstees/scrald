@@ -444,7 +444,7 @@ ${describeProblems(low)}`}
 <style>
   .sk-theme-editor {
     position: fixed;
-    top: 0;
+    top: var(--sk-titlebar-height);
     right: 0;
     bottom: 2.2rem;
     width: min(23rem, 92vw);

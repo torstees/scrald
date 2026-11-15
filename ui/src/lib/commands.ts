@@ -8,6 +8,7 @@ import type {
   FrontSettings,
   ImplicitFigures,
   LaunchInfo,
+  WindowTitle,
   LinkTarget,
   OpenedDocument,
   PropertiesPlacement,
@@ -441,6 +442,16 @@ export function onEmbedChanged(handler: (path: string) => void): Promise<Unliste
 /** Calls `handler` when the macOS app menu's About Scrald asks this window to show the About dialog (#199). */
 export function onShowAbout(handler: () => void): Promise<UnlistenFn> {
   return listen("show-about", () => handler());
+}
+
+/** The window's current title, for the title Scrald draws on macOS. */
+export function windowTitle(): Promise<WindowTitle> {
+  return invoke<WindowTitle>("window_title");
+}
+
+/** Calls `handler` with the window's title whenever it changes. */
+export function onWindowTitle(handler: (title: WindowTitle) => void): Promise<UnlistenFn> {
+  return listen<WindowTitle>("window-title", (event) => handler(event.payload));
 }
 
 /** Calls `handler` when the macOS Edit menu's Tidy Hard-Wrapped Text asks this window to tidy (#219). */

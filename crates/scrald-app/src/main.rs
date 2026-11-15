@@ -13,6 +13,7 @@ mod state;
 #[cfg(target_os = "macos")]
 mod terminate;
 mod themes;
+mod title;
 mod vaults;
 mod watcher;
 #[cfg(target_os = "linux")]
@@ -77,6 +78,7 @@ fn main() -> anyhow::Result<()> {
         .manage(protocol::AssetRegistry::default())
         .manage(watcher::DocumentWatchers::default())
         .manage(session::Sessions::default())
+        .manage(title::WindowTitles::default())
         .manage(vaults::VaultCache::default())
         .plugin(tauri_plugin_opener::init())
         // Used only from Rust (the assets folder picker); the frontend has
@@ -129,6 +131,7 @@ fn main() -> anyhow::Result<()> {
                 window.state::<watcher::DocumentWatchers>().unwatch(label);
                 window.state::<window::WindowTracker>().forget(label);
                 window.state::<session::Sessions>().forget(label);
+                window.state::<title::WindowTitles>().forget(label);
             }
             _ => {}
         })
@@ -145,6 +148,7 @@ fn main() -> anyhow::Result<()> {
             commands::edit_block,
             commands::convert_document,
             commands::set_task,
+            title::window_title,
             commands::tidy_text,
             commands::step_history,
             commands::check_disk,
