@@ -1911,9 +1911,8 @@
   <SidebarTabs tab={shown.left ?? "contents"} ontab={(tab) => setSidebars(chooseTab(tab))} />
 {/snippet}
 
-{#if IS_MAC}
-  <TitleBar oncopied={() => showNotice("Path copied.")} />
-{/if}
+<!-- Draws the title on macOS; elsewhere it draws nothing and shortens the system title. -->
+<TitleBar oncopied={() => showNotice("Path copied.")} />
 <div class="sk-app" class:with-left={shown.left !== null && doc !== null} class:with-right={showRight && doc !== null}>
   {#if doc}
     {#if shown.left === "contents"}
