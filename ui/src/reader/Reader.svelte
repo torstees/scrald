@@ -4,7 +4,7 @@
   // browser skips layout and paint for off-screen sections. Sections are
   // mounted outward from the initial position, the rest in idle time.
   import { mount, onDestroy, tick, unmount, untrack } from "svelte";
-  import type { Block, DocumentModel, PropertiesPlacement, SearchReply, TocEntry } from "../lib/types";
+  import type { Block, DocumentModel, PropertiesPlacement, SearchReply, TaskMark, TocEntry } from "../lib/types";
   import { currentEntryAt } from "../toc/tree";
   import BlockEditor from "../editor/BlockEditor.svelte";
   import type { BlockEditing, EditTarget } from "../editor/blocks";
@@ -25,6 +25,7 @@
   import type { FrontContent } from "./front";
   import { ScrollKeeper } from "./anchoring";
   import { supports } from "../lib/support";
+  import { enableCheckboxes, hidingItems } from "./tasks";
 
   interface Props {
     doc: DocumentModel;
@@ -71,6 +72,10 @@
     onrawat?: ((offset: number) => void) | null;
     /** The cover or missing title to show before the first block (#189). */
     front?: FrontContent;
+    /** Checks or unchecks a task item (#218); null leaves checkboxes read-only. */
+    ontask?: ((task: TaskMark) => void) | null;
+    /** Hides checked task items (#218). */
+    hideChecked?: boolean;
   }
 
   let {
@@ -94,6 +99,8 @@
     onpropertiestoggle,
     onrawat = null,
     front = null,
+    ontask = null,
+    hideChecked = false,
   }: Props = $props();
 
   /** How long scrolling must pause before the position counts as settled. */
@@ -602,7 +609,11 @@
       }
     }
     let range = currentRange();
-    if (range) revealNode(range.startContainer);
+    if (range) {
+      revealNode(range.startContainer);
+      // A match in a hidden checked item shows that item (#218).
+      if (hideChecked) for (const item of hidingItems(range.startContainer)) item.classList.add("sk-task-shown");
+    }
     const inView = (r: Range) => {
       const rect = r.getBoundingClientRect();
       const view = scroller!.getBoundingClientRect();
@@ -761,8 +772,67 @@
     if (ref) void showPopover(ref);
   }
 
+  // Task items (#218). A toggled item stays in view for a moment when
+  // checked items are hidden, so the click visibly lands before it goes.
+  const TASK_LINGER_MS = 900;
+  /** The task just toggled, by file offset, until the new HTML shows it. */
+  let toggledTask: { offset: number; focus: boolean; at: number } | null = null;
+  /** After this long, the edit was refused or something else came first. */
+  const TOGGLE_WAIT_MS = 2000;
+  let lingerTimer = 0;
+
+  function onTaskClick(event: MouseEvent, box: HTMLInputElement): void {
+    // The box changes when the edited document arrives; if the edit is
+    // refused, it stays as the file says.
+    event.preventDefault();
+    if (!ontask || editing) return;
+    const el = box.closest<HTMLElement>(".sk-section > .sk-block[data-block]");
+    const block = el ? doc.blocks[Number(el.dataset.block)] : undefined;
+    const task = block?.tasks?.[Number(box.dataset.task)];
+    if (!task) return;
+    toggledTask = { offset: task.offset, focus: document.activeElement === box, at: performance.now() };
+    ontask(task);
+  }
+
+  /**
+   * Svelte action: makes a block's checkboxes clickable when they match its
+   * tasks (#218), and puts focus back on the one just toggled, whose element
+   * the new HTML replaced.
+   */
+  function taskBoxes(node: HTMLElement, params: { tasks: TaskMark[] | undefined; enabled: boolean }) {
+    const apply = ({ tasks, enabled }: { tasks: TaskMark[] | undefined; enabled: boolean }) => {
+      if (!enabled || !tasks || !enableCheckboxes(node, tasks)) return;
+      const toggled = toggledTask && performance.now() - toggledTask.at < TOGGLE_WAIT_MS ? toggledTask : null;
+      const i = toggled ? tasks.findIndex((t) => t.offset === toggled.offset) : -1;
+      if (!toggled || i < 0) return;
+      toggledTask = null;
+      const box = node.querySelector<HTMLInputElement>(`input[data-task="${i}"]`);
+      if (!box) return;
+      if (toggled.focus) box.focus({ preventScroll: true });
+      if (hideChecked && box.checked) {
+        const item = box.closest("li");
+        item?.classList.add("sk-task-shown");
+        window.clearTimeout(lingerTimer);
+        lingerTimer = window.setTimeout(() => item?.classList.remove("sk-task-shown"), TASK_LINGER_MS);
+      }
+    };
+    apply(params);
+    return { update: apply };
+  }
+
+  // Items search showed stay shown only until hiding is turned on again.
+  $effect(() => {
+    void hideChecked;
+    for (const item of column?.querySelectorAll(".sk-task-shown") ?? []) item.classList.remove("sk-task-shown");
+  });
+
   async function onClick(event: MouseEvent): Promise<void> {
     popover = null;
+    const box = (event.target as Element | null)?.closest<HTMLInputElement>("input[data-task]");
+    if (box) {
+      onTaskClick(event, box);
+      return;
+    }
     const link = (event.target as Element | null)?.closest("a");
     const href = link?.getAttribute("href");
     if (!link || href === null || href === undefined) return;
@@ -799,7 +869,7 @@
   aria-label="Document"
   tabindex="0"
 >
-  <article bind:this={column} class="sk-column" class:fill={fillWindow} class:drawn-matches={drawnMatches} style:font-size={fontSize === null ? null : `${fontSize}px`}>
+  <article bind:this={column} class="sk-column" class:fill={fillWindow} class:hide-checked={hideChecked} class:drawn-matches={drawnMatches} style:font-size={fontSize === null ? null : `${fontSize}px`}>
     {#if doc.frontMatter && propertiesAtTop}
       <PropertiesPanel
         frontMatter={doc.frontMatter}
@@ -843,7 +913,12 @@
               <div class="sk-block sk-footnote-def" data-block={block.id}></div>
             {:else}
               <!-- Block.html is sanitized by core (ammonia); it's the only HTML we insert. -->
-              <div class="sk-block" data-block={block.id} use:assetImages={{ token: assetToken, html: block.html }} use:richContent={block.html}
+              <div
+                class="sk-block"
+                data-block={block.id}
+                use:assetImages={{ token: assetToken, html: block.html }}
+                use:richContent={block.html}
+                use:taskBoxes={{ tasks: block.tasks, enabled: ontask !== null }}
                 >{@html block.html}</div
               >
             {/if}
@@ -937,6 +1012,17 @@
 
   .sk-section {
     content-visibility: auto;
+  }
+
+  /* "Hide checked items" (#218): display only, so printing follows it. A
+     hidden item's nested items go with it. Search and a fresh click can
+     show one for a while (.sk-task-shown). */
+  .sk-column.hide-checked :global(li:has(> input[type="checkbox"]:checked):not(.sk-task-shown)) {
+    display: none;
+  }
+
+  .sk-column :global(input[data-task]) {
+    cursor: pointer;
   }
 
   .sk-placeholder {

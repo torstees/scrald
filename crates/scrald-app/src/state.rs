@@ -62,6 +62,8 @@ const MIGRATIONS: &[&str] = &[
         template TEXT,                      -- template id last used there
         added    INTEGER NOT NULL           -- Unix time, milliseconds
     );",
+    // 6: whether a document hides its checked task items (#218).
+    "ALTER TABLE documents ADD COLUMN hide_checked INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// Setting key for the most recently used window size (DESIGN.md §11).
@@ -183,6 +185,8 @@ pub struct DocumentMemory {
     pub zoom: Option<f64>,
     /// Flavor chosen for this document, if any (detected flavors aren't stored).
     pub flavor: Option<Flavor>,
+    /// Whether the reader hides this document's checked task items (#218).
+    pub hide_checked: bool,
     /// The global "captions from alt text" setting, read with the rest so
     /// every parse of the document uses it (#140). The page doesn't need it.
     #[serde(skip)]
@@ -356,6 +360,14 @@ impl StateStore {
         self.conn().execute(
             "UPDATE documents SET remote_images = ?2 WHERE path = ?1",
             params![document_key(path), allowed],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_hide_checked(&self, path: &Path, hidden: bool) -> anyhow::Result<()> {
+        self.conn().execute(
+            "UPDATE documents SET hide_checked = ?2 WHERE path = ?1",
+            params![document_key(path), hidden],
         )?;
         Ok(())
     }
@@ -780,7 +792,8 @@ fn migrate(conn: &mut Connection) -> anyhow::Result<()> {
 fn read_memory(conn: &Connection, key: &str) -> anyhow::Result<DocumentMemory> {
     let memory = conn
         .query_row(
-            "SELECT scroll_offset, scroll_fraction, remote_images, theme, text_sizing, zoom, flavor
+            "SELECT scroll_offset, scroll_fraction, remote_images, theme, text_sizing, zoom, flavor,
+                    hide_checked
              FROM documents WHERE path = ?1",
             [key],
             |row| {
@@ -804,6 +817,7 @@ fn read_memory(conn: &Connection, key: &str) -> anyhow::Result<DocumentMemory> {
                         .get::<_, Option<String>>(6)?
                         .as_deref()
                         .and_then(Flavor::from_name),
+                    hide_checked: row.get(7)?,
                     // A global setting, filled in by `with_settings`.
                     implicit_figures: ImplicitFigures::default(),
                 })
@@ -907,10 +921,12 @@ mod tests {
         };
         store.save_reading_position(&path, anchor).unwrap();
         store.set_remote_images(&path, true).unwrap();
+        store.set_hide_checked(&path, true).unwrap();
 
         let memory = store.record_open(&path).unwrap();
         assert_eq!(memory.anchor, Some(anchor));
         assert!(memory.remote_images);
+        assert!(memory.hide_checked);
         // Reading without recording an open gives the same.
         assert_eq!(store.memory(&path).unwrap(), memory);
         // A document never opened has nothing remembered.

@@ -130,6 +130,49 @@ pub fn splice_part(
     Ok(format!("{}{}", &text[..cut_start], &text[cut_end..]))
 }
 
+/// The task marker's symbol at byte `at` of `text` (a space, `x`, or `X`),
+/// if `at` holds one between `[` and `]`.
+pub fn task_symbol(text: &str, at: usize) -> Option<char> {
+    let open = at.checked_sub(1)?;
+    // Rust note: `get` on a `str` returns `None` instead of panicking when
+    // the range is out of bounds or cuts a multi-byte character. The `match`
+    // then uses a slice pattern: exactly three bytes, `[`, one of three
+    // symbols (bound to `symbol` by `@`), and `]`.
+    match text.get(open..at + 2)?.as_bytes() {
+        [b'[', symbol @ (b' ' | b'x' | b'X'), b']'] => Some(char::from(*symbol)),
+        _ => None,
+    }
+}
+
+/// Checks or unchecks the task-list item whose symbol (between the
+/// brackets) is at file offset `offset` (#218), changing only that one
+/// byte: `mark` (`x` or `X`) when checking, a space when unchecking.
+///
+/// The task must currently be the opposite of `checked`, or the edit is
+/// refused (`Stale`): the document changed since the reader drew it.
+pub fn set_task(
+    text: &str,
+    offset: usize,
+    bom_len: usize,
+    checked: bool,
+    mark: char,
+) -> Result<String, EditError> {
+    let at = offset.checked_sub(bom_len).ok_or(EditError::OutOfRange)?;
+    let current = task_symbol(text, at).ok_or(EditError::Stale)?;
+    if (current != ' ') == checked {
+        return Err(EditError::Stale);
+    }
+    let symbol = if !checked {
+        ' '
+    } else if mark == 'X' {
+        'X'
+    } else {
+        'x'
+    };
+    // The old symbol is one ASCII byte, so `at + 1` is a character boundary.
+    Ok(format!("{}{}{}", &text[..at], symbol, &text[at + 1..]))
+}
+
 /// The length of the line break `rest` starts with (0, 1, or 2 bytes).
 fn line_break_len(rest: &str) -> usize {
     if rest.starts_with("\r\n") {
@@ -230,6 +273,32 @@ impl TextDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn set_task_changes_one_byte() {
+        // With a BOM, offsets count it: the symbol of "- [ ] é" is at 3 + 3.
+        let text = "- [ ] é\r\n- [X] b\r\n";
+        let checked = set_task(text, 6, 3, true, 'x').unwrap();
+        assert_eq!(checked, "- [x] é\r\n- [X] b\r\n");
+        let upper = set_task(text, 6, 3, true, 'X').unwrap();
+        assert_eq!(upper, "- [X] é\r\n- [X] b\r\n");
+        // The second item's symbol: after "- [ ] é\r\n" (10 bytes) and "- [".
+        let unchecked = set_task(text, 3 + 13, 3, false, 'x').unwrap();
+        assert_eq!(unchecked, "- [ ] é\r\n- [ ] b\r\n");
+    }
+
+    #[test]
+    fn set_task_refuses_a_changed_document() {
+        let text = "- [x] done\n";
+        // Already checked.
+        assert_eq!(set_task(text, 3, 0, true, 'x'), Err(EditError::Stale));
+        // Not a task marker there.
+        assert_eq!(set_task(text, 4, 0, false, 'x'), Err(EditError::Stale));
+        assert_eq!(set_task(text, 99, 0, false, 'x'), Err(EditError::Stale));
+        assert_eq!(set_task(text, 1, 3, false, 'x'), Err(EditError::OutOfRange));
+        // The bracket before a multi-byte character isn't a marker.
+        assert_eq!(task_symbol("[é]", 1), None);
+    }
 
     fn range_of(text: &str, part: &str, bom: usize) -> SourceRange {
         let start = text.find(part).unwrap() + bom;

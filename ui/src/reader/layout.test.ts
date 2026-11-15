@@ -37,6 +37,7 @@ function doc(blocks: Block[], sections: Section[]): DocumentModel {
     footnotes: [],
     cover: null,
     missingTitle: null,
+    checkMark: "x",
   };
 }
 

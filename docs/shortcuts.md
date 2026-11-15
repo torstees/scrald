@@ -29,6 +29,7 @@ On a Mac, press `Cmd` where these pages say `Ctrl`, and `Option` for `Alt`. Thre
 | `Ctrl+=` or `Ctrl+wheel up` | Zoom in |
 | `Ctrl+-` or `Ctrl+wheel down` | Zoom out |
 | `Ctrl+0` | Reset zoom |
+| `Ctrl+Shift+H` | Hide or show checked task items |
 
 ## Find
 

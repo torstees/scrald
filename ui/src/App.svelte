@@ -76,6 +76,8 @@
     pickAssetsFolder,
     blockSource,
     editBlock,
+    setTask,
+    setHideChecked,
     stepHistory,
     documentText,
     setDocumentText,
@@ -103,11 +105,13 @@
     ThemeEditorValues,
     ContrastProblem,
     ThemeSummary,
+    TaskMark,
     NewDocumentOptions,
     NewDocumentRequest,
   } from "./lib/types";
   import SchemeChooser from "./themes/SchemeChooser.svelte";
   import ThemeEditor from "./themes/ThemeEditor.svelte";
+  import { taskCounts } from "./reader/tasks";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import UnsavedDialog, { type UnsavedChoice } from "./editor/UnsavedDialog.svelte";
   import type { PropertyEditor } from "./frontmatter/properties";
@@ -432,6 +436,33 @@
         }
       }),
   };
+
+  // Task lists (#218): a click checks or unchecks one item, an ordinary
+  // edit; checked items can be hidden, remembered per document.
+  let hideChecked = $state(false);
+  const tasks = $derived(doc ? taskCounts(doc.blocks) : { done: 0, total: 0 });
+
+  function toggleTask(task: TaskMark): Promise<void> {
+    return queueEdit(async () => {
+      try {
+        await applyEdit(await setTask(task.offset, !task.checked, doc?.checkMark ?? "x"));
+        noteEdit();
+      } catch (e) {
+        showNotice(`Could not change the task: ${String(e)}`);
+      }
+    });
+  }
+
+  function toggleHideChecked(): void {
+    if (!doc) return;
+    if (tasks.total === 0 && !hideChecked) {
+      showNotice("This document has no task items.");
+      return;
+    }
+    hideChecked = !hideChecked;
+    showNotice(hideChecked ? "Checked task items are hidden." : "Checked task items are shown.");
+    void setHideChecked(doc.path, hideChecked).catch(() => {});
+  }
 
   /** Undo (or redo) one edit to the document. */
   function stepEdits(redo: boolean): Promise<void> {
@@ -1260,6 +1291,9 @@
     // the previous document's theme.
     theme = opened.theme;
     typography.setDocument(opened.memory);
+    // Read from memory only for another document: an edit's memory may be
+    // read before a change just made here has been stored.
+    if (doc?.path !== opened.document.path) hideChecked = opened.memory.hideChecked;
     // After an edit the theme is usually the one already shown; applying it
     // again would restyle the page and redraw every diagram.
     if (opened.theme.id !== shownThemeId) await showTheme(opened.theme.id, false);
@@ -1762,6 +1796,11 @@
       void startTidy();
       return;
     }
+    if (hasMod(event) && event.shiftKey && !event.altKey && doc && event.code === "KeyH") {
+      event.preventDefault();
+      toggleHideChecked();
+      return;
+    }
     if (hasMod(event) && doc && (event.key === "e" || event.key === "E")) {
       event.preventDefault();
       void (rawMode ? exitRawMode() : enterRawMode());
@@ -1967,6 +2006,8 @@
           onpropertiestoggle={togglePropertiesPanel}
           onrawat={(offset) => void enterRawMode(offset)}
           {front}
+          ontask={(task) => void toggleTask(task)}
+          {hideChecked}
         />
       {/if}
     </main>
@@ -2008,6 +2049,9 @@
       onconvert={(to) => void convertText(to, false)}
       onremovebom={() => void convertText(null, true)}
       ontidy={() => void startTidy()}
+      {tasks}
+      {hideChecked}
+      onhidechecked={toggleHideChecked}
       typography={typography.summary}
       ontypographyclick={() => (typographyOpen = !typographyOpen)}
       {autosave}

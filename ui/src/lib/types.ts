@@ -48,6 +48,15 @@ export interface Block {
   words: number;
   /** A list's items or a block quote's children, editable one at a time (#118). */
   parts?: SourceRange[];
+  /** The block's task-list items, in the order of its checkboxes (#218). */
+  tasks?: TaskMark[];
+}
+
+/** Mirrors `TaskMark`: one task-list item's checkbox (#218). */
+export interface TaskMark {
+  /** File offset of the character between the brackets. */
+  offset: number;
+  checked: boolean;
 }
 
 /** Mirrors `Section`. */
@@ -183,6 +192,8 @@ export interface DocumentModel {
   cover: ImageAsset | null;
   /** The front matter's title, if the text doesn't show it near the start. */
   missingTitle: string | null;
+  /** The letter a newly checked task gets: `x`, or `X` where the document mostly uses it (#218). */
+  checkMark: "x" | "X";
 }
 
 /** Mirrors `LinkTarget` (crates/scrald-core/src/links.rs, serde `tag = "kind"`). */
@@ -207,6 +218,8 @@ export interface DocumentMemory {
   zoom: number | null;
   /** Flavor chosen for this document, if any. */
   flavor: Flavor | null;
+  /** Whether the reader hides this document's checked task items (#218). */
+  hideChecked: boolean;
 }
 
 /** Mirrors `TypographyDefaults` (crates/scrald-app/src/state.rs). */

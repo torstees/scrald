@@ -204,3 +204,66 @@ fn tidying_is_stable() {
         assert_eq!(twice.text, once, "{name}: tidying twice changed it again");
     }
 }
+
+/// Checking or unchecking any task item (#218) changes one byte, the
+/// re-parsed document has the same task flipped, and toggling it back
+/// gives the file back. Each block's tasks match its checkboxes one to one,
+/// which is how the reader finds them.
+#[test]
+fn toggling_tasks_changes_one_byte() {
+    let mut toggled = 0;
+    for path in fixture_paths() {
+        let name = path.display().to_string();
+        let bytes = std::fs::read(&path).expect("fixture");
+        let doc = parse_document(path.clone(), &bytes).expect("parse");
+        let decoded = scrald_core::source::decode(&bytes).expect("utf-8");
+        let bom_len = usize::from(decoded.has_bom) * 3;
+        for block in doc.blocks.iter().filter(|b| !b.tasks.is_empty()) {
+            assert_eq!(
+                block.html.matches("type=\"checkbox\"").count(),
+                block.tasks.len(),
+                "{name}: block {} checkboxes and tasks differ",
+                block.id
+            );
+            for (i, task) in block.tasks.iter().enumerate() {
+                let edited = scrald_core::edit::set_task(
+                    &decoded.text,
+                    task.offset,
+                    bom_len,
+                    !task.checked,
+                    doc.check_mark,
+                )
+                .unwrap_or_else(|e| panic!("{name}: block {} task {i}: {e}", block.id));
+                let encoded = scrald_core::save::encode(&edited, decoded.has_bom);
+                let differing = encoded.iter().zip(&bytes).filter(|(a, b)| a != b).count();
+                assert_eq!(
+                    (encoded.len(), differing),
+                    (bytes.len(), 1),
+                    "{name}: task {i}"
+                );
+                let again = parse_document(path.clone(), &encoded).expect("parse toggled");
+                let flipped = again.blocks[block.id as usize].tasks[i];
+                assert_eq!(flipped.offset, task.offset, "{name}: task {i} moved");
+                assert_eq!(
+                    flipped.checked, !task.checked,
+                    "{name}: task {i} didn't flip"
+                );
+                let back = scrald_core::edit::set_task(
+                    &edited,
+                    task.offset,
+                    bom_len,
+                    task.checked,
+                    doc.check_mark,
+                )
+                .expect("toggles back");
+                if !task.checked
+                    || doc.check_mark == decoded.text.as_bytes()[task.offset - bom_len] as char
+                {
+                    assert_eq!(back, decoded.text, "{name}: task {i} didn't toggle back");
+                }
+                toggled += 1;
+            }
+        }
+    }
+    assert!(toggled > 0, "no fixture has task items");
+}

@@ -12,6 +12,12 @@ In a list, double-clicking an item edits just that item, with the lists inside i
 
 To edit a whole list or quote at once, hold `Alt` (`Option` on a Mac) while double-clicking. Callouts, and quotes with HTML in them, are always edited whole.
 
+## Task lists
+
+Click the checkbox of a task item (`- [ ] Buy milk`) to check or uncheck it, or tab to it and press `Space`. Only the one character between the brackets changes: an `x` when checking (or `X`, if most of the document's checked items use it), a space when unchecking. Like other edits, it's unsaved until you save, and `Ctrl+Z` undoes it.
+
+Checkboxes in a note shown inside another stay as they are, since the note is read-only there. To hide the checked items, see [Reading](reading.md).
+
 ## Raw mode
 
 `Ctrl+E` switches the whole document to its Markdown source, front matter included, and back. You stay at the same place in the document both ways.
